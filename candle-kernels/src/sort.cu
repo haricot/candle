@@ -61,6 +61,80 @@ static __device__ void k_argsort(const T * x, uint32_t * dst, const int ncols, i
     }
 }
 
+
+template<int order, typename T>
+static __device__ void k_argsort_stable(const T * x, uint32_t * dst, const int ncols, int ncols_pad) {
+    // Bitonic Sorting
+    int col = threadIdx.x;
+    int row = blockIdx.y;
+
+    if (col >= ncols_pad) {
+        return;
+    }
+
+    const T * x_row = x + row * ncols;
+    extern __shared__ int dst_row[];
+
+    // Initialization of indices
+    dst_row[col] = col;
+
+    __syncthreads();
+
+    // Loops of the bitonic sorting
+    for (int k = 2; k <= ncols_pad; k *= 2) {
+        for (int j = k / 2; j > 0; j /= 2) {
+            int ixj = col ^ j;
+            if (ixj > col && ixj < ncols_pad) {
+                // Déterminer si les indices sont valides (dans la zone non-padding)
+                bool valid_i = (dst_row[col] < ncols);
+                bool valid_j = (dst_row[ixj] < ncols);
+
+                // Determine if the indices are valid (in the non-padding area)
+                auto compare_asc = [=] __device__ (int i, int j) -> bool {
+                    if (!valid_i && valid_j) return false;
+                    if (valid_i && !valid_j) return true;
+                    // If both are valid, compare the values ​​then tie-breaker on the indices
+                    return (x_row[i] < x_row[j]) || (x_row[i] == x_row[j] && i < j);
+                };
+
+                // For descending sorting, an invalid index is considered "small"
+                auto compare_desc = [=] __device__ (int i, int j) -> bool {
+                    if (!valid_i && valid_j) return false;
+                    if (valid_i && !valid_j) return true;
+                    return (x_row[i] > x_row[j]) || (x_row[i] == x_row[j] && i < j);
+                };
+
+                if ((col & k) == 0) {
+                    if (order == SORT_ORDER_ASC) {
+                        if (!compare_asc(dst_row[col], dst_row[ixj]))
+                            ggml_cuda_swap(dst_row[col], dst_row[ixj]);
+                    } else {
+                        if (!compare_desc(dst_row[col], dst_row[ixj]))
+                            ggml_cuda_swap(dst_row[col], dst_row[ixj]);
+                    }
+                }
+                else {
+                    // Reversed branches for the second half-exchange of the bitonic sort
+                    if (order == SORT_ORDER_ASC) {
+                        if (compare_asc(dst_row[col], dst_row[ixj]))
+                            ggml_cuda_swap(dst_row[col], dst_row[ixj]);
+                    } else {
+                        if (compare_desc(dst_row[col], dst_row[ixj]))
+                            ggml_cuda_swap(dst_row[col], dst_row[ixj]);
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+
+    // Copy the result (only valid indices) into dst
+    if (col < ncols) {
+        dst[row * ncols + col] = dst_row[col];
+    }
+}
+
+
 #define ASORT_OP(TYPENAME, RUST_NAME) \
 extern "C" __global__ void asort_asc_##RUST_NAME(  \
     const TYPENAME * x, uint32_t * dst, const int ncols, int ncols_pad \
