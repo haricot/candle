@@ -64,7 +64,7 @@ static __device__ void k_argsort(const T * x, uint32_t * dst, const int ncols, i
 
 template<int order, typename T>
 static __device__ void k_argsort_stable(const T * x, uint32_t * dst, const int ncols, int ncols_pad) {
-    // Tri Bitonic sort stable
+    // Bitonic Sorting
     int col = threadIdx.x;
     int row = blockIdx.y;
 
