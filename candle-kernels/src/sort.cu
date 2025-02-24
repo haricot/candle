@@ -64,7 +64,7 @@ static __device__ void k_argsort(const T * x, uint32_t * dst, const int ncols, i
 
 template<int order, typename T>
 static __device__ void k_argsort_stable(const T * x, uint32_t * dst, const int ncols, int ncols_pad) {
-    // Bitonic Sorting
+    // Tri Bitonic sort stable
     int col = threadIdx.x;
     int row = blockIdx.y;
 
@@ -85,11 +85,11 @@ static __device__ void k_argsort_stable(const T * x, uint32_t * dst, const int n
         for (int j = k / 2; j > 0; j /= 2) {
             int ixj = col ^ j;
             if (ixj > col && ixj < ncols_pad) {
-                // Déterminer si les indices sont valides (dans la zone non-padding)
+                // Determine if the indices are valid (in the non-padding area)
                 bool valid_i = (dst_row[col] < ncols);
                 bool valid_j = (dst_row[ixj] < ncols);
-
-                // Determine if the indices are valid (in the non-padding area)
+                
+                // For ascending sort, an invalid index (>= ncols) is considered "large"
                 auto compare_asc = [=] __device__ (int i, int j) -> bool {
                     if (!valid_i && valid_j) return false;
                     if (valid_i && !valid_j) return true;
