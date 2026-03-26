@@ -12,12 +12,15 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 half = "2.4.1"
 cudaforge = "0.1.2"
+ir-caps = { path = "/home/np/tmp/adaptive-dispatch/ir_caps" }
+
 
 [dev-dependencies]
 cudarc = { version = "0.19.1", features = ["std", "driver", "f16", "cuda-version-from-build-system"] }
 
 [build-dependencies]
 cudaforge = "0.1.2"
+ir-caps = { path = "/home/np/tmp/adaptive-dispatch/ir_caps" }
 
 [workspace]
 # Empty workspace to prevent Cargo from looking up and finding /home/np/tmp/Cargo.toml
