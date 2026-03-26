@@ -1,10 +1,9 @@
-use cudaforge::{detect_compute_cap, get_gpu_arch_string, KernelBuilder, Result};
+use cudaforge::{detect_compute_cap, KernelBuilder, Result};
+use ir_caps::register_capabilities;
+use ir_caps::KernelBuilderExt;
 use std::env;
 use std::path::PathBuf;
 
-#[macro_use]
-#[path = "src/utils.rs"]
-mod utils;
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
@@ -14,16 +13,26 @@ fn main() -> Result<()> {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let arch = detect_compute_cap().unwrap_or_else(|_| cudaforge::GpuArch::new(0));
-    let compute_cap = arch.base();
+    let compute_cap = env::var("CUDA_COMPUTE_CAP")
+        .map(|s| s.parse::<usize>().unwrap_or(80))
+        .unwrap_or_else(|_| arch.base());
 
     // Initialize builders early
     let mut builder = KernelBuilder::new()
         .compute_cap(compute_cap)
         .source_dir("src")
+        .watch([
+            "src/compatibility.cuh",
+            "src/cuda_utils.cuh",
+            "src/binary_op_macros.cuh",
+        ])
         .exclude(&["moe_*.cu"])
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");
+
+    builder = register_capabilities(builder, arch.base) // <- nouvelle fonction
+        .emit_defines();
 
     let mut moe_builder = KernelBuilder::new()
         .compute_cap(compute_cap)
@@ -45,11 +54,7 @@ fn main() -> Result<()> {
         moe_builder = moe_builder.arg("-Xcompiler").arg("-fPIC");
     }
 
-    // Register hardware capabilities and apply them to Rust/CUDA builders.
-    // Legacy emulations can be selectively enabled via ALLOW_LEGACY="bf16,fp8".
-    for (name, val) in utils::get_capabilities_results(compute_cap) {
-        dual_set!(builder, moe_builder, name, val);
-    }
+    moe_builder = register_capabilities(moe_builder, arch.base);
 
     // Build for PTX
     let ptx_output = builder.build_ptx()?;

@@ -344,7 +344,7 @@ fn sigmoid_bf16(device: &Device) -> Result<()> {
     assert_eq!(diff, half::bf16::from_f32(0.));
     Ok(())
 }
- 
+
 
 test_device!(ropei, ropei_cpu, ropei_gpu, ropei_metal);
 test_device!(rope, rope_cpu, rope_gpu, rope_metal);

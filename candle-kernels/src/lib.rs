@@ -79,5 +79,5 @@ mdl!(SORT, Sort);
 mdl!(TERNARY, Ternary);
 mdl!(UNARY, Unary);
 
+pub mod adaptive;
 pub mod ffi;
-pub mod utils;
