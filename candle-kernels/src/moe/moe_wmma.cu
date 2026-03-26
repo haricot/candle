@@ -316,7 +316,7 @@ extern "C" void moe_gemm_wmma(
             // we use smaller M_tile and larger N_tile for decoding
             LAUNCH_MOE_WMMA(half, 8, 32, 1)
         }
-#ifndef NO_BF16_KERNEL
+#endif
     } else if (data_type == 1) { // bfloat16
 #if __CUDA_ARCH__ >= 800
         if (is_prefill) {
@@ -326,5 +326,4 @@ extern "C" void moe_gemm_wmma(
         }
 #endif
     }
-#endif
 }
