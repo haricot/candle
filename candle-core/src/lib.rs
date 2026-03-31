@@ -109,6 +109,9 @@ pub use tensor::{Tensor, TensorId};
 pub use variable::Var;
 
 #[cfg(feature = "cuda")]
+pub use candle_kernels as kernels;
+
+#[cfg(feature = "cuda")]
 pub use cuda_backend as cuda;
 
 #[cfg(not(feature = "cuda"))]

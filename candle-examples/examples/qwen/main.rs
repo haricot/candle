@@ -15,7 +15,7 @@ use candle_transformers::models::qwen3_moe::{Config as ConfigMoe3, ModelForCausa
 use candle::{DType, Device, Tensor};
 use candle_examples::token_output_stream::TokenOutputStream;
 use candle_nn::VarBuilder;
-use candle_transformers::generation::LogitsProcessor;
+use candle_transformers::generation::{LogitsProcessor, Sampling};
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use tokenizers::Tokenizer;
 
@@ -54,11 +54,22 @@ impl TextGeneration {
         seed: u64,
         temp: Option<f64>,
         top_p: Option<f64>,
+        top_k: Option<usize>,
         repeat_penalty: f32,
         repeat_last_n: usize,
         device: &Device,
     ) -> Self {
-        let logits_processor = LogitsProcessor::new(seed, temp, top_p);
+        let temperature = temp.and_then(|v| if v < 1e-7 { None } else { Some(v) });
+        let sampling = match temperature {
+            None => Sampling::ArgMax,
+            Some(temperature) => match (top_k, top_p) {
+                (Some(k), Some(p)) => Sampling::TopKThenTopP { k, p, temperature },
+                (Some(k), None) => Sampling::TopK { k, temperature },
+                (None, Some(p)) => Sampling::TopP { p, temperature },
+                (None, None) => Sampling::All { temperature },
+            },
+        };
+        let logits_processor = LogitsProcessor::from_sampling(seed, sampling);
         Self {
             model,
             tokenizer: TokenOutputStream::new(tokenizer),
@@ -95,12 +106,40 @@ impl TextGeneration {
             Some(token) => token,
             None => anyhow::bail!("cannot find the <|im_end|> token"),
         };
+        let prompt_len = tokens.len();
+        let start_prompt_processing = std::time::Instant::now();
+        let input = Tensor::new(tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+        let logits = self
+            .model
+            .forward(&input, 0)?
+            .squeeze(0)?
+            .squeeze(0)?
+            .to_dtype(DType::F32)?;
+        let prompt_dt = start_prompt_processing.elapsed();
+        let logits = if self.repeat_penalty == 1. {
+            logits
+        } else {
+            let start_at = tokens.len().saturating_sub(self.repeat_last_n);
+            candle_transformers::utils::apply_repeat_penalty(
+                &logits,
+                self.repeat_penalty,
+                &tokens[start_at..],
+            )?
+        };
+        let mut next_token = self.logits_processor.sample(&logits)?;
+        tokens.push(next_token);
+        generated_tokens += 1;
+        if next_token != eos_token && next_token != eos_token2 {
+            if let Some(t) = self.tokenizer.next_token(next_token)? {
+                print!("{t}");
+                std::io::stdout().flush()?;
+            }
+        }
+
         let start_gen = std::time::Instant::now();
-        for index in 0..sample_len {
-            let context_size = if index > 0 { 1 } else { tokens.len() };
-            let start_pos = tokens.len().saturating_sub(context_size);
-            let ctxt = &tokens[start_pos..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
+        while generated_tokens < sample_len && next_token != eos_token && next_token != eos_token2 {
+            let start_pos = tokens.len().saturating_sub(1);
+            let input = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
             let logits = self.model.forward(&input, start_pos)?;
             let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
             let logits = if self.repeat_penalty == 1. {
@@ -113,8 +152,7 @@ impl TextGeneration {
                     &tokens[start_at..],
                 )?
             };
-
-            let next_token = self.logits_processor.sample(&logits)?;
+            next_token = self.logits_processor.sample(&logits)?;
             tokens.push(next_token);
             generated_tokens += 1;
             if next_token == eos_token || next_token == eos_token2 {
@@ -131,7 +169,11 @@ impl TextGeneration {
         }
         std::io::stdout().flush()?;
         println!(
-            "\n{generated_tokens} tokens generated ({:.2} token/s)",
+            "\n{prompt_len} prompt tokens processed ({:.2} token/s)",
+            prompt_len as f64 / prompt_dt.as_secs_f64(),
+        );
+        println!(
+            "{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
         Ok(())
@@ -199,9 +241,17 @@ struct Args {
     #[arg(long)]
     top_p: Option<f64>,
 
+    /// Restrict sampling to the k most likely next tokens.
+    #[arg(long)]
+    top_k: Option<usize>,
+
     /// The seed to use when generating random samples.
     #[arg(long, default_value_t = 299792458)]
     seed: u64,
+
+    /// Data type for model weights and activations: auto, f16, bf16, or f32.
+    #[arg(long, default_value = "auto")]
+    dtype: String,
 
     /// The length of the sample to generate (in tokens).
     #[arg(long, short = 'n', default_value_t = 10000)]
@@ -250,14 +300,90 @@ impl Args {
                 | WhichModel::W3MoeA3b
         ) && !self.no_chat_template
     }
+
+    fn is_qwen3(&self) -> bool {
+        matches!(
+            self.model,
+            WhichModel::W3_0_6b
+                | WhichModel::W3_1_7b
+                | WhichModel::W3_4b
+                | WhichModel::W3_8b
+                | WhichModel::W3MoeA3b
+        )
+    }
+
+    fn sampling_settings(&self) -> SamplingSettings {
+        let greedy = matches!(self.temperature, Some(v) if v < 1e-7);
+        if greedy || !self.is_qwen3() {
+            return SamplingSettings {
+                temperature: self.temperature,
+                top_p: self.top_p,
+                top_k: self.top_k,
+                used_qwen3_defaults: false,
+            };
+        }
+
+        let (default_temp, default_top_p, default_top_k) = if self.thinking {
+            (Some(0.6), Some(0.95), Some(20))
+        } else {
+            (Some(0.7), Some(0.8), Some(20))
+        };
+
+        SamplingSettings {
+            temperature: self.temperature.or(default_temp),
+            top_p: self.top_p.or(default_top_p),
+            top_k: self.top_k.or(default_top_k),
+            used_qwen3_defaults: self.temperature.is_none()
+                || self.top_p.is_none()
+                || self.top_k.is_none(),
+        }
+    }
 }
 
 fn format_prompt(prompt: &str, use_chat_template: bool, thinking: bool) -> String {
     if !use_chat_template {
         return prompt.to_string();
     }
-    let think_tag = if thinking { " /think" } else { " /no_think" };
-    format!("<|im_start|>user\n{prompt}{think_tag}<|im_end|>\n<|im_start|>assistant\n")
+
+    if thinking {
+        format!("<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n")
+    } else {
+        format!(
+            "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
+        )
+    }
+}
+
+struct SamplingSettings {
+    temperature: Option<f64>,
+    top_p: Option<f64>,
+    top_k: Option<usize>,
+    used_qwen3_defaults: bool,
+}
+
+impl SamplingSettings {
+    fn is_greedy(&self) -> bool {
+        match self.temperature {
+            None => true,
+            Some(v) => v < 1e-7,
+        }
+    }
+}
+
+fn parse_dtype(dtype: &str, device: &Device) -> Result<DType> {
+    match dtype {
+        "auto" => {
+            if device.is_cuda() || device.is_metal() {
+                Ok(DType::BF16)
+            } else {
+                Ok(DType::F32)
+            }
+        }
+        "f16" => Ok(DType::F16),
+        "bf16" => Ok(DType::BF16),
+        "f32" => Ok(DType::F32),
+        other => anyhow::bail!("unsupported dtype '{other}', use auto, f16, bf16, or f32"),
+    }
 }
 
 fn main() -> Result<()> {
@@ -280,16 +406,41 @@ fn main() -> Result<()> {
         candle::utils::with_f16c()
     );
     println!(
-        "temp: {:.2} repeat-penalty: {:.2} repeat-last-n: {}",
-        args.temperature.unwrap_or(0.),
-        args.repeat_penalty,
-        args.repeat_last_n
+        "repeat-penalty: {:.2} repeat-last-n: {}",
+        args.repeat_penalty, args.repeat_last_n
     );
 
     let start = std::time::Instant::now();
     let api = Api::new()?;
     let use_chat_template = args.should_use_chat_template();
     let thinking = args.thinking;
+    let sampling = args.sampling_settings();
+    println!(
+        "sampling: temp={} top-p={} top-k={}",
+        sampling
+            .temperature
+            .map(|v| format!("{v:.2}"))
+            .unwrap_or_else(|| "greedy".to_string()),
+        sampling
+            .top_p
+            .map(|v| format!("{v:.2}"))
+            .unwrap_or_else(|| "-".to_string()),
+        sampling
+            .top_k
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+    );
+    if sampling.used_qwen3_defaults {
+        println!(
+            "using Qwen3 recommended sampling defaults for {} mode",
+            if thinking { "thinking" } else { "non-thinking" }
+        );
+    }
+    if args.is_qwen3() && sampling.is_greedy() {
+        eprintln!(
+            "warning: Qwen3 degrades with greedy decoding, use --temperature 0.6 --top-p 0.95 --top-k 20 in thinking mode"
+        );
+    }
     let model_id = match args.model_id {
         Some(model_id) => model_id,
         None => {
@@ -370,11 +521,8 @@ fn main() -> Result<()> {
 
     let start = std::time::Instant::now();
     let device = candle_examples::device(args.cpu)?;
-    let dtype = if device.is_cuda() || device.is_metal() {
-        DType::BF16
-    } else {
-        DType::F32
-    };
+    let dtype = parse_dtype(&args.dtype, &device)?;
+    println!("dtype: {:?}", dtype);
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
     let model = match args.model {
         WhichModel::MoeA27b => {
@@ -401,8 +549,9 @@ fn main() -> Result<()> {
         model,
         tokenizer,
         args.seed,
-        args.temperature,
-        args.top_p,
+        sampling.temperature,
+        sampling.top_p,
+        sampling.top_k,
         args.repeat_penalty,
         args.repeat_last_n,
         &device,

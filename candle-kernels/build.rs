@@ -7,9 +7,9 @@ use std::path::PathBuf;
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=src/compatibility.cuh");
-    println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
-    println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
+    // println!("cargo::rerun-if-changed=src/compatibility.cuh");
+    // println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
+    // println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let arch = detect_compute_cap().unwrap_or_else(|_| cudaforge::GpuArch::new(0));
