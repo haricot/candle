@@ -4,7 +4,6 @@ use ir_caps::KernelBuilderExt;
 use std::env;
 use std::path::PathBuf;
 
-
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
     // println!("cargo::rerun-if-changed=src/compatibility.cuh");
@@ -31,8 +30,7 @@ fn main() -> Result<()> {
         .arg("-std=c++17")
         .arg("-O3");
 
-    builder = register_capabilities(builder, arch.base)
-        .emit_defines();
+    builder = register_capabilities(builder, arch.base).emit_defines();
 
     let mut moe_builder = KernelBuilder::new()
         .compute_cap(compute_cap)

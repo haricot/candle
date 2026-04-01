@@ -266,12 +266,7 @@ impl DecoderLayer {
         })
     }
 
-    fn forward(
-        &mut self,
-        x: &Tensor,
-        mask: Option<&Tensor>,
-        offset: usize,
-    ) -> Result<Tensor> {
+    fn forward(&mut self, x: &Tensor, mask: Option<&Tensor>, offset: usize) -> Result<Tensor> {
         let h = self.ln1.forward(x)?;
         let h = self.self_attn.forward(&h, mask, offset)?;
         let x = (x + h)?;
