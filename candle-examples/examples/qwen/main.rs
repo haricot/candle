@@ -10,8 +10,8 @@ use clap::Parser;
 use candle_transformers::models::qwen2::{Config as ConfigBase, ModelForCausalLM as ModelBase};
 use candle_transformers::models::qwen2_moe::{Config as ConfigMoe, Model as ModelMoe};
 use candle_transformers::models::qwen3::{Config as Config3, ModelForCausalLM as Model3};
-use candle_transformers::models::qwen3_moe::{Config as ConfigMoe3, ModelForCausalLM as ModelMoe3};
 use candle_transformers::models::qwen3_5::{Config as Config3_5, ModelForCausalLM as Model3_5};
+use candle_transformers::models::qwen3_moe::{Config as ConfigMoe3, ModelForCausalLM as ModelMoe3};
 
 use candle::{DType, Device, Tensor};
 use candle_examples::token_output_stream::TokenOutputStream;
@@ -330,6 +330,10 @@ impl Args {
         )
     }
 
+    fn supports_thinking_switch(&self) -> bool {
+        self.is_qwen3()
+    }
+
     fn sampling_settings(&self) -> SamplingSettings {
         let greedy = matches!(self.temperature, Some(v) if v < 1e-7);
         if greedy || !self.is_qwen3() {
@@ -358,12 +362,17 @@ impl Args {
     }
 }
 
-fn format_prompt(prompt: &str, use_chat_template: bool, thinking: bool) -> String {
+fn format_prompt(
+    prompt: &str,
+    use_chat_template: bool,
+    thinking: bool,
+    supports_thinking_switch: bool,
+) -> String {
     if !use_chat_template {
         return prompt.to_string();
     }
 
-    if thinking {
+    if !supports_thinking_switch || thinking {
         format!("<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n")
     } else {
         format!(
@@ -431,6 +440,7 @@ fn main() -> Result<()> {
     let start = std::time::Instant::now();
     let api = Api::new()?;
     let use_chat_template = args.should_use_chat_template();
+    let supports_thinking_switch = args.supports_thinking_switch();
     let thinking = args.thinking;
     let sampling = args.sampling_settings();
     println!(
@@ -565,7 +575,11 @@ fn main() -> Result<()> {
             let config: ConfigMoe3 = serde_json::from_slice(&std::fs::read(config_file)?)?;
             Model::Moe3(ModelMoe3::new(&config, vb)?)
         }
-        WhichModel::W3_5_0_8b | WhichModel::W3_5_2b | WhichModel::W3_5_4b | WhichModel::W3_5_9b | WhichModel::W3_5_27b => {
+        WhichModel::W3_5_0_8b
+        | WhichModel::W3_5_2b
+        | WhichModel::W3_5_4b
+        | WhichModel::W3_5_9b
+        | WhichModel::W3_5_27b => {
             let config: Config3_5 = serde_json::from_slice(&std::fs::read(config_file)?)?;
             Model::Base3_5(Model3_5::new(&config, vb)?)
         }
@@ -588,7 +602,12 @@ fn main() -> Result<()> {
         args.repeat_last_n,
         &device,
     );
-    let prompt = format_prompt(&args.prompt, use_chat_template, thinking);
+    let prompt = format_prompt(
+        &args.prompt,
+        use_chat_template,
+        thinking,
+        supports_thinking_switch,
+    );
     pipeline.run(&prompt, args.sample_len)?;
     Ok(())
 }

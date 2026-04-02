@@ -118,11 +118,19 @@ impl Args {
             Some(config) => std::path::PathBuf::from(config),
             None => {
                 let (repo, filename, revision) = match self.which {
-                    Which::W3_5_0_8b => ("unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf", "main"),
+                    Which::W3_5_0_8b => (
+                        "unsloth/Qwen3.5-0.8B-GGUF",
+                        "Qwen3.5-0.8B-Q4_K_M.gguf",
+                        "main",
+                    ),
                     Which::W3_5_2b => ("unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf", "main"),
                     Which::W3_5_4b => ("unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf", "main"),
                     Which::W3_5_9b => ("unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf", "main"),
-                    Which::W3_5_27b => ("unsloth/Qwen3.5-27B-GGUF", "Qwen3.5-27B-Q4_K_M.gguf", "main"),
+                    Which::W3_5_27b => (
+                        "unsloth/Qwen3.5-27B-GGUF",
+                        "Qwen3.5-27B-Q4_K_M.gguf",
+                        "main",
+                    ),
                 };
                 let api = hf_hub::api::sync::Api::new()?;
                 api.repo(hf_hub::Repo::with_revision(
@@ -260,7 +268,11 @@ fn main() -> anyhow::Result<()> {
         std::io::stdout().flush()?;
     }
 
-    let eos_token = *tos.tokenizer().get_vocab(true).get("<|im_end|>").unwrap_or(&0);
+    let eos_token = *tos
+        .tokenizer()
+        .get_vocab(true)
+        .get("<|im_end|>")
+        .unwrap_or(&0);
 
     let start_post_prompt = std::time::Instant::now();
 
