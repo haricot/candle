@@ -227,6 +227,8 @@ enum WhichModel {
     W3_5_9b,
     #[value(name = "3.5-27b")]
     W3_5_27b,
+    #[value(name = "omnicoder-9b")]
+    OmniCoder9b,
 }
 
 #[derive(Parser, Debug)]
@@ -316,6 +318,7 @@ impl Args {
                 | WhichModel::W3_5_4b
                 | WhichModel::W3_5_9b
                 | WhichModel::W3_5_27b
+                | WhichModel::OmniCoder9b
         ) && !self.no_chat_template
     }
 
@@ -330,18 +333,47 @@ impl Args {
         )
     }
 
+    fn is_omnicoder(&self) -> bool {
+        matches!(self.model, WhichModel::OmniCoder9b)
+    }
+
     fn supports_thinking_switch(&self) -> bool {
-        self.is_qwen3()
+        self.is_qwen3() || self.is_omnicoder()
+    }
+
+    fn uses_prefilled_think_tag(&self) -> bool {
+        self.is_omnicoder()
     }
 
     fn sampling_settings(&self) -> SamplingSettings {
         let greedy = matches!(self.temperature, Some(v) if v < 1e-7);
-        if greedy || !self.is_qwen3() {
+        if greedy {
             return SamplingSettings {
                 temperature: self.temperature,
                 top_p: self.top_p,
                 top_k: self.top_k,
-                used_qwen3_defaults: false,
+                defaults_message: None,
+            };
+        }
+
+        if self.is_omnicoder() {
+            let used_recommended_defaults =
+                self.temperature.is_none() || self.top_p.is_none() || self.top_k.is_none();
+            return SamplingSettings {
+                temperature: self.temperature.or(Some(0.6)),
+                top_p: self.top_p.or(Some(0.95)),
+                top_k: self.top_k.or(Some(20)),
+                defaults_message: used_recommended_defaults
+                    .then_some("OmniCoder recommended sampling defaults"),
+            };
+        }
+
+        if !self.is_qwen3() {
+            return SamplingSettings {
+                temperature: self.temperature,
+                top_p: self.top_p,
+                top_k: self.top_k,
+                defaults_message: None,
             };
         }
 
@@ -350,14 +382,23 @@ impl Args {
         } else {
             (Some(0.7), Some(0.8), Some(20))
         };
+        let used_recommended_defaults =
+            self.temperature.is_none() || self.top_p.is_none() || self.top_k.is_none();
+        let defaults_message = if used_recommended_defaults {
+            Some(if self.thinking {
+                "Qwen3 recommended sampling defaults for thinking mode"
+            } else {
+                "Qwen3 recommended sampling defaults for non-thinking mode"
+            })
+        } else {
+            None
+        };
 
         SamplingSettings {
             temperature: self.temperature.or(default_temp),
             top_p: self.top_p.or(default_top_p),
             top_k: self.top_k.or(default_top_k),
-            used_qwen3_defaults: self.temperature.is_none()
-                || self.top_p.is_none()
-                || self.top_k.is_none(),
+            defaults_message,
         }
     }
 }
@@ -367,12 +408,17 @@ fn format_prompt(
     use_chat_template: bool,
     thinking: bool,
     supports_thinking_switch: bool,
+    uses_prefilled_think_tag: bool,
 ) -> String {
     if !use_chat_template {
         return prompt.to_string();
     }
 
-    if !supports_thinking_switch || thinking {
+    if !supports_thinking_switch {
+        format!("<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n")
+    } else if thinking && uses_prefilled_think_tag {
+        format!("<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n")
+    } else if thinking {
         format!("<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n")
     } else {
         format!(
@@ -385,7 +431,7 @@ struct SamplingSettings {
     temperature: Option<f64>,
     top_p: Option<f64>,
     top_k: Option<usize>,
-    used_qwen3_defaults: bool,
+    defaults_message: Option<&'static str>,
 }
 
 impl SamplingSettings {
@@ -441,6 +487,7 @@ fn main() -> Result<()> {
     let api = Api::new()?;
     let use_chat_template = args.should_use_chat_template();
     let supports_thinking_switch = args.supports_thinking_switch();
+    let uses_prefilled_think_tag = args.uses_prefilled_think_tag();
     let thinking = args.thinking;
     let sampling = args.sampling_settings();
     println!(
@@ -458,45 +505,45 @@ fn main() -> Result<()> {
             .map(|v| v.to_string())
             .unwrap_or_else(|| "-".to_string()),
     );
-    if sampling.used_qwen3_defaults {
-        println!(
-            "using Qwen3 recommended sampling defaults for {} mode",
-            if thinking { "thinking" } else { "non-thinking" }
-        );
+    if let Some(defaults_message) = sampling.defaults_message {
+        println!("using {defaults_message}");
     }
     if args.is_qwen3() && sampling.is_greedy() {
         eprintln!(
             "warning: Qwen3 degrades with greedy decoding, use --temperature 0.6 --top-p 0.95 --top-k 20 in thinking mode"
         );
     }
+    if args.is_omnicoder() && sampling.is_greedy() {
+        eprintln!(
+            "warning: OmniCoder-9B degrades with greedy decoding, use --temperature 0.6 --top-p 0.95 --top-k 20"
+        );
+    }
     let model_id = match args.model_id {
         Some(model_id) => model_id,
-        None => {
-            let (version, size) = match args.model {
-                WhichModel::W2_0_5b => ("2", "0.5B"),
-                WhichModel::W2_1_5b => ("2", "1.5B"),
-                WhichModel::W2_7b => ("2", "7B"),
-                WhichModel::W2_72b => ("2", "72B"),
-                WhichModel::W0_5b => ("1.5", "0.5B"),
-                WhichModel::W1_8b => ("1.5", "1.8B"),
-                WhichModel::W4b => ("1.5", "4B"),
-                WhichModel::W7b => ("1.5", "7B"),
-                WhichModel::W14b => ("1.5", "14B"),
-                WhichModel::W72b => ("1.5", "72B"),
-                WhichModel::MoeA27b => ("1.5", "MoE-A2.7B"),
-                WhichModel::W3_0_6b => ("3", "0.6B"),
-                WhichModel::W3_1_7b => ("3", "1.7B"),
-                WhichModel::W3_4b => ("3", "4B"),
-                WhichModel::W3_8b => ("3", "8B"),
-                WhichModel::W3MoeA3b => ("3", "30B-A3B"),
-                WhichModel::W3_5_0_8b => ("3.5", "0.8B"),
-                WhichModel::W3_5_2b => ("3.5", "2B"),
-                WhichModel::W3_5_4b => ("3.5", "4B"),
-                WhichModel::W3_5_9b => ("3.5", "9B"),
-                WhichModel::W3_5_27b => ("3.5", "27B"),
-            };
-            format!("Qwen/Qwen{version}-{size}")
-        }
+        None => match args.model {
+            WhichModel::W2_0_5b => "Qwen/Qwen2-0.5B".to_string(),
+            WhichModel::W2_1_5b => "Qwen/Qwen2-1.5B".to_string(),
+            WhichModel::W2_7b => "Qwen/Qwen2-7B".to_string(),
+            WhichModel::W2_72b => "Qwen/Qwen2-72B".to_string(),
+            WhichModel::W0_5b => "Qwen/Qwen1.5-0.5B".to_string(),
+            WhichModel::W1_8b => "Qwen/Qwen1.5-1.8B".to_string(),
+            WhichModel::W4b => "Qwen/Qwen1.5-4B".to_string(),
+            WhichModel::W7b => "Qwen/Qwen1.5-7B".to_string(),
+            WhichModel::W14b => "Qwen/Qwen1.5-14B".to_string(),
+            WhichModel::W72b => "Qwen/Qwen1.5-72B".to_string(),
+            WhichModel::MoeA27b => "Qwen/Qwen1.5-MoE-A2.7B".to_string(),
+            WhichModel::W3_0_6b => "Qwen/Qwen3-0.6B".to_string(),
+            WhichModel::W3_1_7b => "Qwen/Qwen3-1.7B".to_string(),
+            WhichModel::W3_4b => "Qwen/Qwen3-4B".to_string(),
+            WhichModel::W3_8b => "Qwen/Qwen3-8B".to_string(),
+            WhichModel::W3MoeA3b => "Qwen/Qwen3-30B-A3B".to_string(),
+            WhichModel::W3_5_0_8b => "Qwen/Qwen3.5-0.8B".to_string(),
+            WhichModel::W3_5_2b => "Qwen/Qwen3.5-2B".to_string(),
+            WhichModel::W3_5_4b => "Qwen/Qwen3.5-4B".to_string(),
+            WhichModel::W3_5_9b => "Qwen/Qwen3.5-9B".to_string(),
+            WhichModel::W3_5_27b => "Qwen/Qwen3.5-27B".to_string(),
+            WhichModel::OmniCoder9b => "Tesslate/OmniCoder-9B".to_string(),
+        },
     };
     let repo = api.repo(Repo::with_revision(
         model_id,
@@ -531,7 +578,8 @@ fn main() -> Result<()> {
             | WhichModel::W2_0_5b
             | WhichModel::W2_1_5b
             | WhichModel::W1_8b
-            | WhichModel::W3_0_6b => {
+            | WhichModel::W3_0_6b
+            | WhichModel::OmniCoder9b => {
                 vec![repo.get("model.safetensors")?]
             }
             WhichModel::W4b
@@ -579,7 +627,8 @@ fn main() -> Result<()> {
         | WhichModel::W3_5_2b
         | WhichModel::W3_5_4b
         | WhichModel::W3_5_9b
-        | WhichModel::W3_5_27b => {
+        | WhichModel::W3_5_27b
+        | WhichModel::OmniCoder9b => {
             let config: Config3_5 = serde_json::from_slice(&std::fs::read(config_file)?)?;
             Model::Base3_5(Model3_5::new(&config, vb)?)
         }
@@ -607,6 +656,7 @@ fn main() -> Result<()> {
         use_chat_template,
         thinking,
         supports_thinking_switch,
+        uses_prefilled_think_tag,
     );
     pipeline.run(&prompt, args.sample_len)?;
     Ok(())

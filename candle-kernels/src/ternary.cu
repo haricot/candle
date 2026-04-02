@@ -38,7 +38,7 @@ WHERE_OP(__nv_bfloat16, uint32_t, where_u32_bf16)
 WHERE_OP(__nv_bfloat16, uint8_t, where_u8_bf16)
 #endif
 
-#if HAS_FP8 || defined(ALLOW_LEGACY_FP8)
+#if __CUDA_ARCH__ >= 890 || defined(ALLOW_LEGACY_FP8)
 WHERE_OP(__nv_fp8_e4m3, int16_t, where_i16_fp8_e4m3)
 WHERE_OP(__nv_fp8_e4m3, int32_t, where_i32_fp8_e4m3)
 WHERE_OP(__nv_fp8_e4m3, int64_t, where_i64_fp8_e4m3)
