@@ -21,16 +21,21 @@ pub use error::{CudaError, WrapErr};
 pub use utils::{Map1, Map1Any, Map2, Map2Any, Map2InPlace, Map3, S};
 
 #[cfg(feature = "cudnn")]
-fn is_cudnn_arch_mismatch(err: &crate::Error) -> bool {
+fn is_cudnn_conv1d_fallback_error(err: &crate::Error) -> bool {
     use cudarc::cudnn::{sys::cudnnStatus_t, CudnnError};
 
     match err {
         crate::Error::WithBacktrace { inner, .. }
         | crate::Error::Context { inner, .. }
-        | crate::Error::WithPath { inner, .. } => is_cudnn_arch_mismatch(inner),
-        crate::Error::Cuda(inner) => inner
-            .downcast_ref::<CudnnError>()
-            .is_some_and(|err| err.0 == cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH),
+        | crate::Error::WithPath { inner, .. } => is_cudnn_conv1d_fallback_error(inner),
+        crate::Error::Cuda(inner) => inner.downcast_ref::<CudnnError>().is_some_and(|err| {
+            matches!(
+                err.0,
+                cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH
+                    | cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED
+                    | cudnnStatus_t::CUDNN_STATUS_EXECUTION_FAILED
+            )
+        }),
         _ => false,
     }
 }
@@ -1909,7 +1914,7 @@ impl BackendStorage for CudaStorage {
             Ok(slice)
         })() {
             Ok(slice) => slice,
-            Err(err) if is_cudnn_arch_mismatch(&err) => {
+            Err(err) if is_cudnn_conv1d_fallback_error(&err) => {
                 Conv1D(params).map(&self.slice, inp_l, &kernel.slice, kernel_l, &device)?
             }
             Err(err) => return Err(err),
