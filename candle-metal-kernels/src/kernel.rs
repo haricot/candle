@@ -1,6 +1,6 @@
 use crate::source::{
     AFFINE, BINARY, CAST, CONV, FILL, GEMV, INDEXING, MLX_GEMM, MLX_SORT, QUANTIZED, RANDOM,
-    REDUCE, SDPA, SORT, TERNARY, UNARY, TURBOQUANT_MSE,
+    REDUCE, SDPA, SORT, TERNARY, TURBOQUANT_MSE, UNARY,
 };
 use crate::utils::get_env_bool;
 use crate::{

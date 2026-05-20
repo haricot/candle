@@ -1,6 +1,6 @@
 use crate::utils::EncoderProvider;
 use crate::{set_params, Buffer, ComputeCommandEncoder, Device, Kernels, MetalKernelError, Source};
-use objc2_metal::{MTLSize};
+use objc2_metal::MTLSize;
 
 fn divide(m: usize, b: usize) -> usize {
     (m + b - 1) / b
@@ -67,7 +67,6 @@ pub fn call_turboquant_mse_centroid_dot(
             batch_u32
         )
     );
-
 
     let n_row_groups = divide(n_out, N_DST * N_SIMDGROUP);
     let thread_groups_count = MTLSize {
@@ -151,7 +150,6 @@ pub fn call_turboquant_mse_fused_hadamard(
         )
     );
 
-
     // Threadgroup shared memory for the input (d floats)
     encoder.set_threadgroup_memory_length(0, d * 4);
 
@@ -220,7 +218,6 @@ pub fn call_turboquant_qjl_correction(
             batch_u32
         )
     );
-
 
     let n_row_groups = divide(n_out, N_DST * N_SIMDGROUP);
     let thread_groups_count = MTLSize {
