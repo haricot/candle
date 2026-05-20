@@ -12,6 +12,8 @@ pub mod reduce;
 pub mod sdpa;
 pub mod sort;
 pub mod ternary;
+pub mod turboquant_mse;
+pub use turboquant_mse::*;
 pub mod unary;
 
 pub use affine::*;
