@@ -1,6 +1,6 @@
 use crate::utils::EncoderProvider;
 use crate::{set_params, Buffer, ComputeCommandEncoder, Device, Kernels, MetalKernelError, Source};
-use objc2_metal::{MTLResourceUsage, MTLSize};
+use objc2_metal::{MTLSize};
 
 fn divide(m: usize, b: usize) -> usize {
     (m + b - 1) / b
@@ -68,11 +68,6 @@ pub fn call_turboquant_mse_centroid_dot(
         )
     );
 
-    encoder.use_resource(x_rot, MTLResourceUsage::Read);
-    encoder.use_resource(indices, MTLResourceUsage::Read);
-    encoder.use_resource(norms, MTLResourceUsage::Read);
-    encoder.use_resource(centroids, MTLResourceUsage::Read);
-    encoder.use_resource(output, MTLResourceUsage::Write);
 
     let n_row_groups = divide(n_out, N_DST * N_SIMDGROUP);
     let thread_groups_count = MTLSize {
@@ -156,12 +151,6 @@ pub fn call_turboquant_mse_fused_hadamard(
         )
     );
 
-    encoder.use_resource(x, MTLResourceUsage::Read);
-    encoder.use_resource(indices, MTLResourceUsage::Read);
-    encoder.use_resource(norms, MTLResourceUsage::Read);
-    encoder.use_resource(centroids, MTLResourceUsage::Read);
-    encoder.use_resource(signs, MTLResourceUsage::Read);
-    encoder.use_resource(output, MTLResourceUsage::Write);
 
     // Threadgroup shared memory for the input (d floats)
     encoder.set_threadgroup_memory_length(0, d * 4);
@@ -232,10 +221,6 @@ pub fn call_turboquant_qjl_correction(
         )
     );
 
-    encoder.use_resource(x_proj, MTLResourceUsage::Read);
-    encoder.use_resource(packed_signs, MTLResourceUsage::Read);
-    encoder.use_resource(scaled_rnorms, MTLResourceUsage::Read);
-    encoder.use_resource(output, MTLResourceUsage::Write);
 
     let n_row_groups = divide(n_out, N_DST * N_SIMDGROUP);
     let thread_groups_count = MTLSize {

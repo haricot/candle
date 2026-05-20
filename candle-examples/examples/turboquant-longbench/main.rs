@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unused_imports, clippy::all)]
 use anyhow::{bail, Error as E, Result};
 use candle::{DType, Tensor};
 use candle_nn::VarBuilder;
@@ -8,8 +9,6 @@ use std::io::Write;
 
 mod llama;
 mod mistral;
-
-
 
 const EOS_TOKEN: &str = "</s>";
 

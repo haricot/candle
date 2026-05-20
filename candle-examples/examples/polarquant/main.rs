@@ -104,7 +104,7 @@ fn main() -> Result<()> {
         let cosine = avg_cosine_similarity(&x_recon, &x)?;
 
         // Compressed size: b bits per coordinate -> ceil(b*d/8) bytes + 4 bytes for norm
-        let quant_bytes_per_vec = (bits * args.dim + 7) / 8 + 4;
+        let quant_bytes_per_vec = (bits * args.dim).div_ceil(8) + 4;
         let compression = f32_bytes_per_vec as f64 / quant_bytes_per_vec as f64;
 
         let time_ms = elapsed.as_secs_f64() * 1000.0;

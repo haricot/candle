@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unused_imports, clippy::all)]
 // An implementation of LLaMA https://github.com/facebookresearch/llama
 //
 // This is based on nanoGPT in a similar way to:
@@ -22,7 +23,6 @@ use hf_hub::{api::sync::Api, Repo, RepoType};
 use std::io::Write;
 
 mod model;
-
 
 use model::{Llama, LlamaConfig};
 

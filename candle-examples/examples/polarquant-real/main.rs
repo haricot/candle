@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unused_imports, clippy::all)]
 //! TurboQuantMse Real-Model Benchmark (Qwen3)
 //!
 //! Loads a Qwen3 model from HuggingFace, runs F32 generation as baseline, then
@@ -111,7 +112,7 @@ impl Module for LinearLayer {
 
 enum KvCacheLayer {
     Plain(ConcatKvCache),
-    Quantized(QuantizedKvCache),
+    Quantized(Box<QuantizedKvCache>),
 }
 
 impl KvCacheLayer {
@@ -129,14 +130,14 @@ impl KvCacheLayer {
     }
 }
 
-struct MLP {
+struct Mlp {
     gate_proj: LinearLayer,
     up_proj: LinearLayer,
     down_proj: LinearLayer,
     act_fn: Activation,
 }
 
-impl MLP {
+impl Mlp {
     fn forward(&self, x: &Tensor) -> CResult<Tensor> {
         let lhs = self.act_fn.forward(&self.gate_proj.forward(x)?)?;
         let rhs = self.up_proj.forward(x)?;
@@ -217,7 +218,7 @@ impl Attention {
 
 struct Layer {
     attn: Attention,
-    mlp: MLP,
+    mlp: Mlp,
     ln1: candle_nn::RmsNorm,
     ln2: candle_nn::RmsNorm,
 }
@@ -227,7 +228,7 @@ impl Layer {
         let h = self.attn.forward(&self.ln1.forward(x)?, mask, offset)?;
         let x = (x + h)?;
         let h2 = self.mlp.forward(&self.ln2.forward(&x)?)?;
-        x + h2
+        Ok((x + h2)?)
     }
 }
 
@@ -330,20 +331,15 @@ impl BenchModel {
                 hidden_size,
                 rotary: rotary.clone(),
                 // Use quantized KV cache when requested
-                kv_cache: if quantize_kv && bits.is_some() {
-                    KvCacheLayer::Quantized(QuantizedKvCache::new(
-                        2,
-                        head_dim,
-                        bits.unwrap(),
-                        vb.dtype(),
-                        &device,
-                    )?)
+                kv_cache: if let (true, Some(b)) = (quantize_kv, bits) {
+                    let cache = QuantizedKvCache::new(2, head_dim, b, vb.dtype(), &device)?;
+                    KvCacheLayer::Quantized(Box::new(cache))
                 } else {
                     KvCacheLayer::Plain(ConcatKvCache::new(2))
                 },
             };
 
-            let mlp = MLP {
+            let mlp = Mlp {
                 gate_proj: make_mlp(cfg.hidden_size, cfg.intermediate_size, vb_m.pp("gate_proj"))?,
                 up_proj: make_mlp(cfg.hidden_size, cfg.intermediate_size, vb_m.pp("up_proj"))?,
                 down_proj: make_mlp(cfg.intermediate_size, cfg.hidden_size, vb_m.pp("down_proj"))?,
