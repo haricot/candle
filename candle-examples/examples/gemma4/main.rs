@@ -8,15 +8,18 @@ use anyhow::{Error as E, Result};
 use clap::Parser;
 
 use candle_transformers::models::gemma4::{
-    config::{Gemma4Config, Gemma4TextConfig},
+    config::{Gemma4AssistantConfig, Gemma4Config, Gemma4TextConfig},
     text::TextModel,
-    Model,
+    AssistantModel, Model,
 };
 
 use candle::{DType, Device, Tensor};
 use candle_examples::token_output_stream::TokenOutputStream;
 use candle_nn::VarBuilder;
-use candle_transformers::generation::{LogitsProcessor, Sampling};
+use candle_transformers::generation::{
+    speculative::{SpeculativeDecoder, SpeculativeModel},
+    LogitsProcessor, Sampling,
+};
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use tokenizers::Tokenizer;
 
@@ -24,6 +27,7 @@ use tokenizers::Tokenizer;
 enum ModelKind {
     TextOnly(TextModel),
     Multimodal(Model),
+    Speculative(SpeculativeDecoder),
 }
 
 struct TextGeneration {
@@ -83,6 +87,28 @@ impl TextGeneration {
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
+
+        if let ModelKind::Speculative(decoder) = &mut self.model {
+            let start_gen = std::time::Instant::now();
+            let eos_token_id = self.tokenizer.get_token("</s>");
+            let tokens = decoder.generate(&tokens, sample_len, eos_token_id, &self.device)?;
+            let dt = start_gen.elapsed();
+            for &t in tokens.iter() {
+                if let Some(t) = self.tokenizer.next_token(t)? {
+                    print!("{t}")
+                }
+            }
+            if let Some(rest) = self.tokenizer.decode_rest().map_err(E::msg)? {
+                print!("{rest}");
+            }
+            std::io::stdout().flush()?;
+            println!(
+                "\n{} tokens total ({:.2} token/s)",
+                tokens.len(),
+                tokens.len() as f64 / dt.as_secs_f64(),
+            );
+            return Ok(());
+        }
         for &t in tokens.iter() {
             if let Some(t) = self.tokenizer.next_token(t)? {
                 print!("{t}")
@@ -104,6 +130,7 @@ impl TextGeneration {
             let logits = match &mut self.model {
                 ModelKind::TextOnly(m) => m.forward(&input, start_pos)?,
                 ModelKind::Multimodal(m) => m.forward(&input, start_pos)?,
+                ModelKind::Speculative(_) => anyhow::bail!("Speculative generation should use run_speculative"),
             };
             let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
             let logits = if self.repeat_penalty == 1. {
@@ -193,6 +220,12 @@ struct Args {
     #[arg(long)]
     weight_files: Option<String>,
 
+    #[arg(long)]
+    assistant_model_id: Option<String>,
+
+    #[arg(long)]
+    assistant_weight_files: Option<String>,
+
     /// Load the multimodal model (vision + audio encoders).
     #[arg(long)]
     multimodal: bool,
@@ -248,7 +281,7 @@ fn main() -> Result<()> {
     let repo = api.repo(Repo::with_revision(
         model_id,
         RepoType::Model,
-        args.revision,
+        args.revision.clone(),
     ));
     let tokenizer_filename = match args.tokenizer_file {
         Some(file) => std::path::PathBuf::from(file),
@@ -308,6 +341,64 @@ fn main() -> Result<()> {
     };
 
     println!("loaded the model in {:?}", start.elapsed());
+
+    let model = if let Some(assistant_id) = args.assistant_model_id {
+        let assistant_repo = api.repo(Repo::with_revision(
+            assistant_id,
+            RepoType::Model,
+            args.revision.clone(),
+        ));
+        let assistant_filenames = match args.assistant_weight_files {
+            Some(files) => files
+                .split(',')
+                .map(std::path::PathBuf::from)
+                .collect::<Vec<_>>(),
+            None => {
+                match candle_examples::hub_load_safetensors(
+                    &assistant_repo,
+                    "model.safetensors.index.json",
+                ) {
+                    Ok(files) => files,
+                    Err(_) => vec![assistant_repo.get("model.safetensors")?],
+                }
+            }
+        };
+        let assistant_vb =
+            unsafe { VarBuilder::from_mmaped_safetensors(&assistant_filenames, dtype, &device)? };
+        let assistant_config: Gemma4AssistantConfig =
+            serde_json::from_slice(&std::fs::read(assistant_repo.get("config.json")?)?)?;
+        let assistant_model = AssistantModel::new(&assistant_config, assistant_vb)?;
+
+        let target_model: Box<dyn SpeculativeModel> = match model {
+            ModelKind::TextOnly(m) => Box::new(m),
+            ModelKind::Multimodal(m) => Box::new(m),
+            _ => anyhow::bail!("nested speculative models are not supported"),
+        };
+
+        let logits_processor = {
+            let temperature = args.temperature.unwrap_or(0.);
+            let sampling = if temperature <= 0. {
+                Sampling::ArgMax
+            } else {
+                match (args.top_k, args.top_p) {
+                    (None, None) => Sampling::All { temperature },
+                    (Some(k), None) => Sampling::TopK { k, temperature },
+                    (None, Some(p)) => Sampling::TopP { p, temperature },
+                    (Some(k), Some(p)) => Sampling::TopKThenTopP { k, p, temperature },
+                }
+            };
+            LogitsProcessor::from_sampling(args.seed, sampling)
+        };
+
+        ModelKind::Speculative(SpeculativeDecoder::new(
+            target_model,
+            Box::new(assistant_model),
+            logits_processor,
+            4, // Default max draft tokens
+        ))
+    } else {
+        model
+    };
 
     let mut pipeline = TextGeneration::new(
         model,

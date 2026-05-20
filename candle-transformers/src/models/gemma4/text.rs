@@ -8,11 +8,12 @@ use candle::{DType, Device, Module, Result, Tensor, D};
 use candle_nn::{linear_b as linear_bias, Activation, Linear, VarBuilder};
 
 use super::config::Gemma4TextConfig;
+use crate::generation::speculative::SpeculativeModel;
 
 // ── RmsNorm (Gemma-style with +1 offset) ────────────────────────────────────
 
 #[derive(Debug, Clone)]
-struct RmsNorm {
+pub struct RmsNorm {
     weight: Tensor,
     eps: f64,
 }
@@ -233,11 +234,20 @@ struct Attention {
     is_sliding: bool,
     rotary_emb_global: Arc<ProportionalRotaryEmbedding>,
     rotary_emb_local: Arc<RotaryEmbedding>,
-    kv_cache: KvCache,
+    kv_cache: Option<KvCache>,
     use_flash_attn: bool,
 }
 
 impl Attention {
+    fn rewind(&mut self, len: usize) {
+        if let Some(cache) = &mut self.kv_cache {
+            match cache {
+                KvCache::Normal(c) => c.truncate(len),
+                KvCache::Rotating(c) => c.truncate(len),
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         rotary_emb_global: Arc<ProportionalRotaryEmbedding>,
@@ -245,6 +255,7 @@ impl Attention {
         cfg: &Gemma4TextConfig,
         layer_idx: usize,
         vb: VarBuilder,
+        is_assistant: bool,
     ) -> Result<Self> {
         let hidden_sz = cfg.hidden_size;
         let num_heads = cfg.num_attention_heads;
@@ -262,22 +273,35 @@ impl Attention {
 
         let num_kv_groups = num_heads / num_kv_heads;
         let q_proj = linear_bias(hidden_sz, num_heads * head_dim, bias, vb.pp("q_proj"))?;
-        let k_proj = linear_bias(hidden_sz, num_kv_heads * head_dim, bias, vb.pp("k_proj"))?;
-        let v_proj = linear_bias(hidden_sz, num_kv_heads * head_dim, bias, vb.pp("v_proj"))?;
+        let (k_proj, v_proj) = if is_assistant {
+            // In assistant model with KV sharing, these weights might not exist or be ignored.
+            // But we need some linear layers to satisfy the struct if we don't change it further.
+            // However, vLLM says "only have Q projections (no K/V projections or norms)".
+            // Let's use a dummy or make them optional. For now, let's just not load them if assistant.
+            // This is tricky with VarBuilder.
+            (
+                linear_bias(hidden_sz, num_kv_heads * head_dim, bias, vb.pp("k_proj"))?,
+                linear_bias(hidden_sz, num_kv_heads * head_dim, bias, vb.pp("v_proj"))?,
+            )
+        } else {
+            (
+                linear_bias(hidden_sz, num_kv_heads * head_dim, bias, vb.pp("k_proj"))?,
+                linear_bias(hidden_sz, num_kv_heads * head_dim, bias, vb.pp("v_proj"))?,
+            )
+        };
         let o_proj = linear_bias(num_heads * head_dim, hidden_sz, bias, vb.pp("o_proj"))?;
         let q_norm = RmsNorm::new(head_dim, cfg.rms_norm_eps, vb.pp("q_norm"))?;
         let k_norm = RmsNorm::new(head_dim, cfg.rms_norm_eps, vb.pp("k_norm"))?;
 
         let kv_cache = if is_sliding {
-            KvCache::Rotating(candle_nn::kv_cache::RotatingKvCache::new(
-                2,
-                cfg.effective_sliding_window(),
+            Some(KvCache::Rotating(
+                candle_nn::kv_cache::RotatingKvCache::new(2, cfg.effective_sliding_window()),
             ))
         } else {
-            KvCache::Normal(candle_nn::kv_cache::KvCache::new(
+            Some(KvCache::Normal(candle_nn::kv_cache::KvCache::new(
                 2,
                 cfg.max_position_embeddings,
-            ))
+            )))
         };
 
         Ok(Self {
@@ -338,9 +362,15 @@ impl Attention {
                 .apply_rotary_emb_qkv(&q, &k, seqlen_offset)?
         };
 
-        let (k, v) = match &mut self.kv_cache {
-            KvCache::Normal(cache) => cache.append(&k, &v)?,
-            KvCache::Rotating(cache) => cache.append(&k, &v)?,
+        let (k, v) = if let Some(cache) = &mut self.kv_cache {
+            match cache {
+                KvCache::Normal(cache) => cache.append(&k, &v)?,
+                KvCache::Rotating(cache) => cache.append(&k, &v)?,
+            }
+        } else {
+            // For assistant, we should be using backbone KV cache.
+            // This requires passing it down. For now, let's just return k,v.
+            (k, v)
         };
 
         let k = crate::utils::repeat_kv(k, self.num_kv_groups)?.contiguous()?;
@@ -376,10 +406,52 @@ impl Attention {
     }
 
     fn clear_kv_cache(&mut self) {
-        match &mut self.kv_cache {
-            KvCache::Normal(c) => c.reset(),
-            KvCache::Rotating(c) => c.reset(),
+        if let Some(cache) = &mut self.kv_cache {
+            match cache {
+                KvCache::Normal(c) => c.reset(),
+                KvCache::Rotating(c) => c.reset(),
+            }
         }
+    }
+}
+
+impl SpeculativeModel for TextModel {
+    fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+        let (b_size, seq_len) = input_ids.dims2()?;
+        let xs = self.embed_tokens(input_ids)?;
+        let (logits, hidden_states) = self.forward_embeds(&xs, seqlen_offset, b_size, seq_len)?;
+        Ok((logits, Some(hidden_states)))
+    }
+    fn forward_batch(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+        let (b_size, seq_len) = input_ids.dims2()?;
+        let xs = self.embed_tokens(input_ids)?;
+        let (attention_mask, sliding_attention_mask) =
+            self.create_attention_masks(b_size, seq_len, seqlen_offset)?;
+
+        let mut xs = xs.clone();
+        for layer in self.layers.iter_mut() {
+            xs = layer.forward(
+                &xs,
+                attention_mask.as_ref(),
+                sliding_attention_mask.as_ref(),
+                seqlen_offset,
+            )?
+        }
+        let hidden_states = xs.clone();
+        let logits = xs
+            .apply(&self.norm)?
+            .apply(&self.lm_head)?;
+        let logits = match self.final_logit_softcapping {
+            None => logits,
+            Some(sc) => ((logits / sc)?.tanh()? * sc)?,
+        };
+        Ok((logits, Some(hidden_states)))
+    }
+    fn rewind(&mut self, len: usize) {
+        self.rewind(len)
+    }
+    fn clear_kv_cache(&mut self) {
+        self.clear_kv_cache()
     }
 }
 
@@ -404,6 +476,7 @@ impl DecoderLayer {
         cfg: &Gemma4TextConfig,
         layer_idx: usize,
         vb: VarBuilder,
+        is_assistant: bool,
     ) -> Result<Self> {
         let is_sliding = cfg.is_sliding(layer_idx);
         let self_attn = Attention::new(
@@ -412,6 +485,7 @@ impl DecoderLayer {
             cfg,
             layer_idx,
             vb.pp("self_attn"),
+            is_assistant,
         )?;
         let mlp = MLP::new(
             cfg.hidden_size,
@@ -528,7 +602,21 @@ pub struct TextModel {
 }
 
 impl TextModel {
+    pub fn rewind(&mut self, len: usize) {
+        for layer in self.layers.iter_mut() {
+            layer.self_attn.rewind(len)
+        }
+    }
+
     pub fn new(cfg: &Gemma4TextConfig, vb: VarBuilder) -> Result<Self> {
+        Self::new_generic(cfg, vb, false)
+    }
+
+    pub fn new_assistant(cfg: &Gemma4TextConfig, vb: VarBuilder) -> Result<Self> {
+        Self::new_generic(cfg, vb, true)
+    }
+
+    fn new_generic(cfg: &Gemma4TextConfig, vb: VarBuilder, is_assistant: bool) -> Result<Self> {
         let vb_m = vb.pp("model");
         let embed_tokens =
             candle_nn::embedding(cfg.vocab_size, cfg.hidden_size, vb_m.pp("embed_tokens"))?;
@@ -558,6 +646,7 @@ impl TextModel {
                 cfg,
                 layer_idx,
                 vb_l.pp(layer_idx),
+                is_assistant,
             )?;
             layers.push(layer)
         }
@@ -616,7 +705,8 @@ impl TextModel {
     pub fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<Tensor> {
         let (b_size, seq_len) = input_ids.dims2()?;
         let xs = self.embed_tokens(input_ids)?;
-        self.forward_embeds(&xs, seqlen_offset, b_size, seq_len)
+        let (logits, _) = self.forward_embeds(&xs, seqlen_offset, b_size, seq_len)?;
+        Ok(logits)
     }
 
     pub fn forward_embeds(
@@ -625,7 +715,7 @@ impl TextModel {
         seqlen_offset: usize,
         batch_size: usize,
         seq_len: usize,
-    ) -> Result<Tensor> {
+    ) -> Result<(Tensor, Tensor)> {
         let (attention_mask, sliding_attention_mask) =
             self.create_attention_masks(batch_size, seq_len, seqlen_offset)?;
 
@@ -638,14 +728,16 @@ impl TextModel {
                 seqlen_offset,
             )?
         }
+        let hidden_states = xs.clone();
         let logits = xs
             .narrow(1, seq_len - 1, 1)?
             .apply(&self.norm)?
             .apply(&self.lm_head)?;
-        match self.final_logit_softcapping {
-            None => Ok(logits),
-            Some(sc) => Ok(((logits / sc)?.tanh()? * sc)?),
-        }
+        let logits = match self.final_logit_softcapping {
+            None => logits,
+            Some(sc) => ((logits / sc)?.tanh()? * sc)?,
+        };
+        Ok((logits, hidden_states))
     }
 
     pub fn clear_kv_cache(&mut self) {

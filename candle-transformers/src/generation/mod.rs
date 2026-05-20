@@ -3,6 +3,8 @@
 //! Functionality for modeling sampling strategies and logits processing in text generation
 //! with support for temperature-based sampling, top-k filtering, nucleus sampling (top-p),
 //! and combinations thereof.
+pub mod speculative;
+
 use candle::{DType, Error, Result, Tensor};
 use rand::{distr::Distribution, SeedableRng};
 
