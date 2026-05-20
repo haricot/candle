@@ -17,6 +17,8 @@ pub enum Sampling {
     GumbelSoftmax { temperature: f64 },
 }
 
+pub mod dflash;
+
 pub struct LogitsProcessor {
     rng: rand::rngs::StdRng,
     sampling: Sampling,
