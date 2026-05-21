@@ -106,8 +106,8 @@ impl<'a> DFlashGenerator<'a> {
             }
 
             // Add accepted tokens and the one corrective token from target
-            for i in 1..=accepted_count {
-                output_ids.push(block_output_ids[i]);
+            for block_id in block_output_ids.iter().take(accepted_count + 1).skip(1) {
+                output_ids.push(*block_id);
             }
             output_ids.push(posterior_tokens[accepted_count]);
 

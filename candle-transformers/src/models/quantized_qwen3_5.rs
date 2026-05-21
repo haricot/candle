@@ -373,7 +373,7 @@ impl GatedDeltaNetWeights {
             .conv1d_weight
             .reshape((1, self.conv_dim, self.conv_kernel_size))?;
         let conv_state = self.conv_state.as_mut().unwrap();
-        let conv_state_data = Tensor::cat(&[conv_state.as_ref(), mixed_qkv], 2)?;
+        let conv_state_data = Tensor::cat(&[conv_state, mixed_qkv], 2)?;
         *conv_state = conv_state_data.narrow(2, 1, self.conv_kernel_size - 1)?;
         conv_state_data
             .broadcast_mul(&weight)?
@@ -622,7 +622,7 @@ impl LayerWeights {
         hidden_size: usize,
     ) -> Result<Self> {
         let prefix = format!("blk.{layer_idx}");
-        let is_full_attention = (layer_idx + 1) % full_attention_interval == 0;
+        let is_full_attention = (layer_idx + 1).is_multiple_of(full_attention_interval);
 
         let token_mixer = if is_full_attention {
             TokenMixer::FullAttention(AttentionWeights::new(

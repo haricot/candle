@@ -209,7 +209,7 @@ impl Qwen3_5GatedDeltaNet {
             .weight()
             .reshape((1, self.conv_dim, self.conv_kernel_size))?;
         let conv_state = self.conv_state.as_mut().unwrap();
-        let conv_state_data = Tensor::cat(&[conv_state.as_ref(), mixed_qkv], 2)?;
+        let conv_state_data = Tensor::cat(&[conv_state, mixed_qkv], 2)?;
         *conv_state = conv_state_data.narrow(2, 1, self.conv_kernel_size - 1)?;
         conv_state_data
             .broadcast_mul(&weight)?
@@ -359,7 +359,7 @@ impl Qwen3_5GatedDeltaNet {
             )?;
             let padded_qkv = Tensor::cat(&[&padding, &mixed_qkv], 2)?;
             self.conv_state = Some(padded_qkv.narrow(2, seq_len, pad)?);
-            let out = padded_qkv.conv1d(&self.conv1d.weight(), 0, 1, 1, self.conv_dim)?;
+            let out = padded_qkv.conv1d(self.conv1d.weight(), 0, 1, 1, self.conv_dim)?;
             candle_nn::ops::silu(&out)?
         };
 
