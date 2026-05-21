@@ -1,7 +1,7 @@
-use candle::{Result, Tensor, D};
-use crate::models::qwen3_dflash::DFlashDraftModel;
-use crate::models::qwen3_5::ModelForCausalLM;
 use crate::generation::LogitsProcessor;
+use crate::models::qwen3_5::ModelForCausalLM;
+use crate::models::qwen3_dflash::DFlashDraftModel;
+use candle::{Result, Tensor, D};
 
 pub struct DFlashGenerator<'a> {
     draft: &'a mut DFlashDraftModel,
@@ -26,10 +26,7 @@ impl<'a> DFlashGenerator<'a> {
         self.logits_processor.sample(logits)
     }
 
-    fn extract_context_feature(
-        hidden_states: &[Tensor],
-        layer_ids: &[usize],
-    ) -> Result<Tensor> {
+    fn extract_context_feature(hidden_states: &[Tensor], layer_ids: &[usize]) -> Result<Tensor> {
         let offset = 1;
         let selected: Vec<Tensor> = layer_ids
             .iter()
@@ -73,23 +70,38 @@ impl<'a> DFlashGenerator<'a> {
                 use candle::Module;
                 // Initial draft noise embedding from the last accepted token
                 let last_token_tensor = Tensor::new(&[block_output_ids[0]], dev)?.unsqueeze(0)?;
-                let mut noise_embedding = self.target.base_model.embed_tokens.forward(&last_token_tensor)?;
+                let mut noise_embedding = self
+                    .target
+                    .base_model
+                    .embed_tokens
+                    .forward(&last_token_tensor)?;
 
                 for i in 1..block_size {
-                    let draft_out = self.draft.forward(target_hidden.as_ref().unwrap(), &noise_embedding, current_offset + i - 1)?;
+                    let draft_out = self.draft.forward(
+                        target_hidden.as_ref().unwrap(),
+                        &noise_embedding,
+                        current_offset + i - 1,
+                    )?;
                     let draft_logits = draft_out.apply(&self.target.lm_head)?;
                     let next_draft_token = self.sample(&draft_logits.squeeze(0)?.squeeze(0)?)?;
                     block_output_ids.push(next_draft_token);
 
                     // Update noise embedding for next draft step
-                    let next_draft_token_tensor = Tensor::new(&[next_draft_token], dev)?.unsqueeze(0)?;
-                    noise_embedding = self.target.base_model.embed_tokens.forward(&next_draft_token_tensor)?;
+                    let next_draft_token_tensor =
+                        Tensor::new(&[next_draft_token], dev)?.unsqueeze(0)?;
+                    noise_embedding = self
+                        .target
+                        .base_model
+                        .embed_tokens
+                        .forward(&next_draft_token_tensor)?;
                 }
             }
 
             // 3. Verify with target model
             let block_tensor = Tensor::new(block_output_ids.as_slice(), dev)?.unsqueeze(0)?;
-            let (target_logits, target_hidden_states) = self.target.forward_all(&block_tensor, current_offset, block_size > 1)?;
+            let (target_logits, target_hidden_states) =
+                self.target
+                    .forward_all(&block_tensor, current_offset, block_size > 1)?;
 
             let mut accepted_count = 0;
             let mut posterior_tokens = Vec::new();
@@ -98,7 +110,7 @@ impl<'a> DFlashGenerator<'a> {
                 let posterior_token = self.sample(&logits_i)?;
                 posterior_tokens.push(posterior_token);
 
-                if i < block_output_ids.len() - 1 && block_output_ids[i+1] == posterior_token {
+                if i < block_output_ids.len() - 1 && block_output_ids[i + 1] == posterior_token {
                     accepted_count += 1;
                 } else {
                     break;
@@ -116,10 +128,13 @@ impl<'a> DFlashGenerator<'a> {
 
             // 4. Update target_hidden for next block
             if block_size > 1 {
-                target_hidden = Some(Self::extract_context_feature(
-                    &target_hidden_states.unwrap(),
-                    &self.draft.target_layer_ids,
-                )?.narrow(1, 0, total_added)?);
+                target_hidden = Some(
+                    Self::extract_context_feature(
+                        &target_hidden_states.unwrap(),
+                        &self.draft.target_layer_ids,
+                    )?
+                    .narrow(1, 0, total_added)?,
+                );
             }
 
             if stop_token_ids.contains(output_ids.last().unwrap()) {

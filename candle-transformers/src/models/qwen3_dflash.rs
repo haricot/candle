@@ -65,8 +65,16 @@ impl Qwen3_5DFlashAttention {
             vb.pp("o_proj"),
         )?;
 
-        let q_norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(head_dim, cfg.text_config.rms_norm_eps, vb.pp("q_norm"))?;
-        let k_norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(head_dim, cfg.text_config.rms_norm_eps, vb.pp("k_norm"))?;
+        let q_norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(
+            head_dim,
+            cfg.text_config.rms_norm_eps,
+            vb.pp("q_norm"),
+        )?;
+        let k_norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(
+            head_dim,
+            cfg.text_config.rms_norm_eps,
+            vb.pp("k_norm"),
+        )?;
 
         let hidden_size = head_dim * cfg.text_config.num_attention_heads;
         let kv_cache = ConcatKvCache::new(2);
@@ -101,8 +109,12 @@ impl Qwen3_5DFlashAttention {
         let q = q
             .reshape((b, q_len, self.num_heads, self.head_dim))?
             .transpose(1, 2)?;
-        let q = self.q_norm.forward(&q.flatten(0, 2)?)?
-            .reshape((b, self.num_heads, q_len, self.head_dim))?;
+        let q = self.q_norm.forward(&q.flatten(0, 2)?)?.reshape((
+            b,
+            self.num_heads,
+            q_len,
+            self.head_dim,
+        ))?;
 
         let k_ctx = self.k_proj.forward(target_hidden)?;
         let k_noise = self.k_proj.forward(hidden_states)?;
@@ -116,8 +128,12 @@ impl Qwen3_5DFlashAttention {
             .reshape((b, ctx_len + q_len, self.num_kv_heads, self.head_dim))?
             .transpose(1, 2)?;
 
-        let k = self.k_norm.forward(&k.flatten(0, 2)?)?
-            .reshape((b, self.num_kv_heads, ctx_len + q_len, self.head_dim))?;
+        let k = self.k_norm.forward(&k.flatten(0, 2)?)?.reshape((
+            b,
+            self.num_kv_heads,
+            ctx_len + q_len,
+            self.head_dim,
+        ))?;
 
         let (q, k) = self.rotary_emb.apply(&q, &k, offset)?;
 
@@ -150,10 +166,18 @@ struct DFlashDecoderLayer {
 }
 
 impl DFlashDecoderLayer {
-    fn new(cfg: &Qwen3_5Config, rotary: Arc<Qwen3_5TextRotaryEmbedding>, vb: VarBuilder) -> Result<Self> {
+    fn new(
+        cfg: &Qwen3_5Config,
+        rotary: Arc<Qwen3_5TextRotaryEmbedding>,
+        vb: VarBuilder,
+    ) -> Result<Self> {
         let self_attn = Qwen3_5DFlashAttention::new(cfg, rotary, vb.pp("self_attn"))?;
         let mlp = crate::models::qwen3_5::Qwen3_5MLP::new(cfg, vb.pp("mlp"))?;
-        let input_layernorm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(cfg.text_config.hidden_size, cfg.text_config.rms_norm_eps, vb.pp("input_layernorm"))?;
+        let input_layernorm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(
+            cfg.text_config.hidden_size,
+            cfg.text_config.rms_norm_eps,
+            vb.pp("input_layernorm"),
+        )?;
         let ln2 = crate::models::qwen3_5::Qwen3_5RmsNorm::new(
             cfg.text_config.hidden_size,
             cfg.text_config.rms_norm_eps,
@@ -167,7 +191,12 @@ impl DFlashDecoderLayer {
         })
     }
 
-    fn forward(&mut self, hidden_states: &Tensor, target_hidden: &Tensor, offset: usize) -> Result<Tensor> {
+    fn forward(
+        &mut self,
+        hidden_states: &Tensor,
+        target_hidden: &Tensor,
+        offset: usize,
+    ) -> Result<Tensor> {
         let residual = hidden_states;
         let h = self.input_layernorm.forward(hidden_states)?;
         let h = self.self_attn.forward(&h, target_hidden, offset)?;
@@ -197,11 +226,19 @@ pub struct DFlashDraftModel {
 
 impl DFlashDraftModel {
     pub fn new(cfg: &Qwen3_5Config, dflash_cfg: &DFlashConfig, vb: VarBuilder) -> Result<Self> {
-        let rotary_emb = Arc::new(Qwen3_5TextRotaryEmbedding::new(vb.dtype(), cfg, vb.device())?);
+        let rotary_emb = Arc::new(Qwen3_5TextRotaryEmbedding::new(
+            vb.dtype(),
+            cfg,
+            vb.device(),
+        )?);
         let mut layers = Vec::with_capacity(cfg.text_config.num_hidden_layers);
         let vb_l = vb.pp("layers");
         for i in 0..cfg.text_config.num_hidden_layers {
-            layers.push(DFlashDecoderLayer::new(cfg, rotary_emb.clone(), vb_l.pp(i))?);
+            layers.push(DFlashDecoderLayer::new(
+                cfg,
+                rotary_emb.clone(),
+                vb_l.pp(i),
+            )?);
         }
 
         let fc = linear_no_bias(
@@ -209,8 +246,16 @@ impl DFlashDraftModel {
             cfg.text_config.hidden_size,
             vb.pp("fc"),
         )?;
-        let hidden_norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(cfg.text_config.hidden_size, cfg.text_config.rms_norm_eps, vb.pp("hidden_norm"))?;
-        let norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(cfg.text_config.hidden_size, cfg.text_config.rms_norm_eps, vb.pp("norm"))?;
+        let hidden_norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(
+            cfg.text_config.hidden_size,
+            cfg.text_config.rms_norm_eps,
+            vb.pp("hidden_norm"),
+        )?;
+        let norm = crate::models::qwen3_5::Qwen3_5RmsNorm::new(
+            cfg.text_config.hidden_size,
+            cfg.text_config.rms_norm_eps,
+            vb.pp("norm"),
+        )?;
 
         Ok(Self {
             layers,

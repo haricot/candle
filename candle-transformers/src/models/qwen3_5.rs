@@ -786,7 +786,8 @@ impl Model {
     }
 
     pub fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<Tensor> {
-        self.forward_all(input_ids, seqlen_offset, false).map(|(t, _)| t)
+        self.forward_all(input_ids, seqlen_offset, false)
+            .map(|(t, _)| t)
     }
 
     pub fn forward_all(
@@ -851,7 +852,8 @@ impl ModelForCausalLM {
     }
 
     pub fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<Tensor> {
-        self.forward_all(input_ids, seqlen_offset, false).map(|(t, _)| t)
+        self.forward_all(input_ids, seqlen_offset, false)
+            .map(|(t, _)| t)
     }
 
     pub fn forward_all(
@@ -861,7 +863,9 @@ impl ModelForCausalLM {
         return_hidden: bool,
     ) -> Result<(Tensor, Option<Vec<Tensor>>)> {
         let (_b_size, seq_len) = input_ids.dims2()?;
-        let (h, hidden_states) = self.base_model.forward_all(input_ids, seqlen_offset, return_hidden)?;
+        let (h, hidden_states) =
+            self.base_model
+                .forward_all(input_ids, seqlen_offset, return_hidden)?;
         let logits = h.narrow(1, seq_len - 1, 1)?.apply(&self.lm_head)?;
         Ok((logits, hidden_states))
     }
