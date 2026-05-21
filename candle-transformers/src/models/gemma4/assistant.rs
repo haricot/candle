@@ -1,10 +1,10 @@
 //! Gemma 4 assistant (MTP) model.
 
-use candle::{Result, Tensor, D};
-use candle_nn::{linear, Linear, VarBuilder};
 use super::config::Gemma4AssistantConfig;
 use super::text::TextModel;
 use crate::generation::speculative::SpeculativeModel;
+use candle::{Result, Tensor, D};
+use candle_nn::{linear, Linear, VarBuilder};
 
 pub struct AssistantModel {
     pub text_model: TextModel,
@@ -65,15 +65,22 @@ impl AssistantModel {
         let combined = Tensor::cat(&[backbone_hidden_states, backbone_hidden_states], D::Minus1)?;
         let inputs_embeds = combined.apply(&self.pre_projection)?;
 
-        let (logits, hidden_states) = self.text_model.forward_embeds(&inputs_embeds, seqlen_offset, b_sz, seq_len)?;
+        let (logits, hidden_states) =
+            self.text_model
+                .forward_embeds(&inputs_embeds, seqlen_offset, b_sz, seq_len)?;
         let next_backbone_hidden = hidden_states.apply(&self.post_projection)?;
         Ok((logits, next_backbone_hidden))
     }
 
-    pub fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Tensor)> {
+    pub fn forward(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Tensor)> {
         let (b_sz, seq_len) = input_ids.dims2()?;
         let inputs_embeds = self.text_model.embed_tokens(input_ids)?;
-        self.text_model.forward_embeds(&inputs_embeds, seqlen_offset, b_sz, seq_len)
+        self.text_model
+            .forward_embeds(&inputs_embeds, seqlen_offset, b_sz, seq_len)
     }
 
     pub fn clear_kv_cache(&mut self) {
@@ -82,12 +89,22 @@ impl AssistantModel {
 }
 
 impl SpeculativeModel for AssistantModel {
-    fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         let (logits, hidden_states) = self.forward(input_ids, seqlen_offset)?;
         Ok((logits, Some(hidden_states)))
     }
-    fn forward_mtp(&mut self, input_ids: &Tensor, backbone_hidden_states: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
-        let (logits, next_bh) = self.forward_mtp(input_ids, backbone_hidden_states, seqlen_offset)?;
+    fn forward_mtp(
+        &mut self,
+        input_ids: &Tensor,
+        backbone_hidden_states: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
+        let (logits, next_bh) =
+            self.forward_mtp(input_ids, backbone_hidden_states, seqlen_offset)?;
         Ok((logits, Some(next_bh)))
     }
     fn rewind(&mut self, len: usize) {

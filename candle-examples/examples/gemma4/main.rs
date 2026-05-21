@@ -130,7 +130,9 @@ impl TextGeneration {
             let logits = match &mut self.model {
                 ModelKind::TextOnly(m) => m.forward(&input, start_pos)?,
                 ModelKind::Multimodal(m) => m.forward(&input, start_pos)?,
-                ModelKind::Speculative(_) => anyhow::bail!("Speculative generation should use run_speculative"),
+                ModelKind::Speculative(_) => {
+                    anyhow::bail!("Speculative generation should use run_speculative")
+                }
             };
             let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
             let logits = if self.repeat_penalty == 1. {

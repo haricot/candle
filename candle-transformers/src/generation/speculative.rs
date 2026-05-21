@@ -1,19 +1,32 @@
-use candle::{Result, Tensor, Device};
 use crate::generation::LogitsProcessor;
+use candle::{Device, Result, Tensor};
 
 pub trait SpeculativeModel {
     /// Forward pass for a single token, returning logits and optionally hidden states.
-    fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)>;
+    fn forward(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)>;
 
     /// Parallel forward pass for multiple candidate tokens.
-    fn forward_batch(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward_batch(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         // Default implementation might be inefficient if it appends tokens one by one
         // Specialized implementations should use a batch forward pass.
         self.forward(input_ids, seqlen_offset)
     }
 
     /// Specialized forward for MTP assistants, taking backbone hidden states.
-    fn forward_mtp(&mut self, input_ids: &Tensor, backbone_hidden_states: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward_mtp(
+        &mut self,
+        input_ids: &Tensor,
+        backbone_hidden_states: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         let _ = backbone_hidden_states;
         self.forward(input_ids, seqlen_offset)
     }
@@ -69,12 +82,16 @@ impl SpeculativeDecoder {
 
             // 1. Generate draft tokens
             for i in 0..self.max_draft_tokens {
-                let last_token = if i == 0 { *tokens.last().unwrap() } else { *draft_tokens.last().unwrap() };
+                let last_token = if i == 0 {
+                    *tokens.last().unwrap()
+                } else {
+                    *draft_tokens.last().unwrap()
+                };
                 let input = Tensor::new(&[last_token], device)?.unsqueeze(0)?;
 
                 let (logits, next_states) = if let Some(bh) = &current_backbone_states {
-                     let (l, h) = self.draft_model.forward_mtp(&input, bh, start_pos + i)?;
-                     (l, h)
+                    let (l, h) = self.draft_model.forward_mtp(&input, bh, start_pos + i)?;
+                    (l, h)
                 } else {
                     let (l, h) = self.draft_model.forward(&input, start_pos + i)?;
                     (l, h)
@@ -95,13 +112,14 @@ impl SpeculativeDecoder {
 
             // 2. Verify draft tokens in parallel with target model
             let verify_input = Tensor::new(draft_tokens.as_slice(), device)?.unsqueeze(0)?;
-            let (logits, hidden_states) = self.target_model.forward_batch(&verify_input, start_pos)?;
+            let (logits, hidden_states) =
+                self.target_model.forward_batch(&verify_input, start_pos)?;
             let logits = logits.squeeze(0)?; // (num_draft_tokens, vocab_size)
 
             let mut accepted_count = 0;
             let mut last_correct_token = 0;
 
-            for i in 0..draft_tokens.len() {
+            for (i, _) in draft_tokens.iter().enumerate() {
                 let target_logits = logits.get(i)?;
                 let sampled_token = self.logits_processor.sample(&target_logits)?;
 

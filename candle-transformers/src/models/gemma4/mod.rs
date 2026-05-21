@@ -12,11 +12,11 @@ pub mod vision;
 
 use candle::{DType, Result, Tensor, D};
 
+use crate::generation::speculative::SpeculativeModel;
 use config::Gemma4Config;
 use multimodal_embedding::MultimodalEmbedder;
 use text::TextModel;
 use vision::VisionTower;
-use crate::generation::speculative::SpeculativeModel;
 
 pub use assistant::AssistantModel;
 pub use audio::AudioModel;
@@ -33,13 +33,23 @@ pub struct Model {
 }
 
 impl SpeculativeModel for Model {
-    fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         let (b_size, seq_len) = input_ids.dims2()?;
         let input_embeds = self.language_model.embed_tokens(input_ids)?;
-        let (logits, hidden_states) = self.language_model.forward_embeds(&input_embeds, seqlen_offset, b_size, seq_len)?;
+        let (logits, hidden_states) =
+            self.language_model
+                .forward_embeds(&input_embeds, seqlen_offset, b_size, seq_len)?;
         Ok((logits, Some(hidden_states)))
     }
-    fn forward_batch(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward_batch(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         self.language_model.forward_batch(input_ids, seqlen_offset)
     }
     fn rewind(&mut self, len: usize) {
@@ -193,8 +203,9 @@ impl Model {
             }
         }
 
-        let (logits, _) = self.language_model
-            .forward_embeds(&input_embeds, seqlen_offset, b_size, seq_len)?;
+        let (logits, _) =
+            self.language_model
+                .forward_embeds(&input_embeds, seqlen_offset, b_size, seq_len)?;
         Ok(logits)
     }
 

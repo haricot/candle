@@ -416,13 +416,21 @@ impl Attention {
 }
 
 impl SpeculativeModel for TextModel {
-    fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         let (b_size, seq_len) = input_ids.dims2()?;
         let xs = self.embed_tokens(input_ids)?;
         let (logits, hidden_states) = self.forward_embeds(&xs, seqlen_offset, b_size, seq_len)?;
         Ok((logits, Some(hidden_states)))
     }
-    fn forward_batch(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<(Tensor, Option<Tensor>)> {
+    fn forward_batch(
+        &mut self,
+        input_ids: &Tensor,
+        seqlen_offset: usize,
+    ) -> Result<(Tensor, Option<Tensor>)> {
         let (b_size, seq_len) = input_ids.dims2()?;
         let xs = self.embed_tokens(input_ids)?;
         let (attention_mask, sliding_attention_mask) =
@@ -438,9 +446,7 @@ impl SpeculativeModel for TextModel {
             )?
         }
         let hidden_states = xs.clone();
-        let logits = xs
-            .apply(&self.norm)?
-            .apply(&self.lm_head)?;
+        let logits = xs.apply(&self.norm)?.apply(&self.lm_head)?;
         let logits = match self.final_logit_softcapping {
             None => logits,
             Some(sc) => ((logits / sc)?.tanh()? * sc)?,
