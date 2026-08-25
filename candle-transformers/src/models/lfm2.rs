@@ -672,3 +672,69 @@ impl Model {
         self.dtype
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_lfm25_26b_config() {
+        let json = r#"{
+            "vocab_size": 128000,
+            "hidden_size": 2048,
+            "intermediate_size": 10752,
+            "num_hidden_layers": 3,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+            "norm_eps": 1e-5,
+            "rope_parameters": {
+                "rope_theta": 10000000.0,
+                "rope_type": "default"
+            },
+            "max_position_embeddings": 131072,
+            "conv_L_cache": 3,
+            "conv_bias": false,
+            "layer_types": ["conv", "conv", "full_attention"],
+            "tie_word_embeddings": true,
+            "bos_token_id": 124894,
+            "eos_token_id": 124900,
+            "block_ffn_dim_multiplier": 1.0,
+            "block_multiple_of": 256
+        }"#;
+
+        let config: Lfm2Config = serde_json::from_str(json).unwrap();
+        let config = config.into_config(false);
+        assert_eq!(config.intermediate_size, 10752);
+        assert_eq!(config.rope_theta, 10_000_000.0);
+        assert!(config.tie_embedding);
+        assert_eq!(config.num_key_value_heads, 8);
+        assert_eq!(
+            config.layer_types,
+            vec![LayerType::Conv, LayerType::Conv, LayerType::FullAttention]
+        );
+    }
+
+    #[test]
+    fn preserves_legacy_lfm2_config_defaults() {
+        let json = r#"{
+            "vocab_size": 128000,
+            "hidden_size": 2048,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 32,
+            "rope_theta": 1000000.0,
+            "layer_types": ["full_attention"],
+            "tie_embedding": false,
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+            "block_ffn_dim_multiplier": 1.0,
+            "block_multiple_of": 256
+        }"#;
+
+        let config: Lfm2Config = serde_json::from_str(json).unwrap();
+        let config = config.into_config(false);
+        assert_eq!(config.intermediate_size, 8192);
+        assert_eq!(config.rope_theta, 1_000_000.0);
+        assert!(!config.tie_embedding);
+    }
+}
