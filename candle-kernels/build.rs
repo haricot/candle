@@ -16,7 +16,7 @@ fn main() -> Result<()> {
         .unwrap_or(80);
     let legacy_bf16 = compute_cap < 80
         && env::var_os("CARGO_FEATURE_CUDA_LEGACY_BF16").is_some();
-    let legacy_fp8 = compute_cap < 80
+    let legacy_fp8 = compute_cap < 89
         && env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
