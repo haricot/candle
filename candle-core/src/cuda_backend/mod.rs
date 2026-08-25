@@ -2020,7 +2020,7 @@ impl BackendStorage for CudaStorage {
                 self.conv1d_cuda(inp_l, kernel, kernel_l, params)?.slice
             }
             Err(err) => return Err(err),
-        }
+        };
         Ok(Self { slice, device })
     }
 
@@ -2174,7 +2174,7 @@ impl BackendStorage for CudaStorage {
                 self.conv2d_cuda(inp_l, kernel, kernel_l, params)?.slice
             }
             Err(err) => return Err(err),
-        }
+        };
         Ok(Self { slice, device })
     }
 
