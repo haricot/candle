@@ -7,17 +7,26 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
+    println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");
 
-    // Build for PTX
+    let compute_cap = cudaforge::detect_compute_cap()
+        .map(|arch| arch.base())
+        .unwrap_or(80);
+    let legacy_fp8 = env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
+
+    // Build for PTX.
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ptx_path = out_dir.join("ptx.rs");
-    let bindings = KernelBuilder::new()
+    let mut builder = KernelBuilder::new()
         .source_dir("src") // Scan src/ for .cu files
         .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"]) // Exclude statically compiled kernels from ptx build
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
-        .arg("-O3")
-        .build_ptx()?;
+        .arg("-O3");
+    if legacy_fp8 && compute_cap < 80 {
+        builder = builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
+    }
+    let bindings = builder.build_ptx()?;
 
     bindings.write(&ptx_path)?;
 
@@ -45,9 +54,6 @@ fn main() -> Result<()> {
 
     // Disable bf16 WMMA kernels on GPUs older than sm_80 (Ampere).
     // bf16 WMMA fragments require compute capability >= 8.0.
-    let compute_cap = cudaforge::detect_compute_cap()
-        .map(|arch| arch.base())
-        .unwrap_or(80);
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }
