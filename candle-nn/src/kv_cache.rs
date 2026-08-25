@@ -55,6 +55,12 @@ impl Cache {
         self.all_data = None;
     }
 
+    pub fn truncate(&mut self, len: usize) {
+        if len < self.current_seq_len {
+            self.current_seq_len = len;
+        }
+    }
+
     pub fn append(&mut self, src: &Tensor) -> Result<()> {
         let seq_len = src.dim(self.dim)?;
         // This doesn't seem very idiomatic but because the creation can fail, it's tricky to use
@@ -148,6 +154,11 @@ impl KvCache {
         self.k.reset();
         self.v.reset();
     }
+
+    pub fn truncate(&mut self, len: usize) {
+        self.k.truncate(len);
+        self.v.truncate(len);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +223,18 @@ impl RotatingCache {
         self.offset = 0;
         self.current_seq_len = 0;
         self.all_data = None;
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        if len < self.current_seq_len {
+            let diff = self.current_seq_len - len;
+            self.current_seq_len = len;
+            if diff <= self.offset {
+                self.offset -= diff;
+            } else {
+                self.offset = self.max_seq_len - (diff - self.offset);
+            }
+        }
     }
 
     pub fn append(&mut self, src: &Tensor) -> Result<Tensor> {
@@ -397,6 +420,11 @@ impl RotatingKvCache {
     pub fn reset(&mut self) {
         self.k.reset();
         self.v.reset();
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        self.k.truncate(len);
+        self.v.truncate(len);
     }
 }
 
@@ -750,6 +778,20 @@ impl ConcatKvCache {
     pub fn reset(&mut self) {
         self.k = None;
         self.v = None;
+    }
+
+    pub fn truncate(&mut self, len: usize) -> Result<()> {
+        if let Some(k) = &mut self.k {
+            if len < k.dim(self.dim)? {
+                self.k = Some(k.narrow(self.dim, 0, len)?);
+            }
+        }
+        if let Some(v) = &mut self.v {
+            if len < v.dim(self.dim)? {
+                self.v = Some(v.narrow(self.dim, 0, len)?);
+            }
+        }
+        Ok(())
     }
 
     /// Get reference to current K cache data

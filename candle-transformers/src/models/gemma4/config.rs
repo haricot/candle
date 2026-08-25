@@ -397,3 +397,16 @@ pub struct Gemma4Config {
     #[serde(default = "default_video_token_id")]
     pub video_token_id: usize,
 }
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct Gemma4AssistantConfig {
+    pub text_config: Gemma4TextConfig,
+    pub backbone_hidden_size: usize,
+    pub num_centroids: Option<usize>,
+    pub use_ordered_embeddings: Option<bool>,
+    pub centroid_intermediate_top_k: Option<usize>,
+    #[serde(default = "default_image_token_id")]
+    pub image_token_id: usize,
+    #[serde(default = "default_audio_token_id")]
+    pub audio_token_id: usize,
+}
