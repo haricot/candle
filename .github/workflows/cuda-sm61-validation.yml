@@ -2,6 +2,9 @@ name: CUDA sm61 validation
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - cuda-sm61-test-*
 
 permissions:
   contents: read
