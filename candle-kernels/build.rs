@@ -26,6 +26,7 @@ fn main() -> Result<()> {
             "src/moe/moe_gguf.cu",
             "src/moe/moe_wmma.cu",
             "src/moe/moe_wmma_gguf.cu",
+            "src/moe/moe_simt_f16.cu",
             "src/mmvq_gguf.cu",
             "src/mmq_gguf/mmq_quantize.cu",
             "src/mmq_gguf/mmq_instance_q4_0.cu",
@@ -48,6 +49,10 @@ fn main() -> Result<()> {
     let compute_cap = cudaforge::detect_compute_cap()
         .map(|arch| arch.base())
         .unwrap_or(80);
+    println!("cargo:rustc-env=CANDLE_CUDA_COMPUTE_CAP={compute_cap}");
+    if compute_cap < 70 {
+        moe_builder = moe_builder.arg("-DNO_WMMA_KERNEL");
+    }
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }

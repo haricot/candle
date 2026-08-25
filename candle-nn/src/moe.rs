@@ -1,6 +1,9 @@
 // Adapted from https://github.com/guoqingbao/attention.rs/blob/main/src/moe.rs
 #[cfg(feature = "cuda")]
-use candle::cuda_backend::kernels::ffi;
+use candle::cuda_backend::kernels::{
+    ffi,
+    moe_selection::{compiled_moe_backend, MoeBackend},
+};
 #[allow(unused_imports)]
 use candle::quantized::{self, QTensor};
 use candle::{Result, Tensor};
@@ -93,25 +96,51 @@ pub fn moe_gemm(
         let stream = dev.cuda_stream().cu_stream() as i64;
         use core::ffi::c_void;
 
+        let backend = compiled_moe_backend(data_type).ok_or_else(|| {
+            candle::Error::Msg(format!(
+                "no unquantized CUDA MoE backend for dtype {:?}",
+                input.dtype()
+            ))
+        })?;
+
         unsafe {
-            ffi::moe_gemm_wmma(
-                input.device_ptr(input.stream()).0 as *const c_void, // [size_m, size_k]
-                weights.device_ptr(weights.stream()).0 as *const c_void, // [num_experts, size_n, size_k]
-                sorted_token_ids.device_ptr(sorted_token_ids.stream()).0 as *const i32,
-                experts_ids.device_ptr(experts_ids.stream()).0 as *const i32,
-                topk_weights_ptr,
-                output.device_ptr(output.stream()).0 as *mut c_void, // [size_m, size_n]
-                expert_counts.device_ptr(expert_counts.stream()).0 as *mut i32, // pre-allocated buffer [num_experts]
-                expert_offsets.device_ptr(expert_offsets.stream()).0 as *mut i32, // pre-allocated buffer [num_experts + 1]
-                num_experts as i32,
-                topk as i32,
-                size_m as i32,
-                size_n as i32,
-                size_k as i32,
-                data_type as i32, // 0=float16, 1=bf16 (for input/output)
-                is_prefill,
-                stream,
-            );
+            match backend {
+                MoeBackend::SimtF16 => ffi::moe_gemm_simt_f16(
+                    input.device_ptr(input.stream()).0 as *const c_void,
+                    weights.device_ptr(weights.stream()).0 as *const c_void,
+                    sorted_token_ids.device_ptr(sorted_token_ids.stream()).0 as *const i32,
+                    experts_ids.device_ptr(experts_ids.stream()).0 as *const i32,
+                    topk_weights_ptr,
+                    output.device_ptr(output.stream()).0 as *mut c_void,
+                    expert_counts.device_ptr(expert_counts.stream()).0 as *mut i32,
+                    expert_offsets.device_ptr(expert_offsets.stream()).0 as *mut i32,
+                    num_experts as i32,
+                    topk as i32,
+                    size_m as i32,
+                    size_n as i32,
+                    size_k as i32,
+                    is_prefill,
+                    stream,
+                ),
+                MoeBackend::Wmma => ffi::moe_gemm_wmma(
+                    input.device_ptr(input.stream()).0 as *const c_void,
+                    weights.device_ptr(weights.stream()).0 as *const c_void,
+                    sorted_token_ids.device_ptr(sorted_token_ids.stream()).0 as *const i32,
+                    experts_ids.device_ptr(experts_ids.stream()).0 as *const i32,
+                    topk_weights_ptr,
+                    output.device_ptr(output.stream()).0 as *mut c_void,
+                    expert_counts.device_ptr(expert_counts.stream()).0 as *mut i32,
+                    expert_offsets.device_ptr(expert_offsets.stream()).0 as *mut i32,
+                    num_experts as i32,
+                    topk as i32,
+                    size_m as i32,
+                    size_n as i32,
+                    size_k as i32,
+                    data_type,
+                    is_prefill,
+                    stream,
+                ),
+            }
         }
 
         use candle::op::BackpropOp;

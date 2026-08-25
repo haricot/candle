@@ -80,3 +80,4 @@ mdl!(TERNARY, Ternary);
 mdl!(UNARY, Unary);
 
 pub mod ffi;
+pub mod moe_selection;
