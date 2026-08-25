@@ -206,7 +206,7 @@ UNARY_OP1(__nv_bfloat16, upowf_bf16, powg(x, param))
 UNARY_OP(__nv_bfloat16, usign_bf16, sign_(x))
 #endif
 
-#if __CUDA_ARCH__ >= 890
+#if __CUDA_ARCH__ >= 890 || defined(CANDLE_CUDA_LEGACY_FP8)
 #define F8E4M3_TO_FLOAT(x) __half2float(__nv_cvt_fp8_to_halfraw(x.__x, __NV_E4M3))
 
 UNARY_OP(__nv_fp8_e4m3, ucopy_f8_e4m3, x)
