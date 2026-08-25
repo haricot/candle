@@ -98,8 +98,7 @@ pub fn moe_gemm(
 
         let backend = compiled_moe_backend(data_type).ok_or_else(|| {
             candle::Error::Msg(format!(
-                "no unquantized CUDA MoE backend for dtype {:?}",
-                input.dtype()
+                "no unquantized CUDA MoE backend for dtype id {data_type}"
             ))
         })?;
 

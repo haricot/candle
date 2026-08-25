@@ -240,7 +240,7 @@ extern "C" void moe_gemm_simt_f16(
     int topk,
     int size_m,
     int size_n,
-    int size_k
+    int size_k,
     bool is_prefill,
     cudaStream_t stream
 ) {
