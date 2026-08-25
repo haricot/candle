@@ -9,10 +9,15 @@ keywords = ["blas", "tensor", "machine-learning"]
 categories = ["science"]
 license = "MIT OR Apache-2.0"
 
+[features]
+default = []
+cuda-legacy-bf16 = []
+
 [dependencies]
 
 [features]
 cuda-legacy-fp8 = []
 
 [build-dependencies]
-cudaforge = "0.1.2"
+cudaforge = "0.1.6"
+
