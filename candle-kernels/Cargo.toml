@@ -12,12 +12,9 @@ license = "MIT OR Apache-2.0"
 [features]
 default = []
 cuda-legacy-bf16 = []
+cuda-legacy-fp8 = []
 
 [dependencies]
 
-[features]
-cuda-legacy-fp8 = []
-
 [build-dependencies]
 cudaforge = "0.1.6"
-
