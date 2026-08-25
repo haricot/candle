@@ -146,8 +146,15 @@ impl Map1 for Clone {
     }
 }
 
+fn cuda_kernel_dtype_name(dtype: DType) -> &'static str {
+    match dtype {
+        DType::F8E4M3 => "f8_e4m3",
+        _ => dtype.as_str(),
+    }
+}
+
 pub fn kernel_name<T: WithDType>(root: &str) -> String {
-    let dtype = T::DTYPE.as_str();
+    let dtype = cuda_kernel_dtype_name(T::DTYPE);
     format!("{root}_{dtype}")
 }
 
@@ -1700,7 +1707,11 @@ impl BackendStorage for CudaStorage {
         };
         let inp = &inp;
 
-        let kernel_name = format!("cast_{}_{}", self.dtype().as_str(), dtype.as_str());
+        let kernel_name = format!(
+            "cast_{}_{}",
+            cuda_kernel_dtype_name(self.dtype()),
+            cuda_kernel_dtype_name(dtype)
+        );
         let func = dev.get_or_load_func(&kernel_name, &kernels::CAST)?;
         let slice = match dtype {
             DType::U8 => {
@@ -2562,7 +2573,7 @@ impl BackendStorage for CudaStorage {
                 if src_l.is_contiguous() {
                     dev.memcpy_dtod(&src, &mut dst)?
                 } else {
-                    let func = dev.get_or_load_func("ucopy_f8e4m3", &kernels::UNARY)?;
+                    let func = dev.get_or_load_func("ucopy_f8_e4m3", &kernels::UNARY)?;
                     let mut builder = func.builder();
                     barg!(builder, el_count);
                     barg!(builder, dims.len());
