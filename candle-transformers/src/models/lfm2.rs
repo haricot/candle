@@ -19,6 +19,11 @@ pub enum LayerType {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct RopeParameters {
+    pub rope_theta: f32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Lfm2Config {
     pub vocab_size: usize,
     pub hidden_size: usize,
@@ -30,6 +35,8 @@ pub struct Lfm2Config {
     pub norm_eps: f64,
     #[serde(default = "default_rope_theta")]
     pub rope_theta: f32,
+    #[serde(default)]
+    pub rope_parameters: Option<RopeParameters>,
     #[serde(default = "default_max_position_embeddings")]
     pub max_position_embeddings: usize,
     #[serde(default = "default_conv_l_cache", alias = "conv_L_cache")]
@@ -37,11 +44,13 @@ pub struct Lfm2Config {
     #[serde(default)]
     pub conv_bias: bool,
     pub layer_types: Vec<LayerType>,
-    #[serde(default)]
+    #[serde(default, alias = "tie_word_embeddings")]
     pub tie_embedding: bool,
     pub bos_token_id: Option<u32>,
     pub eos_token_id: Option<u32>,
     // FFN dimension configuration
+    #[serde(default)]
+    pub intermediate_size: Option<usize>,
     #[serde(default = "default_ffn_dim_multiplier")]
     pub block_ffn_dim_multiplier: f32,
     #[serde(default = "default_block_multiple_of")]
@@ -90,8 +99,14 @@ impl Lfm2Config {
     }
 
     pub fn into_config(self, use_flash_attn: bool) -> Config {
-        // Use computed intermediate size (matches actual weights) instead of config field
-        let intermediate_size = self.compute_intermediate_size();
+        let intermediate_size = self
+            .intermediate_size
+            .unwrap_or_else(|| self.compute_intermediate_size());
+        let rope_theta = self
+            .rope_parameters
+            .as_ref()
+            .map(|params| params.rope_theta)
+            .unwrap_or(self.rope_theta);
         Config {
             vocab_size: self.vocab_size,
             hidden_size: self.hidden_size,
@@ -100,7 +115,7 @@ impl Lfm2Config {
             num_attention_heads: self.num_attention_heads,
             num_key_value_heads: self.num_key_value_heads,
             norm_eps: self.norm_eps,
-            rope_theta: self.rope_theta,
+            rope_theta,
             max_position_embeddings: self.max_position_embeddings,
             conv_l_cache: self.conv_l_cache,
             conv_bias: self.conv_bias,
