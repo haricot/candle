@@ -1,4 +1,4 @@
-use cudaforge::{KernelBuilder, Result};
+use cudaforge::{detect_compute_cap, KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
 
@@ -8,31 +8,42 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");
+    println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
+    println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_BF16");
 
-    let compute_cap = cudaforge::detect_compute_cap()
+    let compute_cap = detect_compute_cap()
         .map(|arch| arch.base())
         .unwrap_or(80);
-    let legacy_fp8 = env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
+    let legacy_bf16 = compute_cap < 80
+        && env::var_os("CARGO_FEATURE_CUDA_LEGACY_BF16").is_some();
+    let legacy_fp8 = compute_cap < 80
+        && env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
 
-    // Build for PTX.
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ptx_path = out_dir.join("ptx.rs");
-    let mut builder = KernelBuilder::new()
-        .source_dir("src") // Scan src/ for .cu files
-        .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"]) // Exclude statically compiled kernels from ptx build
+    let mut ptx_builder = KernelBuilder::new()
+        .compute_cap(compute_cap)
+        .source_dir("src")
+        .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"])
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");
-    if legacy_fp8 && compute_cap < 80 {
-        builder = builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
-    }
-    let bindings = builder.build_ptx()?;
 
+    if legacy_bf16 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+    if legacy_fp8 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
+    }
+
+    let bindings = ptx_builder.build_ptx()?;
     bindings.write(&ptx_path)?;
 
-    let mut moe_builder = KernelBuilder::default()
+    let mut moe_builder = KernelBuilder::new()
+        .compute_cap(compute_cap)
         .source_files(vec![
             "src/moe/moe_gguf.cu",
+            "src/moe/moe_simt_f16.cu",
             "src/moe/moe_wmma.cu",
             "src/moe/moe_wmma_gguf.cu",
             "src/mmvq_gguf.cu",
@@ -52,8 +63,20 @@ fn main() -> Result<()> {
         .arg("-std=c++17")
         .arg("-O3");
 
-    // Disable bf16 WMMA kernels on GPUs older than sm_80 (Ampere).
-    // bf16 WMMA fragments require compute capability >= 8.0.
+    // WMMA is available starting with Volta (sm_70).
+    //
+    // Keep the requested compute capability for the general CUDA/MoE
+    // kernels, but compile the WMMA-only translation units at their
+    // actual architectural floor when targeting pre-Volta devices.
+    if legacy_bf16 {
+        moe_builder = moe_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+
+    if compute_cap < 70 {
+        moe_builder = moe_builder
+            .with_compute_override("moe_wmma.cu", 70)
+            .with_compute_override("moe_wmma_gguf.cu", 70);
+    }
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }
