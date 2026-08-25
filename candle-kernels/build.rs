@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");
-    if legacy_fp8 && compute_cap < 80 {
+    if legacy_fp8 && compute_cap < 89 {
         builder = builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
     }
     let bindings = builder.build_ptx()?;
