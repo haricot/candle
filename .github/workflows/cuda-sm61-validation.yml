@@ -2,26 +2,15 @@ name: CUDA sm61 validation
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - cuda-sm61-test-*
 
 permissions:
   contents: read
 
 jobs:
-  conv-tests:
-    name: conv-tests (${{ matrix.name }})
+  cuda-sm61-suite:
+    name: CUDA sm61 local suite
     runs-on: [self-hosted, linux, x64, cuda, sm61]
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: cuda
-            features: cuda
-          - name: cuda-cudnn
-            features: cuda cudnn
+    timeout-minutes: 120
     env:
       CUDA_COMPUTE_CAP: 61
       RUST_BACKTRACE: 1
@@ -39,5 +28,24 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Run existing convolution tests
-        run: cargo test -p candle-core --features "${{ matrix.features }}" --test conv_tests -- --nocapture
+      - name: Test legacy BF16 and FP8
+        run: |
+          cargo test -p candle-core \
+            --features "cuda cuda-legacy-bf16 cuda-legacy-fp8" \
+            --test cuda_legacy_bf16_tests \
+            --test fp8_legacy_tests \
+            -- --nocapture
+
+      - name: Test CUDA convolutions without cuDNN
+        run: |
+          cargo test -p candle-core \
+            --features "cuda" \
+            --test conv_tests \
+            -- --nocapture
+
+      - name: Test CUDA convolutions with cuDNN fallback
+        run: |
+          cargo test -p candle-core \
+            --features "cuda cudnn" \
+            --test conv_tests \
+            -- --nocapture
