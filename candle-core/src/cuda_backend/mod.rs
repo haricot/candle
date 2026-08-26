@@ -23,21 +23,31 @@ pub use error::{CudaError, WrapErr};
 pub use utils::{Map1, Map1Any, Map2, Map2Any, Map2InPlace, Map3, S};
 
 #[cfg(feature = "cudnn")]
-fn is_cudnn_conv_fallback_error(err: &crate::Error) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CudnnConvFallback {
+    Unsupported,
+    ExecutionFailed,
+}
+
+#[cfg(feature = "cudnn")]
+fn cudnn_conv_fallback(err: &crate::Error) -> Option<CudnnConvFallback> {
     use cudarc::cudnn::{sys::cudnnStatus_t, CudnnError};
 
     match err {
         crate::Error::WithBacktrace { inner, .. }
         | crate::Error::Context { inner, .. }
-        | crate::Error::WithPath { inner, .. } => is_cudnn_conv_fallback_error(inner),
-        crate::Error::Cuda(inner) => inner.downcast_ref::<CudnnError>().is_some_and(|err| {
-            matches!(
-                err.0,
-                cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED
-                    | cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH
-            )
-        }),
-        _ => false,
+        | crate::Error::WithPath { inner, .. } => cudnn_conv_fallback(inner),
+        crate::Error::Cuda(inner) => match inner.downcast_ref::<CudnnError>()?.0 {
+            cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED
+            | cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH => {
+                Some(CudnnConvFallback::Unsupported)
+            }
+            cudnnStatus_t::CUDNN_STATUS_EXECUTION_FAILED => {
+                Some(CudnnConvFallback::ExecutionFailed)
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -1962,6 +1972,9 @@ impl BackendStorage for CudaStorage {
             return self.conv1d_cuda(inp_l, kernel, kernel_l, params);
         }
         let device = self.device().clone();
+        if crate::cudnn::convolution_is_disabled(device.id()) {
+            return self.conv1d_cuda(inp_l, kernel, kernel_l, params);
+        }
         let l_out = params.l_out();
         let dst_el = params.c_out * l_out * params.b_size;
         let slice = match (|| -> Result<S> {
@@ -2026,10 +2039,17 @@ impl BackendStorage for CudaStorage {
             Ok(slice)
         })() {
             Ok(slice) => slice,
-            Err(err) if is_cudnn_conv_fallback_error(&err) => {
-                self.conv1d_cuda(inp_l, kernel, kernel_l, params)?.slice
-            }
-            Err(err) => return Err(err),
+            Err(err) => match cudnn_conv_fallback(&err) {
+                Some(fallback) => {
+                    if fallback == CudnnConvFallback::ExecutionFailed
+                        && !crate::cudnn::disable_convolution_after_execution_failure(&device)
+                    {
+                        return Err(err);
+                    }
+                    self.conv1d_cuda(inp_l, kernel, kernel_l, params)?.slice
+                }
+                None => return Err(err),
+            },
         };
         Ok(Self { slice, device })
     }
@@ -2116,6 +2136,9 @@ impl BackendStorage for CudaStorage {
             return self.conv2d_cuda(inp_l, kernel, kernel_l, params);
         }
         let device = self.device().clone();
+        if crate::cudnn::convolution_is_disabled(device.id()) {
+            return self.conv2d_cuda(inp_l, kernel, kernel_l, params);
+        }
         let (out_w, out_h) = (params.out_w(), params.out_h());
         let dst_el = params.c_out * out_w * out_h * params.b_size;
         let slice = match (|| -> Result<S> {
@@ -2180,10 +2203,17 @@ impl BackendStorage for CudaStorage {
             Ok(slice)
         })() {
             Ok(slice) => slice,
-            Err(err) if is_cudnn_conv_fallback_error(&err) => {
-                self.conv2d_cuda(inp_l, kernel, kernel_l, params)?.slice
-            }
-            Err(err) => return Err(err),
+            Err(err) => match cudnn_conv_fallback(&err) {
+                Some(fallback) => {
+                    if fallback == CudnnConvFallback::ExecutionFailed
+                        && !crate::cudnn::disable_convolution_after_execution_failure(&device)
+                    {
+                        return Err(err);
+                    }
+                    self.conv2d_cuda(inp_l, kernel, kernel_l, params)?.slice
+                }
+                None => return Err(err),
+            },
         };
         Ok(Self { slice, device })
     }
