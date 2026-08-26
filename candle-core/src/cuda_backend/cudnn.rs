@@ -3,13 +3,43 @@ use cudarc;
 use cudarc::cudnn::safe::{ConvForward, Cudnn};
 use cudarc::driver::{CudaSlice, CudaView, DeviceRepr, ValidAsZeroBits};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 // The cudnn handles are stored per thread here rather than on the CudaDevice as they are neither
 // send nor sync.
 thread_local! {
     static CUDNN: RefCell<HashMap<crate::cuda_backend::DeviceId, Arc<Cudnn>>> = HashMap::new().into();
+    static DISABLED_CONV_DEVICES: RefCell<HashSet<crate::cuda_backend::DeviceId>> = HashSet::new().into();
+}
+
+pub(crate) fn convolution_is_disabled(device_id: crate::cuda_backend::DeviceId) -> bool {
+    DISABLED_CONV_DEVICES.with(|devices| devices.borrow().contains(&device_id))
+}
+
+pub(crate) fn disable_convolution_after_execution_failure(
+    dev: &crate::cuda_backend::CudaDevice,
+) -> bool {
+    use cudarc::driver::{result, sys};
+
+    let cu_device = dev.cuda_stream().context().cu_device();
+    let Ok(major) = (unsafe {
+        result::device::get_attribute(
+            cu_device,
+            sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+        )
+    }) else {
+        return false;
+    };
+    if major >= 7 {
+        return false;
+    }
+
+    let device_id = dev.id();
+    DISABLED_CONV_DEVICES.with(|devices| {
+        devices.borrow_mut().insert(device_id);
+    });
+    true
 }
 
 impl From<cudarc::cudnn::CudnnError> for crate::Error {
