@@ -21,10 +21,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - name: Show CUDA environment
+      - name: Validate CUDA environment
+        shell: bash
         run: |
-          nvidia-smi
-          nvcc --version
+          test "$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)" = "6.1"
+          nvcc --version >/dev/null
+          echo "CUDA sm61 runner ready"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
