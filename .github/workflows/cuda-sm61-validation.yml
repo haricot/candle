@@ -32,6 +32,8 @@ jobs:
           toolchain: stable
 
       - name: Test legacy BF16 and FP8
+        id: legacy
+        continue-on-error: true
         run: |
           cargo test -p candle-core \
             --features "cuda cuda-legacy-bf16 cuda-legacy-fp8" \
@@ -40,6 +42,8 @@ jobs:
             -- --nocapture
 
       - name: Test CUDA convolutions without cuDNN
+        id: conv_cuda
+        continue-on-error: true
         run: |
           cargo test -p candle-core \
             --features "cuda" \
@@ -47,8 +51,24 @@ jobs:
             -- --nocapture
 
       - name: Test CUDA convolutions with cuDNN fallback
+        id: conv_cudnn
+        continue-on-error: true
         run: |
           cargo test -p candle-core \
             --features "cuda cudnn" \
             --test conv_tests \
             -- --nocapture
+
+      - name: Enforce validation result
+        if: always()
+        env:
+          LEGACY_OUTCOME: ${{ steps.legacy.outcome }}
+          CUDA_OUTCOME: ${{ steps.conv_cuda.outcome }}
+          CUDNN_OUTCOME: ${{ steps.conv_cudnn.outcome }}
+        run: |
+          echo "legacy=${LEGACY_OUTCOME}"
+          echo "cuda=${CUDA_OUTCOME}"
+          echo "cudnn=${CUDNN_OUTCOME}"
+          test "${LEGACY_OUTCOME}" = success
+          test "${CUDA_OUTCOME}" = success
+          test "${CUDNN_OUTCOME}" = success
