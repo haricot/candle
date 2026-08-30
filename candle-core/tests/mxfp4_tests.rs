@@ -7,8 +7,9 @@
 //! compatibility with llama.cpp.
 #![allow(clippy::excessive_precision)] // exact f32 literals emitted by the C golden generator
 
-use candle_core::quantized::{gguf_file, GgmlDType, QTensor};
-use candle_core::{Device, Result, Tensor};
+use candle_core::quantized::{gguf_file, GgmlDType, QStorage, QTensor};
+use candle_core::{DType, Device, Result, Tensor};
+use std::borrow::Cow;
 use std::io::Cursor;
 
 const QK: usize = 32;
@@ -185,5 +186,56 @@ fn dtype_plumbing() -> Result<()> {
     let dtype = GgmlDType::Mxfp4;
     assert_eq!(dtype.type_size(), 17);
     assert_eq!(dtype.block_size(), 32);
+    Ok(())
+}
+
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_dequantize_matches_cpu() -> Result<()> {
+    let cpu = Device::Cpu;
+    let cuda = Device::new_cuda(0)?;
+
+    // Use more than 8 blocks so the CUDA decoder crosses its 256-value
+    // launch-group boundary rather than only validating a single block.
+    let gs = goldens();
+    let mut input = Vec::with_capacity(10 * QK);
+    for i in 0..10 {
+        input.extend_from_slice(&gs[i % gs.len()].input);
+    }
+
+    let src = Tensor::from_vec(input, (10 * QK,), &cpu)?;
+    let q_cpu = QTensor::quantize(&src, GgmlDType::Mxfp4)?;
+    let expected_f32 = q_cpu.dequantize(&cpu)?;
+
+    let storage = QStorage::from_data(
+        Cow::Owned(q_cpu.data()?.to_vec()),
+        &cuda,
+        GgmlDType::Mxfp4,
+    )?;
+    let q_cuda = QTensor::new(storage, (10 * QK,))?;
+
+    let got_f32 = q_cuda.dequantize(&cuda)?.to_device(&cpu)?;
+    assert_eq!(
+        got_f32.to_vec1::<f32>()?,
+        expected_f32.to_vec1::<f32>()?,
+        "MXFP4 CUDA f32 dequantization differs from CPU reference"
+    );
+
+    let expected_f16_as_f32 = expected_f32
+        .to_dtype(DType::F16)?
+        .to_dtype(DType::F32)?
+        .to_vec1::<f32>()?;
+    let got_f16_as_f32 = q_cuda
+        .dequantize_f16(&cuda)?
+        .to_device(&cpu)?
+        .to_dtype(DType::F32)?
+        .to_vec1::<f32>()?;
+    assert_eq!(
+        got_f16_as_f32,
+        expected_f16_as_f32,
+        "MXFP4 CUDA f16 dequantization differs from CPU reference"
+    );
+
     Ok(())
 }

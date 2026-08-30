@@ -307,6 +307,22 @@ typedef struct {
 } block_q4_1;
 static_assert(sizeof(block_q4_1) == sizeof(ggml_fp16_t) * 2 + QK4_1 / 2, "wrong q4_1 block size/padding");
 
+#define QK_MXFP4 32
+typedef struct {
+    uint8_t e;                    // E8M0 shared exponent
+    uint8_t qs[QK_MXFP4 / 2];     // packed E2M1 nibbles
+} block_mxfp4;
+static_assert(sizeof(block_mxfp4) == sizeof(uint8_t) + QK_MXFP4 / 2, "wrong mxfp4 block size/padding");
+
+static __device__ __constant__ int8_t kvalues_mxfp4[16] = {
+    0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12,
+};
+
+static __device__ __forceinline__ float mxfp4_e8m0_to_fp32_half(uint8_t e) {
+    const uint32_t bits = e < 2 ? (0x00200000u << e) : ((uint32_t)(e - 1) << 23);
+    return __uint_as_float(bits);
+}
+
 #define QK5_0 32
 #define QR5_0 2
 #define QI5_0 (QK5_0 / (4 * QR5_0))
@@ -1092,6 +1108,32 @@ static __device__ void dequantize_block_q8_0(const void * __restrict__ vx, dst_t
 }
 
 template<typename dst_t>
+static __device__ void dequantize_block_mxfp4(const void * __restrict__ vx, dst_t * __restrict__ yy, int nb32) {
+    const int i = blockIdx.x;
+
+    // One CUDA block decodes up to 8 MXFP4 blocks = 256 values.
+    const int tid = threadIdx.x;
+    const int il = tid / 8;
+    const int ir = tid % 8;
+    const int ib = 8 * i + ir;
+    if (ib >= nb32) {
+        return;
+    }
+
+    dst_t * y = yy + 256 * i + 32 * ir + 4 * il;
+
+    const block_mxfp4 * x = (const block_mxfp4 *) vx + ib;
+    const float d = mxfp4_e8m0_to_fp32_half(x->e);
+    const uint8_t * q = x->qs + 4 * il;
+
+#pragma unroll
+    for (int l = 0; l < 4; ++l) {
+        y[l + 0] = d * (float) kvalues_mxfp4[q[l] & 0x0F];
+        y[l + 16] = d * (float) kvalues_mxfp4[q[l] >> 4];
+    }
+}
+
+template<typename dst_t>
 static __device__ void dequantize_block_q8_K(const void * __restrict__ vx, dst_t * __restrict__ yy) {
     const block_q8_K * x = (const block_q8_K *) vx;
 
@@ -1153,6 +1195,7 @@ DEQUANTIZE_K(q6_K)
 DEQUANTIZE_K(q8_K)
 DEQUANTIZE(q4_0)
 DEQUANTIZE(q4_1)
+DEQUANTIZE(mxfp4)
 DEQUANTIZE(q5_0)
 DEQUANTIZE(q5_1)
 DEQUANTIZE(q8_0)

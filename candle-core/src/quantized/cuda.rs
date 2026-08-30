@@ -112,6 +112,7 @@ fn dequantize_f32(
     let (kernel_name, is_k, block_dim, num_blocks) = match dtype {
         GgmlDType::Q4_0 => ("dequantize_block_q4_0_f32", false, 32, nb),
         GgmlDType::Q4_1 => ("dequantize_block_q4_1_f32", false, 32, nb),
+        GgmlDType::Mxfp4 => ("dequantize_block_mxfp4_f32", false, 32, nb),
         GgmlDType::Q5_0 => (
             "dequantize_block_q5_0_f32",
             false,
@@ -172,6 +173,7 @@ fn dequantize_f16(
     let (kernel_name, is_k, block_dim, num_blocks) = match dtype {
         GgmlDType::Q4_0 => ("dequantize_block_q4_0_f16", false, 32, nb),
         GgmlDType::Q4_1 => ("dequantize_block_q4_1_f16", false, 32, nb),
+        GgmlDType::Mxfp4 => ("dequantize_block_mxfp4_f16", false, 32, nb),
         GgmlDType::Q5_0 => (
             "dequantize_block_q5_0_f16",
             false,
