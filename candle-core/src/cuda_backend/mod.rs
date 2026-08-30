@@ -2027,15 +2027,23 @@ impl BackendStorage for CudaStorage {
                     )?;
                     S::F64(out)
                 }
-                (S::U32(_), S::U32(_)) => Err(CudaError::InternalError("conv1d does not support u32"))?,
-                (S::I16(_), S::I16(_)) => Err(CudaError::InternalError("conv1d does not support i16"))?,
-                (S::I32(_), S::I32(_)) => Err(CudaError::InternalError("conv1d does not support i32"))?,
-                (S::I64(_), S::I64(_)) => Err(CudaError::InternalError("conv1d does not support i64"))?,
+                (S::U32(_), S::U32(_)) => {
+                    Err(CudaError::InternalError("conv1d does not support u32"))?
+                }
+                (S::I16(_), S::I16(_)) => {
+                    Err(CudaError::InternalError("conv1d does not support i16"))?
+                }
+                (S::I32(_), S::I32(_)) => {
+                    Err(CudaError::InternalError("conv1d does not support i32"))?
+                }
+                (S::I64(_), S::I64(_)) => {
+                    Err(CudaError::InternalError("conv1d does not support i64"))?
+                }
                 (S::F8E4M3(_), S::F8E4M3(_)) => {
                     Err(CudaError::InternalError("conv1d does not support f8e4m3"))?
                 }
                 _ => Err(CudaError::InternalError("dtype mismatch in conv1d"))?,
-        };
+            };
             Ok(slice)
         })() {
             Ok(slice) => slice,
@@ -2191,15 +2199,23 @@ impl BackendStorage for CudaStorage {
                     )?;
                     S::F64(out)
                 }
-                (S::U32(_), S::U32(_)) => Err(CudaError::InternalError("conv2d does not support u32"))?,
-                (S::I16(_), S::I16(_)) => Err(CudaError::InternalError("conv2d does not support i16"))?,
-                (S::I32(_), S::I32(_)) => Err(CudaError::InternalError("conv2d does not support i32"))?,
-                (S::I64(_), S::I64(_)) => Err(CudaError::InternalError("conv2d does not support i64"))?,
+                (S::U32(_), S::U32(_)) => {
+                    Err(CudaError::InternalError("conv2d does not support u32"))?
+                }
+                (S::I16(_), S::I16(_)) => {
+                    Err(CudaError::InternalError("conv2d does not support i16"))?
+                }
+                (S::I32(_), S::I32(_)) => {
+                    Err(CudaError::InternalError("conv2d does not support i32"))?
+                }
+                (S::I64(_), S::I64(_)) => {
+                    Err(CudaError::InternalError("conv2d does not support i64"))?
+                }
                 (S::F8E4M3(_), S::F8E4M3(_)) => {
                     Err(CudaError::InternalError("conv2d does not support f8e4m3"))?
                 }
                 _ => Err(CudaError::InternalError("dtype mismatch in conv2d"))?,
-        };
+            };
             Ok(slice)
         })() {
             Ok(slice) => slice,
