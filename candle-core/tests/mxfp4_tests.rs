@@ -297,3 +297,113 @@ fn cuda_mxfp4_dp4a_batch_1_to_8() -> Result<()> {
 
     Ok(())
 }
+
+
+#[cfg(feature = "cuda")]
+#[test]
+#[ignore = "benchmark gate: run explicitly on the target CUDA device"]
+fn mxfp4_sm61_benchmark_gate() -> Result<()> {
+    use candle_core::quantized::QMatMul;
+    use candle_core::Module;
+    use std::time::Instant;
+
+    let cpu = Device::Cpu;
+    let cuda = Device::new_cuda(0)?;
+    let (n, k) = (4096usize, 4096usize);
+
+    let weights = (0..n * k)
+        .map(|i| ((i as f32) * 0.0013).sin() * 0.75 + ((i as f32) * 0.0007).cos() * 0.25)
+        .collect::<Vec<_>>();
+    let w_cpu = Tensor::from_vec(weights, (n, k), &cpu)?;
+    let x_cpu = Tensor::from_vec(
+        (0..k)
+            .map(|i| ((i as f32) * 0.017).cos() * 0.5 + 0.1)
+            .collect::<Vec<_>>(),
+        (1, k),
+        &cpu,
+    )?;
+
+    let x_cuda = x_cpu.to_device(&cuda)?;
+    let w_f16 = w_cpu.to_dtype(DType::F16)?.to_device(&cuda)?;
+
+    fn bench(
+        name: &str,
+        runs: usize,
+        mut f: impl FnMut() -> Result<Tensor>,
+    ) -> Result<(f64, Vec<f32>)> {
+        for _ in 0..3 {
+            let _ = f()?.to_device(&Device::Cpu)?;
+        }
+        let start = Instant::now();
+        let mut last = None;
+        for _ in 0..runs {
+            last = Some(f()?.to_device(&Device::Cpu)?);
+        }
+        let elapsed = start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+        let out = last.unwrap().flatten_all()?.to_vec1::<f32>()?;
+        println!("MXFP4_BENCH name={name} latency_us={elapsed:.3}");
+        Ok((elapsed, out))
+    }
+
+    let reference = x_cuda
+        .to_dtype(DType::F16)?
+        .matmul(&w_f16.t()?)?
+        .to_dtype(DType::F32)?
+        .to_device(&cpu)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+
+    let mut rows = Vec::new();
+    for dtype in [GgmlDType::Q4_0, GgmlDType::Q4K, GgmlDType::Mxfp4] {
+        let q_cpu = QTensor::quantize(&w_cpu, dtype)?;
+        let bytes = q_cpu.data()?.len();
+        let q_cuda = QTensor::new(
+            QStorage::from_data(Cow::Owned(q_cpu.data()?.to_vec()), &cuda, dtype)?,
+            (n, k),
+        )?;
+        let mm = QMatMul::from_qtensor(q_cuda)?;
+        let (latency_us, out) = bench(&format!("{dtype:?}"), 10, || mm.forward(&x_cuda))?;
+
+        let mut max_abs = 0f32;
+        let mut mean_abs = 0f32;
+        let mut dot = 0f64;
+        let mut nr = 0f64;
+        let mut no = 0f64;
+        for (&a, &b) in reference.iter().zip(out.iter()) {
+            let d = (a - b).abs();
+            max_abs = max_abs.max(d);
+            mean_abs += d;
+            dot += a as f64 * b as f64;
+            nr += (a as f64) * (a as f64);
+            no += (b as f64) * (b as f64);
+        }
+        mean_abs /= out.len() as f32;
+        let cosine = dot / (nr.sqrt() * no.sqrt()).max(f64::MIN_POSITIVE);
+        let bits_per_weight = bytes as f64 * 8.0 / (n * k) as f64;
+        println!(
+            "MXFP4_BENCH_RESULT dtype={dtype:?} bytes={bytes} bits_per_weight={bits_per_weight:.4} latency_us={latency_us:.3} max_abs={max_abs:.6} mean_abs={mean_abs:.6} cosine={cosine:.8}"
+        );
+        rows.push((dtype, latency_us, bits_per_weight, max_abs, mean_abs, cosine));
+    }
+
+    let (f16_latency, _) = bench("F16", 10, || {
+        x_cuda
+            .to_dtype(DType::F16)?
+            .matmul(&w_f16.t()?)?
+            .to_dtype(DType::F32)
+    })?;
+    println!(
+        "MXFP4_BENCH_RESULT dtype=F16 bytes={} bits_per_weight=16.0000 latency_us={f16_latency:.3}",
+        n * k * 2
+    );
+
+    let mxfp4 = rows
+        .iter()
+        .find(|(dtype, ..)| *dtype == GgmlDType::Mxfp4)
+        .expect("MXFP4 result missing");
+    assert!(mxfp4.5.is_finite(), "MXFP4 cosine must be finite");
+    assert!(mxfp4.5 > 0.90, "MXFP4 cosine unexpectedly low: {}", mxfp4.5);
+    assert!(mxfp4.2 < 5.0, "MXFP4 storage is not actually packed: {} bits/weight", mxfp4.2);
+
+    Ok(())
+}
