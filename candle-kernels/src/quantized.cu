@@ -1339,15 +1339,23 @@ extern "C" __global__ void nvfp4_experiment_dequant_f32(
 #define QK_NVFP4 16
 #define NVFP4_PACKED_BYTES_PER_BLOCK 8
 
-static __device__ __forceinline__ int nvfp4_decode_int8x4(const uint8_t * p) {
-    const uint8_t b0 = p[0];
-    const uint8_t b1 = p[1];
-    const char4 v = make_char4(
-        kvalues_mxfp4[b0 & 0x0F],
-        kvalues_mxfp4[b0 >> 4],
-        kvalues_mxfp4[b1 & 0x0F],
-        kvalues_mxfp4[b1 >> 4]);
-    return *((const int *) &v);
+static __device__ __forceinline__ int2 nvfp4_decode_contiguous_8(const uint8_t * p) {
+    // Decode four packed bytes = eight consecutive E2M1 weights through the
+    // xInfer-style __byte_perm LUT, then interleave the even/odd lanes into
+    // two contiguous int8x4 words ready for DP4A.
+    int q4;
+    memcpy(&q4, p, sizeof(q4));
+    const int2 even_odd = nvfp4_lut_decode_8(q4);
+
+    // nvfp4_lut_decode_8 returns:
+    //   x = [w0, w2, w4, w6]
+    //   y = [w1, w3, w5, w7]
+    // Repack to:
+    //   x = [w0, w1, w2, w3]
+    //   y = [w4, w5, w6, w7]
+    return make_int2(
+        __byte_perm(even_odd.x, even_odd.y, 0x5140),
+        __byte_perm(even_odd.x, even_odd.y, 0x7362));
 }
 
 static __device__ __forceinline__ float nvfp4_vec_dot_block16_q8_1(
@@ -1357,14 +1365,16 @@ static __device__ __forceinline__ float nvfp4_vec_dot_block16_q8_1(
     const float q8_scale,
     const float global_scale) {
 
-    int sumi = 0;
-#pragma unroll
-    for (int i = 0; i < 4; ++i) {
-        const int w = nvfp4_decode_int8x4(packed + 2 * i);
-        sumi = ggml_cuda_dp4a(w, q8[i], sumi);
-    }
+    const int2 w0 = nvfp4_decode_contiguous_8(packed + 0);
+    const int2 w1 = nvfp4_decode_contiguous_8(packed + 4);
 
-    // kvalues_mxfp4 is the doubled E2M1 table, hence the 0.5 factor.
+    int sumi = 0;
+    sumi = ggml_cuda_dp4a(w0.x, q8[0], sumi);
+    sumi = ggml_cuda_dp4a(w0.y, q8[1], sumi);
+    sumi = ggml_cuda_dp4a(w1.x, q8[2], sumi);
+    sumi = ggml_cuda_dp4a(w1.y, q8[3], sumi);
+
+    // nvfp4_lut_decode_8 materializes doubled E2M1 values.
     const float d =
         nvfp4_e4m3fn_to_f32(scale_e4m3) * global_scale * 0.5f * q8_scale;
     return d * sumi;
