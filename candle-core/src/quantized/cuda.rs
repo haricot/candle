@@ -1115,6 +1115,56 @@ mod test {
         Ok(())
     }
 
+    #[test]
+    fn cuda_nvfp4_legacy_lut_probe() -> Result<()> {
+        let dev = CudaDevice::new(0)?;
+
+        // Two NVFP4 blocks, 16 E2M1 values each.
+        // Each byte holds two consecutive E2M1 nibbles.
+        let packed = vec![
+            0x10u8, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+        ];
+        // E4M3FN: 0x38 = 1.0, 0x40 = 2.0.
+        let scales = vec![0x38u8, 0x40];
+        let global_scale = 1.25f32;
+
+        let packed_d = dev.clone_htod(&packed)?;
+        let scales_d = dev.clone_htod(&scales)?;
+        let out = unsafe { dev.alloc::<f32>(32)? };
+
+        let func =
+            dev.get_or_load_func("nvfp4_experiment_dequant_f32", &candle_kernels::QUANTIZED)?;
+        let cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = func.builder();
+        builder.arg(&packed_d);
+        builder.arg(&scales_d);
+        barg!(builder, global_scale);
+        builder.arg(&out);
+        barg!(builder, 2i32);
+        unsafe { builder.launch(cfg) }.w()?;
+
+        let got = dev.clone_dtoh(&out.as_view())?;
+        let e2m1 = [
+            0.0f32, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
+            -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+        ];
+        let mut expected = Vec::with_capacity(32);
+        for (block, scale) in [(0usize, 1.0f32), (1usize, 2.0f32)] {
+            for &byte in &packed[block * 8..block * 8 + 8] {
+                expected.push(e2m1[(byte & 0x0f) as usize] * scale * global_scale);
+                expected.push(e2m1[(byte >> 4) as usize] * scale * global_scale);
+            }
+        }
+
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
     // The following test used to fail under compute-sanitizer until #2526.
     #[test]
     fn cuda_mm_q8_1_pad() -> Result<()> {

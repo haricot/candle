@@ -1229,6 +1229,95 @@ DEQUANTIZE(q5_0)
 DEQUANTIZE(q5_1)
 DEQUANTIZE(q8_0)
 
+// ---------------------------------------------------------------------------
+// Experimental NVFP4 legacy-CUDA decoder.
+//
+// Kept separate from GgmlDType on purpose: NVFP4 has a two-tensor layout
+// (packed E2M1 weights + E4M3 block scales) plus a global F32 scale.
+// This probe mirrors xInfer's SM<100 LUT path and lets SM61 validate the
+// representation before any public Candle dtype/API is proposed.
+// ---------------------------------------------------------------------------
+
+static __device__ __forceinline__ float nvfp4_e4m3fn_to_f32(uint8_t x) {
+    const int sign = (x >> 7) & 1;
+    const int exp = (x >> 3) & 0x0F;
+    const int mant = x & 0x07;
+
+    float out;
+    if (exp == 0) {
+        out = mant == 0 ? 0.0f : (float) mant * 0.001953125f; // mant * 2^-9
+    } else if (exp == 0x0F && mant == 0x07) {
+        out = __int_as_float(0x7fc00000);
+    } else {
+        const int new_exp = exp - 7 + 127;
+        const uint32_t bits = ((uint32_t) sign << 31)
+            | ((uint32_t) new_exp << 23)
+            | ((uint32_t) mant << 20);
+        return __uint_as_float(bits);
+    }
+    return sign ? -out : out;
+}
+
+static __device__ __forceinline__ int2 nvfp4_lut_decode_8(const int q4) {
+    // Exact doubled E2M1 LUT used by xInfer's legacy __byte_perm path.
+    const uint32_t table0 = 0x03020100;
+    const uint32_t table1 = 0x0C080604;
+    const uint32_t table2 = 0xFDFEFF00;
+    const uint32_t table3 = 0xF4F8FAFC;
+
+    uint32_t tmp[2];
+    const uint32_t low_high_selection = 0x32103210 | ((q4 & 0x88888888) >> 1);
+#pragma unroll
+    for (uint32_t i = 0; i < 2; ++i) {
+        const uint32_t shift = 16 * i;
+        const uint32_t low = __byte_perm(table0, table1, q4 >> shift);
+        const uint32_t high = __byte_perm(table2, table3, q4 >> shift);
+        tmp[i] = __byte_perm(low, high, low_high_selection >> shift);
+    }
+    return make_int2(
+        __byte_perm(tmp[0], tmp[1], 0x6420),
+        __byte_perm(tmp[0], tmp[1], 0x7531));
+}
+
+extern "C" __global__ void nvfp4_experiment_dequant_f32(
+    const uint8_t * __restrict__ packed,
+    const uint8_t * __restrict__ scales_e4m3,
+    const float global_scale,
+    float * __restrict__ dst,
+    const int nblocks) {
+
+    const int block = blockIdx.x * blockDim.x + threadIdx.x;
+    if (block >= nblocks) {
+        return;
+    }
+
+    const uint8_t * src = packed + (size_t) block * 8;
+    uint32_t lo;
+    uint32_t hi;
+    memcpy(&lo, src + 0, sizeof(lo));
+    memcpy(&hi, src + 4, sizeof(hi));
+
+    const float scale =
+        nvfp4_e4m3fn_to_f32(scales_e4m3[block]) * global_scale * 0.5f;
+    const int2 q0 = nvfp4_lut_decode_8((int) lo);
+    const int2 q1 = nvfp4_lut_decode_8((int) hi);
+    float * out = dst + (size_t) block * 16;
+
+#define NVFP4_STORE8(Q, OFFSET) \
+    out[(OFFSET) + 0] = (float)(int8_t)((Q).x) * scale; \
+    out[(OFFSET) + 1] = (float)(int8_t)((Q).y) * scale; \
+    out[(OFFSET) + 2] = (float)(int8_t)((Q).x >> 8) * scale; \
+    out[(OFFSET) + 3] = (float)(int8_t)((Q).y >> 8) * scale; \
+    out[(OFFSET) + 4] = (float)(int8_t)((Q).x >> 16) * scale; \
+    out[(OFFSET) + 5] = (float)(int8_t)((Q).y >> 16) * scale; \
+    out[(OFFSET) + 6] = (float)(int8_t)((Q).x >> 24) * scale; \
+    out[(OFFSET) + 7] = (float)(int8_t)((Q).y >> 24) * scale
+
+    NVFP4_STORE8(q0, 0);
+    NVFP4_STORE8(q1, 8);
+#undef NVFP4_STORE8
+}
+
 template<int qk, int qr, dequantize_kernel_t dequantize_kernel>
 static __device__ void get_rows_q(
         const void * __restrict__ src0, const uint32_t * __restrict__ src1, float * __restrict__ dst,
