@@ -1491,6 +1491,86 @@ NVFP4_MAT_VEC_BATCH(8)
 
 #undef NVFP4_MAT_VEC_BATCH
 
+static __device__ __forceinline__ float nvfp4_vec_dot_pair32_q8_1_predecoded(
+    const uint8_t * __restrict__ packed_pair,
+    const float * __restrict__ scale_pair,
+    const block_q8_1 * __restrict__ q8) {
+
+    const int * aq = (const int *) q8->qs;
+    const float ad = __low2float(q8->ds);
+
+    const int2 w0 = nvfp4_decode_contiguous_8(packed_pair + 0);
+    const int2 w1 = nvfp4_decode_contiguous_8(packed_pair + 4);
+    int sumi0 = 0;
+    sumi0 = ggml_cuda_dp4a(w0.x, aq[0], sumi0);
+    sumi0 = ggml_cuda_dp4a(w0.y, aq[1], sumi0);
+    sumi0 = ggml_cuda_dp4a(w1.x, aq[2], sumi0);
+    sumi0 = ggml_cuda_dp4a(w1.y, aq[3], sumi0);
+
+    const uint8_t * packed1 = packed_pair + NVFP4_PACKED_BYTES_PER_BLOCK;
+    const int2 w2 = nvfp4_decode_contiguous_8(packed1 + 0);
+    const int2 w3 = nvfp4_decode_contiguous_8(packed1 + 4);
+    int sumi1 = 0;
+    sumi1 = ggml_cuda_dp4a(w2.x, aq[4], sumi1);
+    sumi1 = ggml_cuda_dp4a(w2.y, aq[5], sumi1);
+    sumi1 = ggml_cuda_dp4a(w3.x, aq[6], sumi1);
+    sumi1 = ggml_cuda_dp4a(w3.y, aq[7], sumi1);
+
+    return ad * (scale_pair[0] * (float) sumi0 + scale_pair[1] * (float) sumi1);
+}
+
+extern "C" __global__ void nvfp4_mat_vec_q8_1_predecoded_cuda1(
+    const uint8_t * __restrict__ packed,
+    const float * __restrict__ scales_predecoded,
+    const void * __restrict__ activations_v,
+    float * __restrict__ dst,
+    const int ncols_x,
+    const int nrows_x,
+    const int nrows_y,
+    const int nrows_dst) {
+
+    constexpr int nwarps = 4;
+    const int tid = WARP_SIZE * threadIdx.y + threadIdx.x;
+    const int row = blockIdx.x;
+    if (row >= nrows_x) {
+        return;
+    }
+
+    const block_q8_1 * activations = (const block_q8_1 *) activations_v;
+    const int q8_blocks_per_row = nrows_y / QK8_1;
+    const int weight_blocks_per_row = ncols_x / QK_NVFP4;
+    const int packed_row_bytes = weight_blocks_per_row * NVFP4_PACKED_BYTES_PER_BLOCK;
+
+    const uint8_t * row_packed = packed + (size_t) row * packed_row_bytes;
+    const float * row_scales = scales_predecoded + (size_t) row * weight_blocks_per_row;
+
+    float tmp = 0.0f;
+    for (int kb = tid; kb < ncols_x / QK8_1; kb += nwarps * WARP_SIZE) {
+        tmp += nvfp4_vec_dot_pair32_q8_1_predecoded(
+            row_packed + (size_t) kb * 2 * NVFP4_PACKED_BYTES_PER_BLOCK,
+            row_scales + 2 * kb,
+            activations + kb);
+    }
+
+    __shared__ float tmp_shared[nwarps - 1][WARP_SIZE];
+    if (threadIdx.y > 0) {
+        tmp_shared[threadIdx.y - 1][threadIdx.x] = tmp;
+    }
+    __syncthreads();
+
+    if (threadIdx.y > 0) {
+        return;
+    }
+#pragma unroll
+    for (int warp = 0; warp < nwarps - 1; ++warp) {
+        tmp += tmp_shared[warp][threadIdx.x];
+    }
+    tmp = warp_reduce_sum(tmp);
+    if (threadIdx.x == 0) {
+        dst[row] = tmp;
+    }
+}
+
 extern "C" __global__ void nvfp4_mat_mul_q8_1(
     const uint8_t * __restrict__ packed,
     const uint8_t * __restrict__ scales_e4m3,

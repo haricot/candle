@@ -1743,6 +1743,62 @@ mod test {
         let kernel_latency_us =
             kernel_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
 
+
+        // Diagnostic transform: predecode the E4M3 local scales once.
+        // This is not the final storage format; it isolates software E4M3
+        // conversion cost from the DP4A/weight-load cost.
+        let predecoded_scales = scales
+            .iter()
+            .map(|&s| e4m3fn_to_f32_test(s) * global_scale * 0.5)
+            .collect::<Vec<_>>();
+        let predecoded_scales_d = dev.clone_htod(&predecoded_scales)?;
+        let predecoded_out = dev.alloc_zeros::<f32>(n)?;
+        let predecoded_func = dev.get_or_load_func(
+            "nvfp4_mat_vec_q8_1_predecoded_cuda1",
+            &candle_kernels::QUANTIZED,
+        )?;
+        let predecoded_cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (n as u32, 1, 1),
+            block_dim: (WARP_SIZE as u32, 4, 1),
+            shared_mem_bytes: 0,
+        };
+        for _ in 0..3 {
+            let mut builder = predecoded_func.builder();
+            builder.arg(&packed_d);
+            builder.arg(&predecoded_scales_d);
+            builder.arg(&q8_stage);
+            builder.arg(&predecoded_out);
+            barg!(
+                builder,
+                k as i32,
+                n as i32,
+                k_padded as i32,
+                n as i32
+            );
+            unsafe { builder.launch(predecoded_cfg) }.w()?;
+        }
+        stream.synchronize().w()?;
+        let predecoded_start = std::time::Instant::now();
+        for _ in 0..runs {
+            let mut builder = predecoded_func.builder();
+            builder.arg(&packed_d);
+            builder.arg(&predecoded_scales_d);
+            builder.arg(&q8_stage);
+            builder.arg(&predecoded_out);
+            barg!(
+                builder,
+                k as i32,
+                n as i32,
+                k_padded as i32,
+                n as i32
+            );
+            unsafe { builder.launch(predecoded_cfg) }.w()?;
+            stream.synchronize().w()?;
+        }
+        let predecoded_kernel_us =
+            predecoded_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+        let predecoded_got = dev.clone_dtoh(&predecoded_out.as_view())?;
+
         let run_once = || -> Result<Vec<f32>> {
             // Match Candle's quantized matvec path: activation quantization
             // and output allocation are part of the measured operation.
@@ -1808,6 +1864,22 @@ mod test {
         }
         let e2e_metrics = nvfp4_metrics(&f32_reference, &got);
         let quant_metrics = nvfp4_metrics(&f32_reference, &quant_reference);
+
+        let predecoded_kernel_metrics = nvfp4_metrics(&kernel_reference, &predecoded_got);
+        println!(
+            "NVFP4_PREDECODED_SCALE_BENCH kernel_us={predecoded_kernel_us:.3} speedup_vs_e4m3={:.3} transformed_scale_bytes={} transformed_bits_per_weight={:.4} kernel_max_abs={:.6} kernel_mean_abs={:.6} kernel_cosine={:.8}",
+            kernel_latency_us / predecoded_kernel_us,
+            predecoded_scales.len() * std::mem::size_of::<f32>(),
+            (packed.len() + predecoded_scales.len() * std::mem::size_of::<f32>()) as f64 * 8.0 / (n * k) as f64,
+            predecoded_kernel_metrics.0,
+            predecoded_kernel_metrics.1,
+            predecoded_kernel_metrics.2
+        );
+        assert!(
+            predecoded_kernel_metrics.2 >= 0.99999,
+            "predecoded NVFP4 kernel cosine={}",
+            predecoded_kernel_metrics.2
+        );
 
         let stage_overhead_us = latency_us - q8_latency_us - kernel_latency_us;
         println!(
