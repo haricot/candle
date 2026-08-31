@@ -71,6 +71,33 @@ static __device__ __forceinline__ int get_int_from_uint8_aligned(const uint8_t *
     return *((const int *) (x8 + sizeof(int) * i32)); // assume at least 4 byte alignment
 }
 
+// Unaligned 4-byte load used by packed FP4 blocks (17-byte MXFP4 blocks
+// deliberately do not guarantee 4-byte alignment for every nibble group).
+static __device__ __forceinline__ int get_int_b1(const void * x, const int & i32) {
+    const uint8_t * x8 = (const uint8_t *) x;
+    int x32  = x8[4 * i32 + 0] << 0;
+    x32     |= x8[4 * i32 + 1] << 8;
+    x32     |= x8[4 * i32 + 2] << 16;
+    x32     |= x8[4 * i32 + 3] << 24;
+    return x32;
+}
+
+// q4 contains eight packed 4-bit indices. Return the E2M1 lookup values
+// as two packed int8x4 lanes, ready for __dp4a.
+static __device__ __forceinline__ int2 get_int_from_table_16(const int & q4, const int8_t * table) {
+    const int q0_32 = (q4 >> 0) & 0x0F0F0F0F;
+    const uint8_t * q0_8 = (const uint8_t *) &q0_32;
+    const char4 val0_8 = make_char4(
+        table[q0_8[0]], table[q0_8[1]], table[q0_8[2]], table[q0_8[3]]);
+
+    const int q1_32 = (q4 >> 4) & 0x0F0F0F0F;
+    const uint8_t * q1_8 = (const uint8_t *) &q1_32;
+    const char4 val1_8 = make_char4(
+        table[q1_8[0]], table[q1_8[1]], table[q1_8[2]], table[q1_8[3]]);
+
+    return make_int2(*((const int *) &val0_8), *((const int *) &val1_8));
+}
+
 
 #define WARP_SIZE 32
 #define CUDART_HMAX     11070 // CUDA 11.7, min. ver. for which __hmax and __hmax2 are known to work (may be higher than needed)
@@ -308,6 +335,8 @@ typedef struct {
 static_assert(sizeof(block_q4_1) == sizeof(ggml_fp16_t) * 2 + QK4_1 / 2, "wrong q4_1 block size/padding");
 
 #define QK_MXFP4 32
+#define QR_MXFP4 2
+#define QI_MXFP4 (QK_MXFP4 / (4 * QR_MXFP4))
 typedef struct {
     uint8_t e;                    // E8M0 shared exponent
     uint8_t qs[QK_MXFP4 / 2];     // packed E2M1 nibbles
@@ -2299,6 +2328,11 @@ template <int vdr> static __device__ __forceinline__ float vec_dot_q5_1_q8_1_imp
 #define VDR_Q8_0_Q8_1_MMVQ 2
 #define VDR_Q8_0_Q8_1_MMQ 8
 
+// MXFP4 E2M1 is unpacked to int8 lanes and dotted against Q8_1.
+// SM61 is the first NVIDIA architecture with native __dp4a.
+#define VDR_MXFP4_Q8_1_MMVQ 2
+#define VDR_MXFP4_Q8_1_MMQ 4
+
 template <int vdr> static __device__ __forceinline__ float vec_dot_q8_0_q8_1_impl(
     const int * v, const int * u, const float & d8_0, const float & d8_1) {
 
@@ -2723,6 +2757,26 @@ static __device__ __forceinline__ float vec_dot_q8_0_q8_1(
     }
 
     return vec_dot_q8_0_q8_1_impl<VDR_Q8_0_Q8_1_MMVQ>(v, u, bq8_0->d, __low2half(bq8_1->ds));
+}
+
+static __device__ __forceinline__ float vec_dot_mxfp4_q8_1(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & iqs) {
+
+    const int kbx = iqs / QI_MXFP4;
+    const block_mxfp4 * bq4 = (const block_mxfp4 *) vbq + kbx;
+    const int * q8 = (const int *) bq8_1->qs + iqs;
+
+    int sumi = 0;
+#pragma unroll
+    for (int l = 0; l < VDR_MXFP4_Q8_1_MMVQ; ++l) {
+        const int aux_q4 = get_int_b1(bq4->qs, iqs + l);
+        const int2 v = get_int_from_table_16(aux_q4, kvalues_mxfp4);
+        sumi = ggml_cuda_dp4a(v.x, q8[l + 0], sumi);
+        sumi = ggml_cuda_dp4a(v.y, q8[l + QI_MXFP4], sumi);
+    }
+
+    const float d = mxfp4_e8m0_to_fp32_half(bq4->e) * __low2float(bq8_1->ds);
+    return d * sumi;
 }
 
 static __device__ __forceinline__ float vec_dot_q2_K_q8_1(
@@ -3695,6 +3749,27 @@ extern "C" __global__ void mul_mat_vec_q6_K_q8_1_cuda8(
     mul_mat_vec_q<8, QK_K, QI6_K, block_q6_K, VDR_Q6_K_Q8_1_MMVQ, vec_dot_q6_K_q8_1>
         (vx, vy, dst, ncols_x, nrows_x, nrows_y, nrows_dst);
 }
+
+// MXFP4 decode kernels, batch 1..8. These reuse Candle's Q8_1
+// activation quantizer and the generic MMVQ scheduler.
+#define MUL_MAT_VEC_MXFP4_Q8_1_BATCH(BATCH) \
+extern "C" __global__ void mul_mat_vec_mxfp4_q8_1_cuda##BATCH( \
+    const void * vx, const void * vy, float * dst, \
+    const int ncols_x, const int nrows_x, const int nrows_y, const int nrows_dst) { \
+    mul_mat_vec_q<BATCH, QK_MXFP4, QI_MXFP4, block_mxfp4, VDR_MXFP4_Q8_1_MMVQ, vec_dot_mxfp4_q8_1>( \
+        vx, vy, dst, ncols_x, nrows_x, nrows_y, nrows_dst); \
+}
+
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(1)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(2)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(3)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(4)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(5)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(6)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(7)
+MUL_MAT_VEC_MXFP4_Q8_1_BATCH(8)
+
+#undef MUL_MAT_VEC_MXFP4_Q8_1_BATCH
 
 extern "C" __global__ void quantize_q8_1(const float * __restrict__ x, void * __restrict__ vy, const int kx, const int kx_padded) {
     const int ix = blockDim.x*blockIdx.x + threadIdx.x;

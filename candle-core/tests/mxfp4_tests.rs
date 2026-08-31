@@ -239,3 +239,61 @@ fn cuda_dequantize_matches_cpu() -> Result<()> {
 
     Ok(())
 }
+
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_mxfp4_dp4a_batch_1_to_8() -> Result<()> {
+    use candle_core::quantized::QMatMul;
+    use candle_core::Module;
+
+    let cpu = Device::Cpu;
+    let cuda = Device::new_cuda(0)?;
+    let (n, k) = (64usize, 256usize);
+
+    let weights = (0..n * k)
+        .map(|i| ((i as f32) * 0.011).sin() * 1.25 + ((i as f32) * 0.003).cos() * 0.25)
+        .collect::<Vec<_>>();
+    let w_cpu = Tensor::from_vec(weights, (n, k), &cpu)?;
+    let q_cpu = QTensor::quantize(&w_cpu, GgmlDType::Mxfp4)?;
+    let w_ref = q_cpu.dequantize(&cpu)?;
+
+    let q_cuda = QTensor::new(
+        QStorage::from_data(Cow::Owned(q_cpu.data()?.to_vec()), &cuda, GgmlDType::Mxfp4)?,
+        (n, k),
+    )?;
+    let mm = QMatMul::from_qtensor(q_cuda)?;
+
+    for batch in 1usize..=8 {
+        let x_data = (0..batch * k)
+            .map(|i| ((i as f32) * 0.017).cos() * 0.75 + 0.1)
+            .collect::<Vec<_>>();
+        let x_cpu = Tensor::from_vec(x_data, (batch, k), &cpu)?;
+        let expected = x_cpu.matmul(&w_ref.t()?)?;
+
+        let got = mm.forward(&x_cpu.to_device(&cuda)?)?.to_device(&cpu)?;
+        let expected = expected.flatten_all()?.to_vec1::<f32>()?;
+        let got = got.flatten_all()?.to_vec1::<f32>()?;
+
+        let mut max_abs = 0f32;
+        let mut mean_abs = 0f32;
+        let mut mean_ref = 0f32;
+        for (&a, &b) in expected.iter().zip(got.iter()) {
+            let d = (a - b).abs();
+            max_abs = max_abs.max(d);
+            mean_abs += d;
+            mean_ref += a.abs();
+        }
+        mean_abs /= got.len() as f32;
+        mean_ref /= got.len() as f32;
+
+        let mean_tol = 0.03 * mean_ref + 1e-4;
+        let max_tol = 0.20 * mean_ref + 1e-3;
+        assert!(
+            mean_abs <= mean_tol && max_abs <= max_tol,
+            "MXFP4 batch {batch} parity failed: max_abs={max_abs} mean_abs={mean_abs} max_tol={max_tol} mean_tol={mean_tol}"
+        );
+    }
+
+    Ok(())
+}

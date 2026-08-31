@@ -392,6 +392,7 @@ fn mul_mat_vec_via_q8_1(
     let kernel_name = match dtype {
         GgmlDType::Q4_0 => "mul_mat_vec_q4_0_q8_1_cuda",
         GgmlDType::Q4_1 => "mul_mat_vec_q4_1_q8_1_cuda",
+        GgmlDType::Mxfp4 => "mul_mat_vec_mxfp4_q8_1_cuda",
         GgmlDType::Q5_0 => "mul_mat_vec_q5_0_q8_1_cuda",
         GgmlDType::Q5_1 => "mul_mat_vec_q5_1_q8_1_cuda",
         GgmlDType::Q8_0 => "mul_mat_vec_q8_0_q8_1_cuda",
@@ -657,6 +658,7 @@ impl QCudaStorage {
             self.dtype,
             GgmlDType::Q4_0
                 | GgmlDType::Q4_1
+                | GgmlDType::Mxfp4
                 | GgmlDType::Q5_0
                 | GgmlDType::Q5_1
                 | GgmlDType::Q8_0
@@ -683,6 +685,7 @@ impl QCudaStorage {
             GgmlDType::BF16 => deq::<half::bf16>(&buffer, block_len, &mut out),
             GgmlDType::Q4_0 => deq::<crate::quantized::BlockQ4_0>(&buffer, block_len, &mut out),
             GgmlDType::Q4_1 => deq::<crate::quantized::BlockQ4_1>(&buffer, block_len, &mut out),
+            GgmlDType::Mxfp4 => deq::<crate::quantized::BlockMxfp4>(&buffer, block_len, &mut out),
             GgmlDType::Q5_0 => deq::<crate::quantized::BlockQ5_0>(&buffer, block_len, &mut out),
             GgmlDType::Q5_1 => deq::<crate::quantized::BlockQ5_1>(&buffer, block_len, &mut out),
             GgmlDType::Q8_0 => deq::<crate::quantized::BlockQ8_0>(&buffer, block_len, &mut out),
