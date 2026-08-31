@@ -1680,6 +1680,69 @@ mod test {
         let q8_size =
             k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
 
+        // Stage timings isolate the part that shared-A8 can actually
+        // amortize from the NVFP4 weight/decode kernel itself.
+        let stream = dev.cuda_stream();
+
+        let mut q8_stage = dev.alloc_zeros::<u8>(q8_size)?;
+        for _ in 0..3 {
+            quantize_q8_1(&activations_d.as_view(), &mut q8_stage, k, 1, &dev)?;
+        }
+        stream.synchronize().w()?;
+        let q8_start = std::time::Instant::now();
+        for _ in 0..runs {
+            quantize_q8_1(&activations_d.as_view(), &mut q8_stage, k, 1, &dev)?;
+            stream.synchronize().w()?;
+        }
+        let q8_latency_us = q8_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+
+        let kernel_stage_out = dev.alloc_zeros::<f32>(n)?;
+        let kernel_stage_func =
+            dev.get_or_load_func("nvfp4_mat_vec_q8_1_cuda1", &candle_kernels::QUANTIZED)?;
+        let kernel_stage_cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (n as u32, 1, 1),
+            block_dim: (WARP_SIZE as u32, 4, 1),
+            shared_mem_bytes: 0,
+        };
+
+        for _ in 0..3 {
+            let mut builder = kernel_stage_func.builder();
+            builder.arg(&packed_d);
+            builder.arg(&scales_d);
+            barg!(builder, global_scale);
+            builder.arg(&q8_stage);
+            builder.arg(&kernel_stage_out);
+            barg!(
+                builder,
+                k as i32,
+                n as i32,
+                k_padded as i32,
+                n as i32
+            );
+            unsafe { builder.launch(kernel_stage_cfg) }.w()?;
+        }
+        stream.synchronize().w()?;
+        let kernel_start = std::time::Instant::now();
+        for _ in 0..runs {
+            let mut builder = kernel_stage_func.builder();
+            builder.arg(&packed_d);
+            builder.arg(&scales_d);
+            barg!(builder, global_scale);
+            builder.arg(&q8_stage);
+            builder.arg(&kernel_stage_out);
+            barg!(
+                builder,
+                k as i32,
+                n as i32,
+                k_padded as i32,
+                n as i32
+            );
+            unsafe { builder.launch(kernel_stage_cfg) }.w()?;
+            stream.synchronize().w()?;
+        }
+        let kernel_latency_us =
+            kernel_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+
         let run_once = || -> Result<Vec<f32>> {
             // Match Candle's quantized matvec path: activation quantization
             // and output allocation are part of the measured operation.
@@ -1746,6 +1809,13 @@ mod test {
         let e2e_metrics = nvfp4_metrics(&f32_reference, &got);
         let quant_metrics = nvfp4_metrics(&f32_reference, &quant_reference);
 
+        let stage_overhead_us = latency_us - q8_latency_us - kernel_latency_us;
+        println!(
+            "NVFP4_BENCH_STAGES q8_quantize_us={q8_latency_us:.3} kernel_us={kernel_latency_us:.3} overhead_us={stage_overhead_us:.3} q8_fraction={:.4} kernel_fraction={:.4} kernel_effective_gbps={:.3}",
+            q8_latency_us / latency_us,
+            kernel_latency_us / latency_us,
+            bytes as f64 / (kernel_latency_us * 1000.0)
+        );
         println!(
             "NVFP4_QUANT_QUALITY bits_per_weight={bits_per_weight:.4} max_abs={:.6} mean_abs={:.6} cosine={:.8} global_scale={global_scale:.9}",
             quant_metrics.0,
