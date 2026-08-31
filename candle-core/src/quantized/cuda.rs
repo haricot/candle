@@ -1176,6 +1176,213 @@ mod test {
         Ok(())
     }
 
+    fn nvfp4_test_reference(
+        packed: &[u8],
+        scales: &[u8],
+        global_scale: f32,
+        rows: usize,
+        k: usize,
+        activations: &[f32],
+        batch: usize,
+    ) -> Vec<f32> {
+        const E2M1: [f32; 16] = [
+            0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
+            -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+        ];
+        let blocks_per_row = k / 16;
+        let packed_row_bytes = blocks_per_row * 8;
+        let mut out = vec![0f32; rows * batch];
+
+        for b in 0..batch {
+            for row in 0..rows {
+                let mut acc = 0f32;
+                for block in 0..blocks_per_row {
+                    let scale = e4m3fn_to_f32_test(scales[row * blocks_per_row + block]) * global_scale;
+                    let p = &packed[
+                        row * packed_row_bytes + block * 8
+                            .. row * packed_row_bytes + block * 8 + 8
+                    ];
+                    for i in 0..8 {
+                        let byte = p[i];
+                        let w0 = E2M1[(byte & 0x0f) as usize] * scale;
+                        let w1 = E2M1[(byte >> 4) as usize] * scale;
+                        let col = block * 16 + 2 * i;
+                        acc += w0 * activations[b * k + col];
+                        acc += w1 * activations[b * k + col + 1];
+                    }
+                }
+                out[b * rows + row] = acc;
+            }
+        }
+        out
+    }
+
+    fn e4m3fn_to_f32_test(x: u8) -> f32 {
+        let sign = (x >> 7) & 1;
+        let exp = (x >> 3) & 0x0f;
+        let mant = x & 0x07;
+        let value = if exp == 0 {
+            if mant == 0 { 0.0 } else { mant as f32 * 2f32.powi(-9) }
+        } else if exp == 0x0f && mant == 0x07 {
+            f32::NAN
+        } else {
+            (1.0 + mant as f32 / 8.0) * 2f32.powi(exp as i32 - 7)
+        };
+        if sign != 0 { -value } else { value }
+    }
+
+    fn assert_nvfp4_close(expected: &[f32], got: &[f32], label: &str) {
+        assert_eq!(expected.len(), got.len(), "{label}: length mismatch");
+        let mut max_abs = 0f32;
+        let mut mean_abs = 0f32;
+        let mut dot = 0f64;
+        let mut nr = 0f64;
+        let mut ng = 0f64;
+        for (&a, &b) in expected.iter().zip(got.iter()) {
+            let d = (a - b).abs();
+            max_abs = max_abs.max(d);
+            mean_abs += d;
+            dot += a as f64 * b as f64;
+            nr += a as f64 * a as f64;
+            ng += b as f64 * b as f64;
+        }
+        mean_abs /= got.len() as f32;
+        let cosine = dot / (nr.sqrt() * ng.sqrt()).max(f64::MIN_POSITIVE);
+        println!(
+            "NVFP4_SM61_PARITY label={label} max_abs={max_abs:.6} mean_abs={mean_abs:.6} cosine={cosine:.8}"
+        );
+        assert!(max_abs < 0.08, "{label}: max_abs={max_abs}");
+        assert!(mean_abs < 0.02, "{label}: mean_abs={mean_abs}");
+        assert!(cosine >= 0.99999, "{label}: cosine={cosine}");
+    }
+
+    #[test]
+    fn cuda_nvfp4_sm61_compute_parity() -> Result<()> {
+        let dev = CudaDevice::new(0)?;
+        let rows = 37usize;
+        let k = 256usize;
+        let global_scale = 0.125f32;
+        let blocks_per_row = k / 16;
+
+        // Deterministic valid NVFP4 payload. E4M3FN scales cycle through
+        // 0.5, 1.0 and 2.0; packed nibbles cover all E2M1 codes.
+        let mut packed = vec![0u8; rows * blocks_per_row * 8];
+        for (i, byte) in packed.iter_mut().enumerate() {
+            let lo = (i % 16) as u8;
+            let hi = ((i * 7 + 3) % 16) as u8;
+            *byte = lo | (hi << 4);
+        }
+        let scale_codes = [0x30u8, 0x38, 0x40];
+        let scales = (0..rows * blocks_per_row)
+            .map(|i| scale_codes[i % scale_codes.len()])
+            .collect::<Vec<_>>();
+
+        let packed_d = dev.clone_htod(&packed)?;
+        let scales_d = dev.clone_htod(&scales)?;
+
+        for batch in [1usize, 2, 4, 8] {
+            let activations = (0..batch * k)
+                .map(|i| ((i as f32) * 0.013).sin() * 0.7 + ((i as f32) * 0.003).cos() * 0.2)
+                .collect::<Vec<_>>();
+            let expected = nvfp4_test_reference(
+                &packed,
+                &scales,
+                global_scale,
+                rows,
+                k,
+                &activations,
+                batch,
+            );
+
+            let activations_d = dev.clone_htod(&activations)?;
+            let k_padded = pad(k, MATRIX_ROW_PADDING);
+            let y_size_in_bytes =
+                batch * k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
+            let mut q8 = dev.alloc_zeros::<u8>(y_size_in_bytes)?;
+            quantize_q8_1(&activations_d.as_view(), &mut q8, k, batch, &dev)?;
+
+            let out = dev.alloc_zeros::<f32>(rows * batch)?;
+            let kernel = format!("nvfp4_mat_vec_q8_1_cuda{batch}");
+            let func = dev.get_or_load_func(&kernel, &candle_kernels::QUANTIZED)?;
+            let (nblocks, nwarps) = match batch {
+                1 => (rows as u32, 4),
+                2..=4 => (rows as u32, 4),
+                5..=8 => (rows as u32, 2),
+                _ => unreachable!(),
+            };
+            let cfg = cudarc::driver::LaunchConfig {
+                grid_dim: (nblocks, 1, 1),
+                block_dim: (WARP_SIZE as u32, nwarps, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = func.builder();
+            builder.arg(&packed_d);
+            builder.arg(&scales_d);
+            barg!(builder, global_scale);
+            builder.arg(&q8);
+            builder.arg(&out);
+            barg!(
+                builder,
+                k as i32,
+                rows as i32,
+                k_padded as i32,
+                rows as i32
+            );
+            unsafe { builder.launch(cfg) }.w()?;
+            let got = dev.clone_dtoh(&out.as_view())?;
+            assert_nvfp4_close(&expected, &got, &format!("decode_batch_{batch}"));
+        }
+
+        // Dynamic-batch prefill uses the same DP4A primitive.
+        let batch = 17usize;
+        let activations = (0..batch * k)
+            .map(|i| ((i as f32) * 0.009).cos() * 0.65 - 0.05)
+            .collect::<Vec<_>>();
+        let expected = nvfp4_test_reference(
+            &packed,
+            &scales,
+            global_scale,
+            rows,
+            k,
+            &activations,
+            batch,
+        );
+        let activations_d = dev.clone_htod(&activations)?;
+        let k_padded = pad(k, MATRIX_ROW_PADDING);
+        let y_size_in_bytes =
+            batch * k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
+        let mut q8 = dev.alloc_zeros::<u8>(y_size_in_bytes)?;
+        quantize_q8_1(&activations_d.as_view(), &mut q8, k, batch, &dev)?;
+
+        let out = dev.alloc_zeros::<f32>(rows * batch)?;
+        let func = dev.get_or_load_func("nvfp4_mat_mul_q8_1", &candle_kernels::QUANTIZED)?;
+        let cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (rows as u32, batch as u32, 1),
+            block_dim: (WARP_SIZE as u32, 4, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = func.builder();
+        builder.arg(&packed_d);
+        builder.arg(&scales_d);
+        barg!(builder, global_scale);
+        builder.arg(&q8);
+        builder.arg(&out);
+        barg!(
+            builder,
+            k as i32,
+            rows as i32,
+            batch as i32,
+            k_padded as i32,
+            rows as i32
+        );
+        unsafe { builder.launch(cfg) }.w()?;
+        let got = dev.clone_dtoh(&out.as_view())?;
+        assert_nvfp4_close(&expected, &got, "prefill_batch_17");
+
+        Ok(())
+    }
+
+
     // The following test used to fail under compute-sanitizer until #2526.
     #[test]
     fn cuda_mm_q8_1_pad() -> Result<()> {
