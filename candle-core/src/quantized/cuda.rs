@@ -1865,6 +1865,73 @@ mod test {
         let e2e_metrics = nvfp4_metrics(&f32_reference, &got);
         let quant_metrics = nvfp4_metrics(&f32_reference, &quant_reference);
 
+        for split_warps in [1u32, 2, 4, 8] {
+            let split_out = dev.alloc_zeros::<f32>(n)?;
+            let split_name = format!("nvfp4_mat_vec_q8_1_split16_w{split_warps}");
+            let split_func = dev.get_or_load_func(&split_name, &candle_kernels::QUANTIZED)?;
+            let split_cfg = cudarc::driver::LaunchConfig {
+                grid_dim: (n as u32, 1, 1),
+                block_dim: (WARP_SIZE as u32, split_warps, 1),
+                shared_mem_bytes: 0,
+            };
+
+            for _ in 0..3 {
+                let mut builder = split_func.builder();
+                builder.arg(&packed_d);
+                builder.arg(&scales_d);
+                barg!(builder, global_scale);
+                builder.arg(&q8_stage);
+                builder.arg(&split_out);
+                barg!(
+                    builder,
+                    k as i32,
+                    n as i32,
+                    k_padded as i32,
+                    n as i32
+                );
+                unsafe { builder.launch(split_cfg) }.w()?;
+            }
+            stream.synchronize().w()?;
+
+            let split_launches = 50usize;
+            let split_start = std::time::Instant::now();
+            for _ in 0..split_launches {
+                let mut builder = split_func.builder();
+                builder.arg(&packed_d);
+                builder.arg(&scales_d);
+                barg!(builder, global_scale);
+                builder.arg(&q8_stage);
+                builder.arg(&split_out);
+                barg!(
+                    builder,
+                    k as i32,
+                    n as i32,
+                    k_padded as i32,
+                    n as i32
+                );
+                unsafe { builder.launch(split_cfg) }.w()?;
+            }
+            stream.synchronize().w()?;
+            let split_us =
+                split_start.elapsed().as_secs_f64() * 1e6 / split_launches as f64;
+            let split_got = dev.clone_dtoh(&split_out.as_view())?;
+            let split_metrics = nvfp4_metrics(&kernel_reference, &split_got);
+
+            println!(
+                "NVFP4_SPLIT16_SWEEP warps={split_warps} threads={} kernel_us={split_us:.3} speedup_vs_baseline={:.3} effective_gbps={:.3} kernel_cosine={:.8} kernel_mean_abs={:.6}",
+                split_warps * WARP_SIZE as u32,
+                kernel_latency_us / split_us,
+                bytes as f64 / (split_us * 1000.0),
+                split_metrics.2,
+                split_metrics.1
+            );
+            assert!(
+                split_metrics.2 >= 0.99999,
+                "NVFP4 split16 {split_warps}: cosine={}",
+                split_metrics.2
+            );
+        }
+
         for sweep_warps in [1u32, 2, 4, 8] {
             let sweep_out = dev.alloc_zeros::<f32>(n)?;
             let sweep_name = format!("nvfp4_mat_vec_q8_1_warp_sweep_w{sweep_warps}");
