@@ -4589,6 +4589,88 @@ static __device__ __forceinline__ float vec_dot_q6_K_q8_1_mul_mat(
 }
 
 
+template <int mmq_y> static __device__ __forceinline__ void allocate_tiles_mxfp4(
+    int ** x_ql, half2 ** x_dm, int ** x_qh, int ** x_sc) {
+    GGML_UNUSED(x_qh);
+    GGML_UNUSED(x_sc);
+
+    __shared__ int tile_x_qs[mmq_y * (2 * WARP_SIZE) + mmq_y];
+    __shared__ float tile_x_d[mmq_y * (WARP_SIZE / QI_MXFP4) + mmq_y / QI_MXFP4];
+
+    *x_ql = tile_x_qs;
+    *x_dm = (half2 *) tile_x_d;
+}
+
+template <int mmq_y, int nwarps, bool need_check>
+static __device__ __forceinline__ void load_tiles_mxfp4(
+    const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm,
+    int * __restrict__ x_qh, int * __restrict__ x_sc, const int & i_offset,
+    const int & i_max, const int & k, const int & blocks_per_row) {
+    GGML_UNUSED(x_qh);
+    GGML_UNUSED(x_sc);
+
+    GGML_CUDA_ASSUME(i_offset >= 0);
+    GGML_CUDA_ASSUME(i_offset < nwarps);
+    GGML_CUDA_ASSUME(k >= 0);
+    GGML_CUDA_ASSUME(k < WARP_SIZE);
+
+    const int kbx = k / QI_MXFP4;
+    const int kqsx = k % QI_MXFP4;
+    const block_mxfp4 * bx0 = (const block_mxfp4 *) vx;
+
+#pragma unroll
+    for (int i0 = 0; i0 < mmq_y; i0 += nwarps) {
+        int i = i0 + i_offset;
+        if (need_check) {
+            i = min(i, i_max);
+        }
+
+        const block_mxfp4 * bxi = bx0 + i * blocks_per_row + kbx;
+        const int aux_q4 = get_int_b1(bxi->qs, kqsx);
+        const int2 v = get_int_from_table_16(aux_q4, kvalues_mxfp4);
+        const int k0 = kbx * (2 * QI_MXFP4) + kqsx;
+
+        x_ql[i * (2 * WARP_SIZE + 1) + k0] = v.x;
+        x_ql[i * (2 * WARP_SIZE + 1) + k0 + QI_MXFP4] = v.y;
+    }
+
+    const int blocks_per_tile_x_row = WARP_SIZE / QI_MXFP4;
+    const int kbxd = k % blocks_per_tile_x_row;
+    float * x_dmf = (float *) x_dm;
+
+#pragma unroll
+    for (int i0 = 0; i0 < mmq_y; i0 += nwarps * QI_MXFP4) {
+        int i = i0 + i_offset * QI_MXFP4 + k / blocks_per_tile_x_row;
+        if (need_check) {
+            i = min(i, i_max);
+        }
+
+        const block_mxfp4 * bxi = bx0 + i * blocks_per_row + kbxd;
+        x_dmf[i * (WARP_SIZE / QI_MXFP4) + i / QI_MXFP4 + kbxd] =
+            mxfp4_e8m0_to_fp32_half(bxi->e);
+    }
+}
+
+static __device__ __forceinline__ float vec_dot_mxfp4_q8_1_mul_mat(
+    const int * __restrict__ x_ql, const half2 * __restrict__ x_dm,
+    const int * __restrict__ x_qh, const int * __restrict__ x_sc,
+    const int * __restrict__ y_qs, const half2 * __restrict__ y_ds,
+    const int & i, const int & j, const int & k) {
+    GGML_UNUSED(x_qh);
+    GGML_UNUSED(x_sc);
+
+    const float * x_dmf = (const float *) x_dm;
+    const float * y_df = (const float *) y_ds;
+    const int index_x = i * (WARP_SIZE / QI_MXFP4) + i / QI_MXFP4 + k / QI_MXFP4;
+    const int index_y = j * (WARP_SIZE / QI8_1) + k / QI8_1;
+
+    return vec_dot_q8_0_q8_1_impl<VDR_MXFP4_Q8_1_MMQ>(
+        &x_ql[i * (2 * WARP_SIZE + 1) + k],
+        &y_qs[j * WARP_SIZE + k],
+        x_dmf[index_x],
+        y_df[index_y]);
+}
+
 static __device__ __forceinline__ float vec_dot_q4_0_q8_1_mul_mat(
     const int * __restrict__ x_ql, const half2 * __restrict__ x_dm, const int * __restrict__ x_qh, const int * __restrict__ x_sc,
     const int * __restrict__ y_qs, const half2 * __restrict__ y_ds, const int & i, const int & j, const int & k) {
@@ -4680,6 +4762,22 @@ mul_mat_q5_1(
 
     mul_mat_q<QK5_1, QR5_1, QI5_1, true, block_q5_1, mmq_x, mmq_y, nwarps, allocate_tiles_q5_1<mmq_y>,
         load_tiles_q5_1<mmq_y, nwarps, true>, VDR_Q5_1_Q8_1_MMQ, vec_dot_q5_1_q8_1_mul_mat>
+        (vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst);
+}
+
+extern "C" __global__ void
+mul_mat_mxfp4(
+    const void * __restrict__ vx, const void * __restrict__ vy, float * __restrict__ dst,
+    const int ncols_x, const int nrows_x, const int ncols_y, const int nrows_y,
+    const int nrows_dst) {
+    const int mmq_x = MMQ_X_Q8_0_AMPERE;
+    const int mmq_y = MMQ_Y_Q8_0_AMPERE;
+    const int nwarps = NWARPS_Q8_0_AMPERE;
+
+    mul_mat_q<QK_MXFP4, QR_MXFP4, QI_MXFP4, false, block_mxfp4,
+        mmq_x, mmq_y, nwarps, allocate_tiles_mxfp4<mmq_y>,
+        load_tiles_mxfp4<mmq_y, nwarps, true>,
+        VDR_MXFP4_Q8_1_MMQ, vec_dot_mxfp4_q8_1_mul_mat>
         (vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst);
 }
 

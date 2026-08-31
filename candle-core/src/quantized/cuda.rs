@@ -466,6 +466,7 @@ fn mul_mat_via_q8_1(
     let (kernel_name, mmq_x, mmq_y) = match dtype {
         GgmlDType::Q4_0 => ("mul_mat_q4_0", 64, 128),
         GgmlDType::Q4_1 => ("mul_mat_q4_1", 64, 128),
+        GgmlDType::Mxfp4 => ("mul_mat_mxfp4", 128, 64),
         GgmlDType::Q5_0 => ("mul_mat_q5_0", 128, 64),
         GgmlDType::Q5_1 => ("mul_mat_q5_1", 128, 64),
         GgmlDType::Q8_0 => ("mul_mat_q8_0", 128, 64),
