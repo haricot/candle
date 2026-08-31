@@ -4859,17 +4859,58 @@ mul_mat_mxfp4(
     const void * __restrict__ vx, const void * __restrict__ vy, float * __restrict__ dst,
     const int ncols_x, const int nrows_x, const int ncols_y, const int nrows_y,
     const int nrows_dst) {
-    // SM61-first reference geometry. Pascal uses 64 x 64 tiles and 8 warps
-    // for the Q8_0-style MMQ layout reused by MXFP4.
-    const int mmq_x = MMQ_X_Q8_0_PASCAL;
-    const int mmq_y = MMQ_Y_Q8_0_PASCAL;
-    const int nwarps = NWARPS_Q8_0_PASCAL;
 
-    mul_mat_q<QK_MXFP4, QR_MXFP4, QI_MXFP4, false, block_mxfp4,
-        mmq_x, mmq_y, nwarps, allocate_tiles_mxfp4<mmq_y>,
-        load_tiles_mxfp4<mmq_y, nwarps, true>,
-        VDR_MXFP4_Q8_1_MMQ, vec_dot_mxfp4_q8_1_mul_mat>
-        (vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst);
+    // Correctness-first SM61 prefill kernel.
+    //
+    // Reuse the exact MXFP4 x Q8_1 DP4A dot-product already validated by
+    // cuda1..cuda8, but make the activation row dynamic through blockIdx.y.
+    // This deliberately avoids the inherited tiled MMQ path until that path
+    // has an independent correctness proof for MXFP4.
+    constexpr int nwarps = 4;
+    constexpr int qk = QK_MXFP4;
+    constexpr int qi = QI_MXFP4;
+    constexpr int vdr = VDR_MXFP4_Q8_1_MMVQ;
+    constexpr int blocks_per_iter = vdr * nwarps * WARP_SIZE / qi;
+
+    const int row = blockIdx.x;
+    const int col = blockIdx.y;
+    if (row >= nrows_x || col >= ncols_y) {
+        return;
+    }
+
+    const int tid = WARP_SIZE * threadIdx.y + threadIdx.x;
+    const int blocks_per_row_x = ncols_x / qk;
+    const int blocks_per_col_y = nrows_y / QK8_1;
+
+    const block_mxfp4 * x = (const block_mxfp4 *) vx + row * blocks_per_row_x;
+    const block_q8_1 * y = (const block_q8_1 *) vy + col * blocks_per_col_y;
+
+    float tmp = 0.0f;
+    for (int kbx = tid / (qi / vdr); kbx < blocks_per_row_x; kbx += blocks_per_iter) {
+        const int kby = kbx * (qk / QK8_1);
+        const int kqs = vdr * (tid % (qi / vdr));
+        tmp += vec_dot_mxfp4_q8_1(&x[kbx], &y[kby], kqs);
+    }
+
+    __shared__ float tmp_shared[nwarps - 1][WARP_SIZE];
+    if (threadIdx.y > 0) {
+        tmp_shared[threadIdx.y - 1][threadIdx.x] = tmp;
+    }
+    __syncthreads();
+
+    if (threadIdx.y > 0) {
+        return;
+    }
+
+#pragma unroll
+    for (int warp = 0; warp < nwarps - 1; ++warp) {
+        tmp += tmp_shared[warp][threadIdx.x];
+    }
+    tmp = warp_reduce_sum(tmp);
+
+    if (threadIdx.x == 0) {
+        dst[col * nrows_dst + row] = tmp;
+    }
 }
 
 extern "C" __global__ void
