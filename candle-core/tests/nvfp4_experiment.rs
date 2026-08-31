@@ -311,3 +311,64 @@ fn compare_mxfp4_nvfp4_reference_decode_perf() -> Result<()> {
     println!("FP4_REFERENCE_PERF format=NVFP4_EXPERIMENTAL latency_us={nv_us:.3}");
     Ok(())
 }
+
+
+#[test]
+#[ignore = "large release-only quality gate matching the MXFP4 SM61 benchmark workload"]
+fn compare_mxfp4_nvfp4_matmul_quality_same_workload() -> Result<()> {
+    let cpu = Device::Cpu;
+    let (n, k) = (4096usize, 4096usize);
+
+    println!(
+        "FP4_SAME_WORKLOAD_CONFIG profile={} n={n} k={k}",
+        if cfg!(debug_assertions) { "debug" } else { "release" }
+    );
+
+    let weights = (0..n * k)
+        .map(|i| ((i as f32) * 0.0013).sin() * 0.75 + ((i as f32) * 0.0007).cos() * 0.25)
+        .collect::<Vec<_>>();
+    let x = (0..k)
+        .map(|i| ((i as f32) * 0.017).cos() * 0.5 + 0.1)
+        .collect::<Vec<_>>();
+
+    let w_cpu = Tensor::from_vec(weights.clone(), (n, k), &cpu)?;
+    let x_cpu = Tensor::from_vec(x, (1, k), &cpu)?;
+    let reference = x_cpu
+        .matmul(&w_cpu.t()?)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+
+    let mx = QTensor::quantize(&w_cpu, GgmlDType::Mxfp4)?;
+    let mx_dec = mx.dequantize(&cpu)?;
+    let mx_out = x_cpu
+        .matmul(&mx_dec.t()?)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let mx_m = error_metrics(&reference, &mx_out);
+    let mx_bits = mx.data()?.len() as f64 * 8.0 / (n * k) as f64;
+
+    let nv = nvfp4_quantize_experimental(&weights);
+    let nv_dec = Tensor::from_vec(nvfp4_decode(&nv), (n, k), &cpu)?;
+    let nv_out = x_cpu
+        .matmul(&nv_dec.t()?)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let nv_m = error_metrics(&reference, &nv_out);
+    let nv_bytes = nv.packed.len() + nv.scales_e4m3.len() + std::mem::size_of::<f32>();
+    let nv_bits = nv_bytes as f64 * 8.0 / (n * k) as f64;
+
+    println!(
+        "FP4_SAME_WORKLOAD format=MXFP4 bits_per_weight={mx_bits:.4} max_abs={:.6} mean_abs={:.6} rmse={:.6} cosine={:.8}",
+        mx_m.0, mx_m.1, mx_m.2, mx_m.3
+    );
+    println!(
+        "FP4_SAME_WORKLOAD format=NVFP4_EXPERIMENTAL bits_per_weight={nv_bits:.4} max_abs={:.6} mean_abs={:.6} rmse={:.6} cosine={:.8} global_scale={:.9}",
+        nv_m.0, nv_m.1, nv_m.2, nv_m.3, nv.global_scale
+    );
+
+    assert!((mx_bits - 4.25).abs() < 1e-6);
+    assert!(nv_bits > 4.49 && nv_bits < 4.51);
+    assert!(mx_m.3.is_finite() && nv_m.3.is_finite());
+
+    Ok(())
+}
