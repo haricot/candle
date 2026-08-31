@@ -1256,6 +1256,53 @@ mod test {
         assert!(cosine >= 0.99999, "{label}: cosine={cosine}");
     }
 
+    fn nvfp4_metrics(reference: &[f32], got: &[f32]) -> (f32, f32, f64) {
+        assert_eq!(reference.len(), got.len());
+        let mut max_abs = 0f32;
+        let mut mean_abs = 0f32;
+        let mut dot = 0f64;
+        let mut nr = 0f64;
+        let mut ng = 0f64;
+        for (&a, &b) in reference.iter().zip(got.iter()) {
+            let d = (a - b).abs();
+            max_abs = max_abs.max(d);
+            mean_abs += d;
+            dot += a as f64 * b as f64;
+            nr += a as f64 * a as f64;
+            ng += b as f64 * b as f64;
+        }
+        mean_abs /= got.len() as f32;
+        let cosine = dot / (nr.sqrt() * ng.sqrt()).max(f64::MIN_POSITIVE);
+        (max_abs, mean_abs, cosine)
+    }
+
+    fn dequantize_cuda_q8_1_reference(
+        bytes: &[u8],
+        rows: usize,
+        k: usize,
+        k_padded: usize,
+    ) -> Vec<f32> {
+        let blocks_per_padded_row = k_padded / 32;
+        let blocks_per_live_row = k / 32;
+        let row_bytes = blocks_per_padded_row * 36;
+        assert_eq!(bytes.len(), rows * row_bytes);
+
+        let mut out = vec![0f32; rows * k];
+        for row in 0..rows {
+            for block in 0..blocks_per_live_row {
+                let off = row * row_bytes + block * 36;
+                let d_bits = u16::from_le_bytes([bytes[off], bytes[off + 1]]);
+                let d = f16::from_bits(d_bits).to_f32();
+                for j in 0..32 {
+                    let q = bytes[off + 4 + j] as i8;
+                    out[row * k + block * 32 + j] = d * q as f32;
+                }
+            }
+        }
+        out
+    }
+
+
     #[test]
     fn cuda_nvfp4_sm61_compute_parity() -> Result<()> {
         let dev = CudaDevice::new(0)?;
@@ -1280,11 +1327,11 @@ mod test {
         let packed_d = dev.clone_htod(&packed)?;
         let scales_d = dev.clone_htod(&scales)?;
 
-        for batch in [1usize, 2, 4, 8] {
+        for batch in 1usize..=8 {
             let activations = (0..batch * k)
                 .map(|i| ((i as f32) * 0.013).sin() * 0.7 + ((i as f32) * 0.003).cos() * 0.2)
                 .collect::<Vec<_>>();
-            let expected = nvfp4_test_reference(
+            let expected_f32 = nvfp4_test_reference(
                 &packed,
                 &scales,
                 global_scale,
@@ -1301,17 +1348,27 @@ mod test {
             let mut q8 = dev.alloc_zeros::<u8>(y_size_in_bytes)?;
             quantize_q8_1(&activations_d.as_view(), &mut q8, k, batch, &dev)?;
 
+            // Kernel parity must compare against the exact Q8_1 activations
+            // consumed by CUDA, not against the original F32 activations.
+            let q8_host = dev.clone_dtoh(&q8.as_view())?;
+            let activations_q8 =
+                dequantize_cuda_q8_1_reference(&q8_host, batch, k, k_padded);
+            let expected_kernel = nvfp4_test_reference(
+                &packed,
+                &scales,
+                global_scale,
+                rows,
+                k,
+                &activations_q8,
+                batch,
+            );
+
             let out = dev.alloc_zeros::<f32>(rows * batch)?;
             let kernel = format!("nvfp4_mat_vec_q8_1_cuda{batch}");
             let func = dev.get_or_load_func(&kernel, &candle_kernels::QUANTIZED)?;
-            let (nblocks, nwarps) = match batch {
-                1 => (rows as u32, 4),
-                2..=4 => (rows as u32, 4),
-                5..=8 => (rows as u32, 2),
-                _ => unreachable!(),
-            };
+            let nwarps = if batch <= 4 { 4 } else { 2 };
             let cfg = cudarc::driver::LaunchConfig {
-                grid_dim: (nblocks, 1, 1),
+                grid_dim: (rows as u32, 1, 1),
                 block_dim: (WARP_SIZE as u32, nwarps, 1),
                 shared_mem_bytes: 0,
             };
@@ -1330,7 +1387,18 @@ mod test {
             );
             unsafe { builder.launch(cfg) }.w()?;
             let got = dev.clone_dtoh(&out.as_view())?;
-            assert_nvfp4_close(&expected, &got, &format!("decode_batch_{batch}"));
+
+            assert_nvfp4_close(
+                &expected_kernel,
+                &got,
+                &format!("kernel_decode_batch_{batch}"),
+            );
+            let e2e = nvfp4_metrics(&expected_f32, &got);
+            println!(
+                "NVFP4_A8_E2E label=decode_batch_{batch} max_abs={:.6} mean_abs={:.6} cosine={:.8}",
+                e2e.0, e2e.1, e2e.2
+            );
+            assert!(e2e.2 >= 0.999, "decode_batch_{batch}: Q8_1 end-to-end cosine={}", e2e.2);
         }
 
         // Dynamic-batch prefill uses the same DP4A primitive.
@@ -1338,7 +1406,7 @@ mod test {
         let activations = (0..batch * k)
             .map(|i| ((i as f32) * 0.009).cos() * 0.65 - 0.05)
             .collect::<Vec<_>>();
-        let expected = nvfp4_test_reference(
+        let expected_f32 = nvfp4_test_reference(
             &packed,
             &scales,
             global_scale,
@@ -1353,6 +1421,19 @@ mod test {
             batch * k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
         let mut q8 = dev.alloc_zeros::<u8>(y_size_in_bytes)?;
         quantize_q8_1(&activations_d.as_view(), &mut q8, k, batch, &dev)?;
+
+        let q8_host = dev.clone_dtoh(&q8.as_view())?;
+        let activations_q8 =
+            dequantize_cuda_q8_1_reference(&q8_host, batch, k, k_padded);
+        let expected_kernel = nvfp4_test_reference(
+            &packed,
+            &scales,
+            global_scale,
+            rows,
+            k,
+            &activations_q8,
+            batch,
+        );
 
         let out = dev.alloc_zeros::<f32>(rows * batch)?;
         let func = dev.get_or_load_func("nvfp4_mat_mul_q8_1", &candle_kernels::QUANTIZED)?;
@@ -1377,7 +1458,101 @@ mod test {
         );
         unsafe { builder.launch(cfg) }.w()?;
         let got = dev.clone_dtoh(&out.as_view())?;
-        assert_nvfp4_close(&expected, &got, "prefill_batch_17");
+        assert_nvfp4_close(&expected_kernel, &got, "kernel_prefill_batch_17");
+        let e2e = nvfp4_metrics(&expected_f32, &got);
+        println!(
+            "NVFP4_A8_E2E label=prefill_batch_17 max_abs={:.6} mean_abs={:.6} cosine={:.8}",
+            e2e.0, e2e.1, e2e.2
+        );
+        assert!(e2e.2 >= 0.999, "prefill_batch_17: Q8_1 end-to-end cosine={}", e2e.2);
+
+        // Indexed MoE correctness with the same packed NVFP4 representation.
+        let num_experts = 4usize;
+        let moe_rows = 19usize;
+        let topk = 2usize;
+        let moe_batch = 4usize;
+        let moe_blocks_per_row = k / 16;
+        let mut moe_packed =
+            vec![0u8; num_experts * moe_rows * moe_blocks_per_row * 8];
+        for (i, byte) in moe_packed.iter_mut().enumerate() {
+            let lo = ((i * 3 + 1) % 16) as u8;
+            let hi = ((i * 5 + 7) % 16) as u8;
+            *byte = lo | (hi << 4);
+        }
+        let moe_scales = (0..num_experts * moe_rows * moe_blocks_per_row)
+            .map(|i| scale_codes[(i * 7) % scale_codes.len()])
+            .collect::<Vec<_>>();
+        let moe_inputs = (0..moe_batch * k)
+            .map(|i| ((i as f32) * 0.007).sin() * 0.55 + 0.08)
+            .collect::<Vec<_>>();
+        let ids = vec![0u32, 1, 2, 3, 3, 2, 1, 0];
+
+        let moe_packed_d = dev.clone_htod(&moe_packed)?;
+        let moe_scales_d = dev.clone_htod(&moe_scales)?;
+        let moe_inputs_d = dev.clone_htod(&moe_inputs)?;
+        let ids_d = dev.clone_htod(&ids)?;
+
+        let moe_q8_size =
+            moe_batch * k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
+        let mut moe_q8 = dev.alloc_zeros::<u8>(moe_q8_size)?;
+        quantize_q8_1(&moe_inputs_d.as_view(), &mut moe_q8, k, moe_batch, &dev)?;
+        let moe_q8_host = dev.clone_dtoh(&moe_q8.as_view())?;
+        let moe_inputs_q8 =
+            dequantize_cuda_q8_1_reference(&moe_q8_host, moe_batch, k, k_padded);
+
+        let packed_row_bytes = moe_blocks_per_row * 8;
+        let mut expected_moe = vec![0f32; moe_batch * topk * moe_rows];
+        for b in 0..moe_batch {
+            for t in 0..topk {
+                let expert = ids[b * topk + t] as usize;
+                let expert_packed_start = expert * moe_rows * packed_row_bytes;
+                let expert_scale_start = expert * moe_rows * moe_blocks_per_row;
+                let expert_expected = nvfp4_test_reference(
+                    &moe_packed[
+                        expert_packed_start
+                            .. expert_packed_start + moe_rows * packed_row_bytes
+                    ],
+                    &moe_scales[
+                        expert_scale_start
+                            .. expert_scale_start + moe_rows * moe_blocks_per_row
+                    ],
+                    global_scale,
+                    moe_rows,
+                    k,
+                    &moe_inputs_q8[b * k..(b + 1) * k],
+                    1,
+                );
+                for row in 0..moe_rows {
+                    expected_moe[(b * topk + t) * moe_rows + row] = expert_expected[row];
+                }
+            }
+        }
+
+        let moe_out = dev.alloc_zeros::<f32>(moe_batch * topk * moe_rows)?;
+        let func = dev.get_or_load_func("nvfp4_indexed_moe_q8_1", &candle_kernels::QUANTIZED)?;
+        let cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (moe_rows as u32, moe_batch as u32, topk as u32),
+            block_dim: (WARP_SIZE as u32, 4, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut builder = func.builder();
+        builder.arg(&moe_packed_d);
+        builder.arg(&moe_scales_d);
+        barg!(builder, global_scale);
+        builder.arg(&moe_q8);
+        builder.arg(&ids_d);
+        builder.arg(&moe_out);
+        barg!(
+            builder,
+            moe_rows as i32,
+            k as i32,
+            moe_batch as i32,
+            topk as i32,
+            k_padded as i32
+        );
+        unsafe { builder.launch(cfg) }.w()?;
+        let got_moe = dev.clone_dtoh(&moe_out.as_view())?;
+        assert_nvfp4_close(&expected_moe, &got_moe, "kernel_indexed_moe");
 
         Ok(())
     }
