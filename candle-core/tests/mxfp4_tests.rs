@@ -468,15 +468,19 @@ fn cuda_mxfp4_prefill_parity() -> Result<()> {
         mean_abs /= got.len() as f32;
         mean_ref /= got.len() as f32;
         let cosine = dot / (nr.sqrt() * ng.sqrt()).max(f64::MIN_POSITIVE);
-        let mean_tol = 0.03 * mean_ref + 1e-4;
-        let max_tol = 0.20 * mean_ref + 1e-3;
+        // The validated SM61 DP4A path is very close to the CPU-dequantized
+        // F32 reference; keep this gate intentionally much tighter than the
+        // original bring-up tolerance.
+        let mean_tol = 0.0005 * mean_ref + 1e-4;
+        let max_tol = 0.0020 * mean_ref + 1e-3;
+        let cosine_tol = 0.99999f64;
 
         println!(
             "MXFP4_PREFILL batch={batch} max_abs={max_abs:.6} mean_abs={mean_abs:.6} cosine={cosine:.8} max_tol={max_tol:.6} mean_tol={mean_tol:.6}"
         );
         assert!(
-            mean_abs <= mean_tol && max_abs <= max_tol,
-            "MXFP4 prefill parity failed for batch={batch}: max_abs={max_abs} mean_abs={mean_abs} cosine={cosine} max_tol={max_tol} mean_tol={mean_tol}"
+            mean_abs <= mean_tol && max_abs <= max_tol && cosine >= cosine_tol,
+            "MXFP4 prefill parity failed for batch={batch}: max_abs={max_abs} mean_abs={mean_abs} cosine={cosine} max_tol={max_tol} mean_tol={mean_tol} cosine_tol={cosine_tol}"
         );
     }
 
