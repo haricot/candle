@@ -463,18 +463,18 @@ fn mul_mat_via_q8_1(
     let mut y_q8_1 = dev.alloc_zeros::<u8>(y_size_in_bytes)?;
     quantize_q8_1(y, &mut y_q8_1, k, y_cols, dev)?;
 
-    let (kernel_name, mmq_x, mmq_y) = match dtype {
-        GgmlDType::Q4_0 => ("mul_mat_q4_0", 64, 128),
-        GgmlDType::Q4_1 => ("mul_mat_q4_1", 64, 128),
-        GgmlDType::Mxfp4 => ("mul_mat_mxfp4", 128, 64),
-        GgmlDType::Q5_0 => ("mul_mat_q5_0", 128, 64),
-        GgmlDType::Q5_1 => ("mul_mat_q5_1", 128, 64),
-        GgmlDType::Q8_0 => ("mul_mat_q8_0", 128, 64),
-        GgmlDType::Q2K => ("mul_mat_q2_K", 64, 128),
-        GgmlDType::Q3K => ("mul_mat_q3_K", 128, 128),
-        GgmlDType::Q4K => ("mul_mat_q4_K", 64, 128),
-        GgmlDType::Q5K => ("mul_mat_q5_K", 64, 128),
-        GgmlDType::Q6K => ("mul_mat_q6_K", 64, 64),
+    let (kernel_name, mmq_x, mmq_y, nwarps) = match dtype {
+        GgmlDType::Q4_0 => ("mul_mat_q4_0", 64, 128, 4),
+        GgmlDType::Q4_1 => ("mul_mat_q4_1", 64, 128, 4),
+        GgmlDType::Mxfp4 => ("mul_mat_mxfp4", 64, 64, 8),
+        GgmlDType::Q5_0 => ("mul_mat_q5_0", 128, 64, 4),
+        GgmlDType::Q5_1 => ("mul_mat_q5_1", 128, 64, 4),
+        GgmlDType::Q8_0 => ("mul_mat_q8_0", 128, 64, 4),
+        GgmlDType::Q2K => ("mul_mat_q2_K", 64, 128, 4),
+        GgmlDType::Q3K => ("mul_mat_q3_K", 128, 128, 4),
+        GgmlDType::Q4K => ("mul_mat_q4_K", 64, 128, 4),
+        GgmlDType::Q5K => ("mul_mat_q5_K", 64, 128, 4),
+        GgmlDType::Q6K => ("mul_mat_q6_K", 64, 64, 4),
         _ => crate::bail!("unsupported dtype for quantized matmul {dtype:?}"),
     };
     let func = dev.get_or_load_func(kernel_name, &candle_kernels::QUANTIZED)?;
@@ -485,7 +485,7 @@ fn mul_mat_via_q8_1(
             ceil_div(y_cols, mmq_x) as u32,
             1,
         ),
-        block_dim: (WARP_SIZE as u32, 4, 1),
+        block_dim: (WARP_SIZE as u32, nwarps, 1),
         shared_mem_bytes: 0,
     };
 

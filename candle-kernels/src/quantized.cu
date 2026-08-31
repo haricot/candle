@@ -4859,9 +4859,11 @@ mul_mat_mxfp4(
     const void * __restrict__ vx, const void * __restrict__ vy, float * __restrict__ dst,
     const int ncols_x, const int nrows_x, const int ncols_y, const int nrows_y,
     const int nrows_dst) {
-    const int mmq_x = MMQ_X_Q8_0_AMPERE;
-    const int mmq_y = MMQ_Y_Q8_0_AMPERE;
-    const int nwarps = NWARPS_Q8_0_AMPERE;
+    // SM61-first reference geometry. Pascal uses 64 x 64 tiles and 8 warps
+    // for the Q8_0-style MMQ layout reused by MXFP4.
+    const int mmq_x = MMQ_X_Q8_0_PASCAL;
+    const int mmq_y = MMQ_Y_Q8_0_PASCAL;
+    const int nwarps = NWARPS_Q8_0_PASCAL;
 
     mul_mat_q<QK_MXFP4, QR_MXFP4, QI_MXFP4, false, block_mxfp4,
         mmq_x, mmq_y, nwarps, allocate_tiles_mxfp4<mmq_y>,
