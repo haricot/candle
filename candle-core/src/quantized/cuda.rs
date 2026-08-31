@@ -1231,6 +1231,94 @@ mod test {
         if sign != 0 { -value } else { value }
     }
 
+    fn f32_to_e4m3fn_nearest_test(x: f32) -> u8 {
+        if x.is_nan() {
+            return 0x7f;
+        }
+        if x == 0.0 {
+            return if x.is_sign_negative() { 0x80 } else { 0x00 };
+        }
+
+        let mut best = 0u8;
+        let mut best_err = f32::INFINITY;
+        for raw in 0u16..=255 {
+            let raw = raw as u8;
+            if raw & 0x7f == 0x7f {
+                continue;
+            }
+            let value = e4m3fn_to_f32_test(raw);
+            if !value.is_finite() {
+                continue;
+            }
+            let err = (value - x).abs();
+            if err < best_err || (err == best_err && raw < best) {
+                best = raw;
+                best_err = err;
+            }
+        }
+        best
+    }
+
+    fn nearest_e2m1_test(x: f32) -> u8 {
+        const E2M1: [f32; 16] = [
+            0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
+            -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+        ];
+        let mut best = 0usize;
+        let mut best_err = f32::INFINITY;
+        for (i, &value) in E2M1.iter().enumerate() {
+            let err = (value - x).abs();
+            if err < best_err {
+                best = i;
+                best_err = err;
+            }
+        }
+        best as u8
+    }
+
+    fn nvfp4_quantize_experimental_test(xs: &[f32]) -> (Vec<u8>, Vec<u8>, f32) {
+        assert!(xs.len().is_multiple_of(16));
+
+        let amax = xs.iter().fold(0f32, |m, &x| m.max(x.abs()));
+        let global_scale = if amax == 0.0 {
+            1.0
+        } else {
+            amax / (6.0 * 448.0)
+        };
+
+        let mut packed = vec![0u8; xs.len() / 2];
+        let mut scales = vec![0u8; xs.len() / 16];
+
+        for (block_idx, block) in xs.chunks_exact(16).enumerate() {
+            let block_amax = block.iter().fold(0f32, |m, &x| m.max(x.abs()));
+            let desired_scale = if block_amax == 0.0 {
+                0.0
+            } else {
+                (block_amax / (6.0 * global_scale)).min(448.0)
+            };
+            let scale_raw = f32_to_e4m3fn_nearest_test(desired_scale);
+            scales[block_idx] = scale_raw;
+            let scale = e4m3fn_to_f32_test(scale_raw) * global_scale;
+
+            for i in 0..8 {
+                let q0 = if scale == 0.0 {
+                    0
+                } else {
+                    nearest_e2m1_test(block[2 * i] / scale)
+                };
+                let q1 = if scale == 0.0 {
+                    0
+                } else {
+                    nearest_e2m1_test(block[2 * i + 1] / scale)
+                };
+                packed[block_idx * 8 + i] = q0 | (q1 << 4);
+            }
+        }
+
+        (packed, scales, global_scale)
+    }
+
+
     fn assert_nvfp4_close(expected: &[f32], got: &[f32], label: &str) {
         assert_eq!(expected.len(), got.len(), "{label}: length mismatch");
         let mut max_abs = 0f32;
@@ -1557,6 +1645,141 @@ mod test {
         Ok(())
     }
 
+
+
+    #[test]
+    #[ignore = "release benchmark: NVFP4 4096x4096 on the same workload as mxfp4_sm61_benchmark_gate"]
+    fn cuda_nvfp4_sm61_benchmark_4096() -> Result<()> {
+        let dev = CudaDevice::new(0)?;
+        let (n, k) = (4096usize, 4096usize);
+        let runs = 10usize;
+
+        println!(
+            "NVFP4_BENCH_CONFIG profile={} n={n} k={k}",
+            if cfg!(debug_assertions) { "debug" } else { "release" }
+        );
+
+        let weights = (0..n * k)
+            .map(|i| ((i as f32) * 0.0013).sin() * 0.75 + ((i as f32) * 0.0007).cos() * 0.25)
+            .collect::<Vec<_>>();
+        let activations = (0..k)
+            .map(|i| ((i as f32) * 0.017).cos() * 0.5 + 0.1)
+            .collect::<Vec<_>>();
+
+        let (packed, scales, global_scale) = nvfp4_quantize_experimental_test(&weights);
+        let bytes = packed.len() + scales.len() + std::mem::size_of::<f32>();
+        let bits_per_weight = bytes as f64 * 8.0 / (n * k) as f64;
+
+        let quant_reference =
+            nvfp4_test_reference(&packed, &scales, global_scale, n, k, &activations, 1);
+
+        let packed_d = dev.clone_htod(&packed)?;
+        let scales_d = dev.clone_htod(&scales)?;
+        let activations_d = dev.clone_htod(&activations)?;
+        let k_padded = pad(k, MATRIX_ROW_PADDING);
+        let q8_size =
+            k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
+
+        let run_once = || -> Result<Vec<f32>> {
+            // Match Candle's quantized matvec path: activation quantization
+            // and output allocation are part of the measured operation.
+            let mut q8 = dev.alloc_zeros::<u8>(q8_size)?;
+            quantize_q8_1(&activations_d.as_view(), &mut q8, k, 1, &dev)?;
+
+            let out = dev.alloc_zeros::<f32>(n)?;
+            let func =
+                dev.get_or_load_func("nvfp4_mat_vec_q8_1_cuda1", &candle_kernels::QUANTIZED)?;
+            let cfg = cudarc::driver::LaunchConfig {
+                grid_dim: (n as u32, 1, 1),
+                block_dim: (WARP_SIZE as u32, 4, 1),
+                shared_mem_bytes: 0,
+            };
+            let mut builder = func.builder();
+            builder.arg(&packed_d);
+            builder.arg(&scales_d);
+            barg!(builder, global_scale);
+            builder.arg(&q8);
+            builder.arg(&out);
+            barg!(
+                builder,
+                k as i32,
+                n as i32,
+                k_padded as i32,
+                n as i32
+            );
+            unsafe { builder.launch(cfg) }.w()?;
+            dev.clone_dtoh(&out.as_view()).map_err(Into::into)
+        };
+
+        for _ in 0..3 {
+            std::hint::black_box(run_once()?);
+        }
+        let start = std::time::Instant::now();
+        let mut got = Vec::new();
+        for _ in 0..runs {
+            got = run_once()?;
+            std::hint::black_box(&got);
+        }
+        let latency_us = start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+
+        // Isolate kernel parity using the exact Q8_1 activation consumed by CUDA.
+        let mut q8 = dev.alloc_zeros::<u8>(q8_size)?;
+        quantize_q8_1(&activations_d.as_view(), &mut q8, k, 1, &dev)?;
+        let q8_host = dev.clone_dtoh(&q8.as_view())?;
+        let activations_q8 = dequantize_cuda_q8_1_reference(&q8_host, 1, k, k_padded);
+        let kernel_reference =
+            nvfp4_test_reference(&packed, &scales, global_scale, n, k, &activations_q8, 1);
+
+        let kernel_metrics = nvfp4_metrics(&kernel_reference, &got);
+        let a8_metrics = nvfp4_metrics(&quant_reference, &got);
+
+        // F32 baseline output on CPU, matching v0.5's quality reference.
+        let mut f32_reference = vec![0f32; n];
+        for row in 0..n {
+            let mut acc = 0f32;
+            let w = &weights[row * k..(row + 1) * k];
+            for col in 0..k {
+                acc += w[col] * activations[col];
+            }
+            f32_reference[row] = acc;
+        }
+        let e2e_metrics = nvfp4_metrics(&f32_reference, &got);
+        let quant_metrics = nvfp4_metrics(&f32_reference, &quant_reference);
+
+        println!(
+            "NVFP4_QUANT_QUALITY bits_per_weight={bits_per_weight:.4} max_abs={:.6} mean_abs={:.6} cosine={:.8} global_scale={global_scale:.9}",
+            quant_metrics.0,
+            quant_metrics.1,
+            quant_metrics.2
+        );
+        println!(
+            "NVFP4_KERNEL_PARITY max_abs={:.6} mean_abs={:.6} cosine={:.8}",
+            kernel_metrics.0,
+            kernel_metrics.1,
+            kernel_metrics.2
+        );
+        println!(
+            "NVFP4_A8_QUALITY max_abs={:.6} mean_abs={:.6} cosine={:.8}",
+            a8_metrics.0,
+            a8_metrics.1,
+            a8_metrics.2
+        );
+        println!(
+            "NVFP4_BENCH_RESULT bytes={bytes} bits_per_weight={bits_per_weight:.4} latency_us={latency_us:.3} effective_gbps={:.3} e2e_max_abs={:.6} e2e_mean_abs={:.6} e2e_cosine={:.8}",
+            bytes as f64 / (latency_us * 1000.0),
+            e2e_metrics.0,
+            e2e_metrics.1,
+            e2e_metrics.2
+        );
+
+        assert!(bits_per_weight > 4.49 && bits_per_weight < 4.51);
+        assert!(kernel_metrics.2 >= 0.99999, "NVFP4 kernel cosine={}", kernel_metrics.2);
+        assert!(kernel_metrics.1 < 0.02, "NVFP4 kernel mean_abs={}", kernel_metrics.1);
+        assert!(a8_metrics.2 >= 0.999, "NVFP4 A8 cosine={}", a8_metrics.2);
+        assert!(e2e_metrics.2.is_finite());
+
+        Ok(())
+    }
 
     // The following test used to fail under compute-sanitizer until #2526.
     #[test]
