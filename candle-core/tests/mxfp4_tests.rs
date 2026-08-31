@@ -311,6 +311,11 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
     let cuda = Device::new_cuda(0)?;
     let (n, k) = (4096usize, 4096usize);
 
+    println!(
+        "MXFP4_BENCH_CONFIG profile={} n={n} k={k}",
+        if cfg!(debug_assertions) { "debug" } else { "release" }
+    );
+
     let weights = (0..n * k)
         .map(|i| ((i as f32) * 0.0013).sin() * 0.75 + ((i as f32) * 0.0007).cos() * 0.25)
         .collect::<Vec<_>>();
@@ -323,8 +328,25 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
         &cpu,
     )?;
 
-    let x_cuda = x_cpu.to_device(&cuda)?;
-    let w_f16 = w_cpu.to_dtype(DType::F16)?.to_device(&cuda)?;
+    fn metrics(reference: &[f32], observed: &[f32]) -> (f32, f32, f64) {
+        assert_eq!(reference.len(), observed.len());
+        let mut max_abs = 0f32;
+        let mut mean_abs = 0f32;
+        let mut dot = 0f64;
+        let mut nr = 0f64;
+        let mut no = 0f64;
+        for (&a, &b) in reference.iter().zip(observed.iter()) {
+            let d = (a - b).abs();
+            max_abs = max_abs.max(d);
+            mean_abs += d;
+            dot += a as f64 * b as f64;
+            nr += (a as f64) * (a as f64);
+            no += (b as f64) * (b as f64);
+        }
+        mean_abs /= observed.len() as f32;
+        let cosine = dot / (nr.sqrt() * no.sqrt()).max(f64::MIN_POSITIVE);
+        (max_abs, mean_abs, cosine)
+    }
 
     fn bench(
         name: &str,
@@ -337,6 +359,7 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
         let start = Instant::now();
         let mut last = None;
         for _ in 0..runs {
+            // D2H is intentional here: it synchronizes each iteration.
             last = Some(f()?.to_device(&Device::Cpu)?);
         }
         let elapsed = start.elapsed().as_secs_f64() * 1e6 / runs as f64;
@@ -345,65 +368,110 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
         Ok((elapsed, out))
     }
 
-    let reference = x_cuda
-        .to_dtype(DType::F16)?
-        .matmul(&w_f16.t()?)?
-        .to_dtype(DType::F32)?
-        .to_device(&cpu)?
+    // F32 CPU is the numerical baseline used to attribute quantization error.
+    let reference_f32 = x_cpu
+        .matmul(&w_cpu.t()?)?
         .flatten_all()?
         .to_vec1::<f32>()?;
 
-    let mut rows = Vec::new();
-    for dtype in [GgmlDType::Q4_0, GgmlDType::Q4K, GgmlDType::Mxfp4] {
-        let q_cpu = QTensor::quantize(&w_cpu, dtype)?;
-        let bytes = q_cpu.data()?.len();
-        let q_cuda = QTensor::new(
-            QStorage::from_data(Cow::Owned(q_cpu.data()?.to_vec()), &cuda, dtype)?,
-            (n, k),
-        )?;
-        let mm = QMatMul::from_qtensor(q_cuda)?;
-        let (latency_us, out) = bench(&format!("{dtype:?}"), 10, || mm.forward(&x_cuda))?;
-
-        let mut max_abs = 0f32;
-        let mut mean_abs = 0f32;
-        let mut dot = 0f64;
-        let mut nr = 0f64;
-        let mut no = 0f64;
-        for (&a, &b) in reference.iter().zip(out.iter()) {
-            let d = (a - b).abs();
-            max_abs = max_abs.max(d);
-            mean_abs += d;
-            dot += a as f64 * b as f64;
-            nr += (a as f64) * (a as f64);
-            no += (b as f64) * (b as f64);
-        }
-        mean_abs /= out.len() as f32;
-        let cosine = dot / (nr.sqrt() * no.sqrt()).max(f64::MIN_POSITIVE);
-        let bits_per_weight = bytes as f64 * 8.0 / (n * k) as f64;
-        println!(
-            "MXFP4_BENCH_RESULT dtype={dtype:?} bytes={bytes} bits_per_weight={bits_per_weight:.4} latency_us={latency_us:.3} max_abs={max_abs:.6} mean_abs={mean_abs:.6} cosine={cosine:.8}"
-        );
-        rows.push((dtype, latency_us, bits_per_weight, max_abs, mean_abs, cosine));
-    }
-
-    let (f16_latency, _) = bench("F16", 10, || {
+    let x_cuda = x_cpu.to_device(&cuda)?;
+    let w_f16 = w_cpu.to_dtype(DType::F16)?.to_device(&cuda)?;
+    let (f16_latency, reference_f16) = bench("F16", 10, || {
         x_cuda
             .to_dtype(DType::F16)?
             .matmul(&w_f16.t()?)?
             .to_dtype(DType::F32)
     })?;
+    let f16_quality = metrics(&reference_f32, &reference_f16);
     println!(
-        "MXFP4_BENCH_RESULT dtype=F16 bytes={} bits_per_weight=16.0000 latency_us={f16_latency:.3}",
-        n * k * 2
+        "MXFP4_BASELINE dtype=F16 bytes={} bits_per_weight=16.0000 latency_us={f16_latency:.3} effective_gbps={:.3} vs_f32_max_abs={:.6} vs_f32_mean_abs={:.6} vs_f32_cosine={:.8}",
+        n * k * 2,
+        (n * k * 2) as f64 / (f16_latency * 1000.0),
+        f16_quality.0,
+        f16_quality.1,
+        f16_quality.2
     );
+
+    let mut rows = Vec::new();
+    for dtype in [GgmlDType::Q4_0, GgmlDType::Q4K, GgmlDType::Mxfp4] {
+        let q_cpu = QTensor::quantize(&w_cpu, dtype)?;
+        let bytes = q_cpu.data()?.len();
+        let bits_per_weight = bytes as f64 * 8.0 / (n * k) as f64;
+
+        // Quantization-only quality: original F32 weights/activations versus
+        // the CPU-dequantized quantized weights. No CUDA/Q8_1 is involved.
+        let q_dequant_cpu = q_cpu.dequantize(&cpu)?;
+        let quant_cpu_out = x_cpu
+            .matmul(&q_dequant_cpu.t()?)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        let quant_quality = metrics(&reference_f32, &quant_cpu_out);
+
+        let q_cuda = QTensor::new(
+            QStorage::from_data(Cow::Owned(q_cpu.data()?.to_vec()), &cuda, dtype)?,
+            (n, k),
+        )?;
+        let mm = QMatMul::from_qtensor(q_cuda)?;
+        let (latency_us, cuda_out) = bench(&format!("{dtype:?}"), 10, || mm.forward(&x_cuda))?;
+
+        // Kernel-path error isolates CUDA + Q8_1 activation quantization from
+        // weight quantization. This is the correctness metric for the kernel.
+        let kernel_quality = metrics(&quant_cpu_out, &cuda_out);
+
+        // End-to-end quality against the original F32 baseline.
+        let e2e_quality = metrics(&reference_f32, &cuda_out);
+
+        println!(
+            "MXFP4_QUANT_QUALITY dtype={dtype:?} bits_per_weight={bits_per_weight:.4} max_abs={:.6} mean_abs={:.6} cosine={:.8}",
+            quant_quality.0,
+            quant_quality.1,
+            quant_quality.2
+        );
+        println!(
+            "MXFP4_KERNEL_PARITY dtype={dtype:?} max_abs={:.6} mean_abs={:.6} cosine={:.8}",
+            kernel_quality.0,
+            kernel_quality.1,
+            kernel_quality.2
+        );
+        println!(
+            "MXFP4_BENCH_RESULT dtype={dtype:?} bytes={bytes} bits_per_weight={bits_per_weight:.4} latency_us={latency_us:.3} effective_gbps={:.3} speedup_vs_f16={:.3} e2e_max_abs={:.6} e2e_mean_abs={:.6} e2e_cosine={:.8}",
+            bytes as f64 / (latency_us * 1000.0),
+            f16_latency / latency_us,
+            e2e_quality.0,
+            e2e_quality.1,
+            e2e_quality.2
+        );
+
+        rows.push((
+            dtype,
+            latency_us,
+            bits_per_weight,
+            quant_quality,
+            kernel_quality,
+            e2e_quality,
+        ));
+    }
 
     let mxfp4 = rows
         .iter()
         .find(|(dtype, ..)| *dtype == GgmlDType::Mxfp4)
         .expect("MXFP4 result missing");
-    assert!(mxfp4.5.is_finite(), "MXFP4 cosine must be finite");
-    assert!(mxfp4.5 > 0.90, "MXFP4 cosine unexpectedly low: {}", mxfp4.5);
+
     assert!(mxfp4.2 < 5.0, "MXFP4 storage is not actually packed: {} bits/weight", mxfp4.2);
+    assert!(
+        mxfp4.4.2 >= 0.99999,
+        "MXFP4 CUDA kernel parity regressed: cosine={}",
+        mxfp4.4.2
+    );
+    assert!(
+        mxfp4.4.1 < 0.05,
+        "MXFP4 CUDA kernel parity mean_abs unexpectedly high: {}",
+        mxfp4.4.1
+    );
+    assert!(
+        mxfp4.5.2.is_finite(),
+        "MXFP4 end-to-end cosine must be finite"
+    );
 
     Ok(())
 }
