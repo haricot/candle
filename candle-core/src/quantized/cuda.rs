@@ -517,8 +517,15 @@ fn indexed_moe_forward_fused_q8_1_input(
     dev: &CudaDevice,
 ) -> Result<(CudaStorage, crate::Shape)> {
     let (_, n, k) = w_shape.dims3()?;
-    let batch = in_shape.dims()[0];
-    let input_dim1 = in_shape.dims()[1];
+    let in_dims = in_shape.dims();
+    let (batch, input_dim1, in_k) = match in_dims {
+        [batch, in_k] => (*batch, 1usize, *in_k),
+        [batch, input_dim1, in_k] => (*batch, *input_dim1, *in_k),
+        _ => crate::bail!("indexed_moe_forward expects input rank 2 or 3, got shape {in_dims:?}"),
+    };
+    if in_k != k {
+        crate::bail!("indexed_moe_forward expects input k={k}, got {in_k}")
+    }
 
     let topk = idx_shape.dims()[1];
     assert!(batch == idx_shape.dims()[0], "batch dim not match!");
@@ -550,6 +557,7 @@ fn indexed_moe_forward_fused_q8_1_input(
         GgmlDType::Q5K => "indexed_moe_forward_q5k_q8_1",
         GgmlDType::Q6K => "indexed_moe_forward_q6k_q8_1",
         GgmlDType::Q8_0 => "indexed_moe_forward_q8_0_q8_1",
+        GgmlDType::Mxfp4 => "indexed_moe_forward_mxfp4_q8_1",
         _ => crate::bail!("unsupported dtype for indexed_moe_forward {w_dtype:?}"),
     };
     let func = dev.get_or_load_func(kernel_name, &candle_kernels::QUANTIZED)?;
@@ -577,13 +585,9 @@ fn indexed_moe_forward_fused_q8_1_input(
     );
     unsafe { builder.launch(cfg) }.w()?;
 
-    let mut out_shape = in_shape.dims().to_vec();
-    out_shape.pop();
-    out_shape.push(n);
-    out_shape[1] = topk;
     Ok((
         CudaStorage::wrap_cuda_slice(out, dev.clone()),
-        out_shape.into(),
+        (batch, topk, n).into(),
     ))
 }
 
@@ -599,6 +603,7 @@ impl QCudaStorage {
         if matches!(
             self.dtype(),
             GgmlDType::Q8_0
+                | GgmlDType::Mxfp4
                 | GgmlDType::Q2K
                 | GgmlDType::Q3K
                 | GgmlDType::Q4K
