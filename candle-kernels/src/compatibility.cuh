@@ -7,7 +7,11 @@
 
 // FIXME: the minimum compute capabilities are just guesses since the table is not specific enough
 
-#if __CUDA_ARCH__ < 800
+// CUDA 12.2+ provides __hmax_nan/__hmin_nan for legacy architectures too.
+// Keep Candle's compatibility definitions only for older toolkits.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800 && \
+    ((__CUDACC_VER_MAJOR__ < 12) || \
+     ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ < 2)))
 __device__ __forceinline__ __half __hmax_nan(__half a, __half b) {
     return __hisnan(a) ? a : (__hisnan(b) ? b : __hmax(a, b));
 }
