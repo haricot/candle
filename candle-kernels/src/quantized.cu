@@ -1519,6 +1519,86 @@ static __device__ __forceinline__ float nvfp4_vec_dot_pair32_q8_1_predecoded(
     return ad * (scale_pair[0] * (float) sumi0 + scale_pair[1] * (float) sumi1);
 }
 
+template <int nwarps>
+static __device__ void nvfp4_mat_vec_q8_1_warp_sweep(
+    const uint8_t * __restrict__ packed,
+    const uint8_t * __restrict__ scales_e4m3,
+    const float global_scale,
+    const block_q8_1 * __restrict__ activations,
+    float * __restrict__ dst,
+    const int ncols_x,
+    const int nrows_x,
+    const int nrows_y,
+    const int nrows_dst) {
+
+    const int tid = WARP_SIZE * threadIdx.y + threadIdx.x;
+    const int row = blockIdx.x;
+    if (row >= nrows_x) {
+        return;
+    }
+
+    const int q8_blocks_per_row = nrows_y / QK8_1;
+    const int weight_blocks_per_row = ncols_x / QK_NVFP4;
+    const int packed_row_bytes =
+        weight_blocks_per_row * NVFP4_PACKED_BYTES_PER_BLOCK;
+
+    const uint8_t * row_packed = packed + (size_t) row * packed_row_bytes;
+    const uint8_t * row_scales =
+        scales_e4m3 + (size_t) row * weight_blocks_per_row;
+
+    float tmp = 0.0f;
+    for (int kb = tid; kb < ncols_x / QK8_1; kb += nwarps * WARP_SIZE) {
+        tmp += nvfp4_vec_dot_pair32_q8_1(
+            row_packed + (size_t) kb * 2 * NVFP4_PACKED_BYTES_PER_BLOCK,
+            row_scales + 2 * kb,
+            activations + kb,
+            global_scale);
+    }
+
+#if defined(__CUDA_ARCH__)
+    __shared__ float tmp_shared[nwarps > 1 ? nwarps - 1 : 1][WARP_SIZE];
+#else
+    __shared__ float tmp_shared[1][WARP_SIZE];
+#endif
+    if constexpr (nwarps > 1) {
+        if (threadIdx.y > 0) {
+            tmp_shared[threadIdx.y - 1][threadIdx.x] = tmp;
+        }
+        __syncthreads();
+
+        if (threadIdx.y > 0) {
+            return;
+        }
+
+#pragma unroll
+        for (int warp = 0; warp < nwarps - 1; ++warp) {
+            tmp += tmp_shared[warp][threadIdx.x];
+        }
+    }
+
+    tmp = warp_reduce_sum(tmp);
+    if (threadIdx.x == 0) {
+        dst[row] = tmp;
+    }
+}
+
+#define NVFP4_WARP_SWEEP(W) \
+extern "C" __global__ void nvfp4_mat_vec_q8_1_warp_sweep_w##W( \
+    const uint8_t * packed, const uint8_t * scales_e4m3, const float global_scale, \
+    const void * activations, float * dst, \
+    const int ncols_x, const int nrows_x, const int nrows_y, const int nrows_dst) { \
+    nvfp4_mat_vec_q8_1_warp_sweep<W>( \
+        packed, scales_e4m3, global_scale, (const block_q8_1 *) activations, dst, \
+        ncols_x, nrows_x, nrows_y, nrows_dst); \
+}
+
+NVFP4_WARP_SWEEP(1)
+NVFP4_WARP_SWEEP(2)
+NVFP4_WARP_SWEEP(4)
+NVFP4_WARP_SWEEP(8)
+
+#undef NVFP4_WARP_SWEEP
+
 extern "C" __global__ void nvfp4_mat_vec_q8_1_predecoded_cuda1(
     const uint8_t * __restrict__ packed,
     const float * __restrict__ scales_predecoded,

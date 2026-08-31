@@ -1865,6 +1865,70 @@ mod test {
         let e2e_metrics = nvfp4_metrics(&f32_reference, &got);
         let quant_metrics = nvfp4_metrics(&f32_reference, &quant_reference);
 
+        for sweep_warps in [1u32, 2, 4, 8] {
+            let sweep_out = dev.alloc_zeros::<f32>(n)?;
+            let sweep_name = format!("nvfp4_mat_vec_q8_1_warp_sweep_w{sweep_warps}");
+            let sweep_func = dev.get_or_load_func(&sweep_name, &candle_kernels::QUANTIZED)?;
+            let sweep_cfg = cudarc::driver::LaunchConfig {
+                grid_dim: (n as u32, 1, 1),
+                block_dim: (WARP_SIZE as u32, sweep_warps, 1),
+                shared_mem_bytes: 0,
+            };
+
+            for _ in 0..3 {
+                let mut builder = sweep_func.builder();
+                builder.arg(&packed_d);
+                builder.arg(&scales_d);
+                barg!(builder, global_scale);
+                builder.arg(&q8_stage);
+                builder.arg(&sweep_out);
+                barg!(
+                    builder,
+                    k as i32,
+                    n as i32,
+                    k_padded as i32,
+                    n as i32
+                );
+                unsafe { builder.launch(sweep_cfg) }.w()?;
+            }
+            stream.synchronize().w()?;
+
+            let sweep_start = std::time::Instant::now();
+            for _ in 0..runs {
+                let mut builder = sweep_func.builder();
+                builder.arg(&packed_d);
+                builder.arg(&scales_d);
+                barg!(builder, global_scale);
+                builder.arg(&q8_stage);
+                builder.arg(&sweep_out);
+                barg!(
+                    builder,
+                    k as i32,
+                    n as i32,
+                    k_padded as i32,
+                    n as i32
+                );
+                unsafe { builder.launch(sweep_cfg) }.w()?;
+                stream.synchronize().w()?;
+            }
+            let sweep_us = sweep_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+            let sweep_got = dev.clone_dtoh(&sweep_out.as_view())?;
+            let sweep_metrics = nvfp4_metrics(&kernel_reference, &sweep_got);
+            println!(
+                "NVFP4_WARP_SWEEP warps={sweep_warps} threads={} kernel_us={sweep_us:.3} speedup_vs_w4={:.3} effective_gbps={:.3} kernel_cosine={:.8} kernel_mean_abs={:.6}",
+                sweep_warps * WARP_SIZE as u32,
+                kernel_latency_us / sweep_us,
+                bytes as f64 / (sweep_us * 1000.0),
+                sweep_metrics.2,
+                sweep_metrics.1
+            );
+            assert!(
+                sweep_metrics.2 >= 0.99999,
+                "NVFP4 warp sweep {sweep_warps}: cosine={}",
+                sweep_metrics.2
+            );
+        }
+
         let predecoded_kernel_metrics = nvfp4_metrics(&kernel_reference, &predecoded_got);
         println!(
             "NVFP4_PREDECODED_SCALE_BENCH kernel_us={predecoded_kernel_us:.3} speedup_vs_e4m3={:.3} transformed_scale_bytes={} transformed_bits_per_weight={:.4} kernel_max_abs={:.6} kernel_mean_abs={:.6} kernel_cosine={:.8}",
