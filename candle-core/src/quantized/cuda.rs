@@ -1865,6 +1865,88 @@ mod test {
         let e2e_metrics = nvfp4_metrics(&f32_reference, &got);
         let quant_metrics = nvfp4_metrics(&f32_reference, &quant_reference);
 
+        let q8_blocks_per_row = k / 32;
+        let mut aos32 = vec![0u8; n * q8_blocks_per_row * 18];
+        for row in 0..n {
+            for kb in 0..q8_blocks_per_row {
+                let block16 = 2 * kb;
+                let dst_off = (row * q8_blocks_per_row + kb) * 18;
+                aos32[dst_off] = scales[row * (k / 16) + block16];
+                aos32[dst_off + 1] = scales[row * (k / 16) + block16 + 1];
+
+                let src_off = (row * (k / 16) + block16) * 8;
+                aos32[dst_off + 2..dst_off + 18]
+                    .copy_from_slice(&packed[src_off..src_off + 16]);
+            }
+        }
+        assert_eq!(aos32.len(), bytes - std::mem::size_of::<f32>());
+        let aos32_d = dev.clone_htod(&aos32)?;
+
+        for aos_warps in [1u32, 2, 4, 8] {
+            let aos_out = dev.alloc_zeros::<f32>(n)?;
+            let aos_name = format!("nvfp4_mat_vec_q8_1_aos32_w{aos_warps}");
+            let aos_func = dev.get_or_load_func(&aos_name, &candle_kernels::QUANTIZED)?;
+            let aos_cfg = cudarc::driver::LaunchConfig {
+                grid_dim: (n as u32, 1, 1),
+                block_dim: (WARP_SIZE as u32, aos_warps, 1),
+                shared_mem_bytes: 0,
+            };
+
+            for _ in 0..3 {
+                let mut builder = aos_func.builder();
+                builder.arg(&aos32_d);
+                barg!(builder, global_scale);
+                builder.arg(&q8_stage);
+                builder.arg(&aos_out);
+                barg!(
+                    builder,
+                    k as i32,
+                    n as i32,
+                    k_padded as i32,
+                    n as i32
+                );
+                unsafe { builder.launch(aos_cfg) }.w()?;
+            }
+            stream.synchronize().w()?;
+
+            let aos_launches = 50usize;
+            let aos_start = std::time::Instant::now();
+            for _ in 0..aos_launches {
+                let mut builder = aos_func.builder();
+                builder.arg(&aos32_d);
+                barg!(builder, global_scale);
+                builder.arg(&q8_stage);
+                builder.arg(&aos_out);
+                barg!(
+                    builder,
+                    k as i32,
+                    n as i32,
+                    k_padded as i32,
+                    n as i32
+                );
+                unsafe { builder.launch(aos_cfg) }.w()?;
+            }
+            stream.synchronize().w()?;
+            let aos_us = aos_start.elapsed().as_secs_f64() * 1e6 / aos_launches as f64;
+            let aos_got = dev.clone_dtoh(&aos_out.as_view())?;
+            let aos_metrics = nvfp4_metrics(&kernel_reference, &aos_got);
+
+            println!(
+                "NVFP4_AOS32_SWEEP warps={aos_warps} threads={} kernel_us={aos_us:.3} speedup_vs_baseline={:.3} effective_gbps={:.3} storage_bits_per_weight={:.4} kernel_cosine={:.8} kernel_mean_abs={:.6}",
+                aos_warps * WARP_SIZE as u32,
+                kernel_latency_us / aos_us,
+                bytes as f64 / (aos_us * 1000.0),
+                (aos32.len() + std::mem::size_of::<f32>()) as f64 * 8.0 / (n * k) as f64,
+                aos_metrics.2,
+                aos_metrics.1
+            );
+            assert!(
+                aos_metrics.2 >= 0.99999,
+                "NVFP4 AoS32 {aos_warps}: cosine={}",
+                aos_metrics.2
+            );
+        }
+
         for split_warps in [1u32, 2, 4, 8] {
             let split_out = dev.alloc_zeros::<f32>(n)?;
             let split_name = format!("nvfp4_mat_vec_q8_1_split16_w{split_warps}");

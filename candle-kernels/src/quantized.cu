@@ -1519,6 +1519,104 @@ static __device__ __forceinline__ float nvfp4_vec_dot_pair32_q8_1_predecoded(
     return ad * (scale_pair[0] * (float) sumi0 + scale_pair[1] * (float) sumi1);
 }
 
+typedef struct {
+    uint8_t scale0_e4m3;
+    uint8_t scale1_e4m3;
+    uint8_t qs[16];
+} block_nvfp4_pair32_aos;
+static_assert(sizeof(block_nvfp4_pair32_aos) == 18, "wrong NVFP4 pair32 AoS size");
+
+template <int nwarps>
+static __device__ void nvfp4_mat_vec_q8_1_aos32(
+    const block_nvfp4_pair32_aos * __restrict__ blocks,
+    const float global_scale,
+    const block_q8_1 * __restrict__ activations,
+    float * __restrict__ dst,
+    const int ncols_x,
+    const int nrows_x,
+    const int nrows_y,
+    const int nrows_dst) {
+
+    const int tid = WARP_SIZE * threadIdx.y + threadIdx.x;
+    constexpr int nthreads = nwarps * WARP_SIZE;
+    const int row = blockIdx.x;
+    if (row >= nrows_x) {
+        return;
+    }
+
+    const int blocks_per_row = ncols_x / QK8_1;
+    const block_nvfp4_pair32_aos * row_blocks =
+        blocks + (size_t) row * blocks_per_row;
+
+    float tmp = 0.0f;
+    for (int kb = tid; kb < blocks_per_row; kb += nthreads) {
+        const block_nvfp4_pair32_aos * b = row_blocks + kb;
+        const block_q8_1 * aq = activations + kb;
+        const int * q8 = (const int *) aq->qs;
+
+        const int2 w0 = nvfp4_decode_contiguous_8(b->qs + 0);
+        const int2 w1 = nvfp4_decode_contiguous_8(b->qs + 4);
+        int sumi0 = 0;
+        sumi0 = ggml_cuda_dp4a(w0.x, q8[0], sumi0);
+        sumi0 = ggml_cuda_dp4a(w0.y, q8[1], sumi0);
+        sumi0 = ggml_cuda_dp4a(w1.x, q8[2], sumi0);
+        sumi0 = ggml_cuda_dp4a(w1.y, q8[3], sumi0);
+
+        const int2 w2 = nvfp4_decode_contiguous_8(b->qs + 8);
+        const int2 w3 = nvfp4_decode_contiguous_8(b->qs + 12);
+        int sumi1 = 0;
+        sumi1 = ggml_cuda_dp4a(w2.x, q8[4], sumi1);
+        sumi1 = ggml_cuda_dp4a(w2.y, q8[5], sumi1);
+        sumi1 = ggml_cuda_dp4a(w3.x, q8[6], sumi1);
+        sumi1 = ggml_cuda_dp4a(w3.y, q8[7], sumi1);
+
+        const float ad = __low2float(aq->ds);
+        const float d0 =
+            nvfp4_e4m3fn_to_f32(b->scale0_e4m3) * global_scale * 0.5f * ad;
+        const float d1 =
+            nvfp4_e4m3fn_to_f32(b->scale1_e4m3) * global_scale * 0.5f * ad;
+        tmp += d0 * (float) sumi0 + d1 * (float) sumi1;
+    }
+
+    __shared__ float tmp_shared[nwarps > 1 ? nwarps - 1 : 1][WARP_SIZE];
+    if constexpr (nwarps > 1) {
+        if (threadIdx.y > 0) {
+            tmp_shared[threadIdx.y - 1][threadIdx.x] = tmp;
+        }
+        __syncthreads();
+        if (threadIdx.y > 0) {
+            return;
+        }
+#pragma unroll
+        for (int warp = 0; warp < nwarps - 1; ++warp) {
+            tmp += tmp_shared[warp][threadIdx.x];
+        }
+    }
+
+    tmp = warp_reduce_sum(tmp);
+    if (threadIdx.x == 0) {
+        dst[row] = tmp;
+    }
+}
+
+#define NVFP4_AOS32_SWEEP(W) \
+extern "C" __global__ void nvfp4_mat_vec_q8_1_aos32_w##W( \
+    const void * blocks, const float global_scale, const void * activations, \
+    float * dst, const int ncols_x, const int nrows_x, \
+    const int nrows_y, const int nrows_dst) { \
+    nvfp4_mat_vec_q8_1_aos32<W>( \
+        (const block_nvfp4_pair32_aos *) blocks, global_scale, \
+        (const block_q8_1 *) activations, dst, \
+        ncols_x, nrows_x, nrows_y, nrows_dst); \
+}
+
+NVFP4_AOS32_SWEEP(1)
+NVFP4_AOS32_SWEEP(2)
+NVFP4_AOS32_SWEEP(4)
+NVFP4_AOS32_SWEEP(8)
+
+#undef NVFP4_AOS32_SWEEP
+
 template <int nwarps>
 static __device__ void nvfp4_mat_vec_q8_1_split16(
     const uint8_t * __restrict__ packed,
