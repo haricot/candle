@@ -2,6 +2,9 @@
 //!
 use crate::{op::BackpropOp, op::Op, Error, Result, Tensor};
 
+mod grouped;
+use grouped::{GroupedConv1D, GroupedConv2D};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamsConv1D {
     pub(crate) b_size: usize,
@@ -14,6 +17,7 @@ pub struct ParamsConv1D {
     pub(crate) padding: usize,
     pub(crate) stride: usize,
     pub(crate) dilation: usize,
+    pub(crate) groups: usize,
     pub(crate) cudnn_fwd_algo: Option<CudnnFwdAlgo>,
 }
 
@@ -80,6 +84,7 @@ pub struct ParamsConv2D {
     pub(crate) padding: usize,
     pub(crate) stride: usize,
     pub(crate) dilation: usize,
+    pub(crate) groups: usize,
     pub cudnn_fwd_algo: Option<CudnnFwdAlgo>,
 }
 
@@ -166,6 +171,9 @@ impl Tensor {
         groups: usize,
         cudnn_fwd_algo: Option<CudnnFwdAlgo>,
     ) -> Result<Self> {
+        if groups == 0 {
+            crate::bail!("conv1d groups must be greater than zero")
+        }
         let (c_out, c_in_k, k_size) = kernel.dims3()?;
         let (b_size, c_in, l_in) = self.dims3()?;
         if c_in != c_in_k * groups {
@@ -178,29 +186,28 @@ impl Tensor {
             }
             .bt())?
         }
+        if !c_out.is_multiple_of(groups) {
+            crate::bail!(
+                "out_channel {c_out} is not divisible by the number of groups {groups}"
+            )
+        }
 
         let params = ParamsConv1D {
             b_size,
             l_in,
-            c_out: c_out / groups,
-            c_in: c_in / groups,
+            c_out,
+            c_in,
             k_size,
             padding,
             stride,
             dilation,
+            groups,
             cudnn_fwd_algo,
         };
         if groups == 1 {
             self.conv1d_single_group(kernel, &params)
         } else {
-            let blocks = self.chunk(groups, 1)?;
-            let kernel = kernel.chunk(groups, 0)?;
-            let blocks = blocks
-                .iter()
-                .zip(&kernel)
-                .map(|(block, kernel)| block.conv1d_single_group(kernel, &params))
-                .collect::<Result<Vec<_>>>()?;
-            Tensor::cat(&blocks, 1)
+            self.apply_op2(kernel, GroupedConv1D(params))
         }
     }
 
@@ -259,6 +266,8 @@ impl Tensor {
         if groups == 1 {
             self.conv_transpose1d_single_group(kernel, &params)
         } else {
+            // Follow-up: promote groups into ParamsConvTranspose1D/Op::ConvTranspose1D and add
+            // native grouped backend implementations (cuDNN and Metal included).
             let blocks = self.chunk(groups, 1)?;
             let kernel = kernel.chunk(groups, 0)?;
             let blocks = blocks
@@ -285,40 +294,6 @@ impl Tensor {
         Ok(crate::tensor::from_storage(storage, out_dims, op, false))
     }
 
-    #[cfg(feature = "cudnn")]
-    fn conv2d_native_grouped_cudnn(
-        &self,
-        kernel: &Self,
-        params: &ParamsConv2D,
-        groups: usize,
-    ) -> Result<Self> {
-        let storage = {
-            let input_storage = self.storage();
-            let kernel_storage = kernel.storage();
-            input_storage.same_device(&*kernel_storage, "conv2d-native-grouped-cudnn")?;
-            input_storage.same_dtype(&*kernel_storage, "conv2d-native-grouped-cudnn")?;
-            match (&*input_storage, &*kernel_storage) {
-                (crate::Storage::Cuda(input), crate::Storage::Cuda(kernel_cuda)) => {
-                    crate::Storage::Cuda(crate::cudnn::launch_grouped_conv2d(
-                        input,
-                        self.layout(),
-                        kernel_cuda,
-                        kernel.layout(),
-                        params,
-                        groups,
-                    )?)
-                }
-                _ => crate::bail!("native grouped cuDNN convolution requires CUDA storage"),
-            }
-        };
-        Ok(crate::tensor::from_storage(
-            storage,
-            params.out_dims(),
-            BackpropOp::none(),
-            false,
-        ))
-    }
-
     /// Applies a 2D convolution over the input tensor.
     pub fn conv2d(
         &self,
@@ -340,23 +315,22 @@ impl Tensor {
         groups: usize,
         cudnn_fwd_algo: Option<CudnnFwdAlgo>,
     ) -> Result<Self> {
-        let (b_size, c_in, i_h, i_w) = self.dims4()?;
-        let (c_out, c_in_k, k_h, k_w) = kernel.dims4()?;
         if groups == 0 {
             crate::bail!("conv2d groups must be greater than zero")
         }
+        let (b_size, c_in, i_h, i_w) = self.dims4()?;
+        let (c_out, c_in_k, k_h, k_w) = kernel.dims4()?;
         if c_in != c_in_k * groups {
             crate::bail!(
                 "in_channel mismatch between input ({c_in}, groups {groups}) and kernel ({c_in_k})"
             )
         }
-        if c_out % groups != 0 {
+        if !c_out.is_multiple_of(groups) {
             crate::bail!(
                 "out_channel {c_out} is not divisible by the number of groups {groups}"
             )
         }
-
-        let native_params = ParamsConv2D {
+        let params = ParamsConv2D {
             b_size,
             i_h,
             i_w,
@@ -367,40 +341,14 @@ impl Tensor {
             padding,
             stride,
             dilation,
+            groups,
             cudnn_fwd_algo,
         };
         if groups == 1 {
-            return self.conv2d_single_group(kernel, &native_params);
+            self.conv2d_single_group(kernel, &params)
+        } else {
+            self.apply_op2(kernel, GroupedConv2D(params))
         }
-
-        // Keep the existing chunked implementation whenever autograd is tracked.
-        // The native cuDNN path is forward-only for this probe branch, so training
-        // semantics remain identical to the base branch.
-        #[cfg(feature = "cudnn")]
-        if self.device().is_cuda() && !self.track_op() && !kernel.track_op() {
-            match self.conv2d_native_grouped_cudnn(kernel, &native_params, groups) {
-                Ok(output) => return Ok(output),
-                Err(err) => {
-                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_STRICT").is_some() {
-                        return Err(err);
-                    }
-                }
-            }
-        }
-
-        let per_group_params = ParamsConv2D {
-            c_out: c_out / groups,
-            c_in: c_in / groups,
-            ..native_params
-        };
-        let blocks = self.chunk(groups, 1)?;
-        let kernel = kernel.chunk(groups, 0)?;
-        let blocks = blocks
-            .iter()
-            .zip(&kernel)
-            .map(|(block, kernel)| block.conv2d_single_group(kernel, &per_group_params))
-            .collect::<Result<Vec<_>>>()?;
-        Tensor::cat(&blocks, 1)
     }
 
     /// Applies a 2D transposed convolution over the input tensor.
@@ -430,6 +378,7 @@ impl Tensor {
             stride,
             dilation,
         };
+        // Follow-up: add a groups argument and native grouped ConvTranspose2D backend support.
         let storage = self.storage().conv_transpose2d(
             self.layout(),
             &kernel.storage(),
