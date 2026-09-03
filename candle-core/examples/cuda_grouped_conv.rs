@@ -78,7 +78,7 @@ fn run_case(device: &Device, c: usize, h: usize, w: usize) -> Result<bool> {
     }
 
     let runs = 10;
-    let native_ms = timed(device, runs, || x.conv2d(&kernel, 2, 1, 1, c))?;
+    let native_ms = timed(device, runs, || Ok(x.conv2d(&kernel, 2, 1, 1, c)?))?;
     let legacy_ms = timed(device, runs, || {
         legacy_grouped_conv2d(&x, &kernel, 2, 1, 1, c)
     })?;
