@@ -53,7 +53,10 @@ fn launch_conv2d_with_groups<
     use crate::conv::CudnnFwdAlgo as CandleAlgo;
     use cudarc::cudnn::sys::cudnnConvolutionFwdAlgo_t as A;
 
-    if groups == 0 || params.c_in % groups != 0 || params.c_out % groups != 0 {
+    if groups == 0 {
+        crate::bail!("grouped conv2d group count must be greater than zero")
+    }
+    if !params.c_in.is_multiple_of(groups) || !params.c_out.is_multiple_of(groups) {
         crate::bail!(
             "invalid grouped conv2d channels: c_in={}, c_out={}, groups={groups}",
             params.c_in,

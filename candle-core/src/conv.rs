@@ -211,9 +211,7 @@ impl Tensor {
     ) -> Result<Self> {
         let storage = self.storage().conv_transpose1d(
             self.layout(),
-            &kernel.storage(),
-            kernel.layout(),
-            params,
+            &kernel.storage(), kernel.layout(), params,
         )?;
         let op = BackpropOp::new2(self, kernel, |arg, kernel| Op::ConvTranspose1D {
             arg,
@@ -295,8 +293,8 @@ impl Tensor {
         let storage = {
             let input_storage = self.storage();
             let kernel_storage = kernel.storage();
-            input_storage.same_device(&*kernel_storage, "conv2d-native-grouped-cudnn")?;
-            input_storage.same_dtype(&*kernel_storage, "conv2d-native-grouped-cudnn")?;
+            input_storage.same_device(&kernel_storage, "conv2d-native-grouped-cudnn")?;
+            input_storage.same_dtype(&kernel_storage, "conv2d-native-grouped-cudnn")?;
             match (&*input_storage, &*kernel_storage) {
                 (crate::Storage::Cuda(input), crate::Storage::Cuda(kernel_cuda)) => {
                     crate::Storage::Cuda(crate::cudnn::launch_grouped_conv2d(
@@ -350,7 +348,7 @@ impl Tensor {
                 "in_channel mismatch between input ({c_in}, groups {groups}) and kernel ({c_in_k})"
             )
         }
-        if c_out % groups != 0 {
+        if !c_out.is_multiple_of(groups) {
             crate::bail!(
                 "out_channel {c_out} is not divisible by the number of groups {groups}"
             )
@@ -431,10 +429,7 @@ impl Tensor {
             dilation,
         };
         let storage = self.storage().conv_transpose2d(
-            self.layout(),
-            &kernel.storage(),
-            kernel.layout(),
-            &params,
+            self.layout(), &kernel.storage(), kernel.layout(), &params,
         )?;
         let op = BackpropOp::new2(self, kernel, |arg, kernel| Op::ConvTranspose2D {
             arg,
