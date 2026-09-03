@@ -1,0 +1,7 @@
+Haricot Candle base for RTMPose grouped-cuDNN validation
+repository=https://github.com/haricot/candle
+branch=cuda_sm61_grouped_cudnn_probe
+commit=19e061d1c9615a21cb3a60870a6c2a746f2e985b
+parent_branch=cuda_sm61_runner
+original_parent_commit=38affc2ffcab8bd8da806152d4d1d9c963bc963c
+Candle=0.11.0
