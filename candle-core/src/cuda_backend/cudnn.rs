@@ -65,8 +65,34 @@ pub(crate) fn launch_conv2d<
     params: &crate::conv::ParamsConv2D,
     dev: &crate::cuda_backend::CudaDevice,
 ) -> crate::Result<()> {
+    launch_conv2d_with_groups::<T, Y>(src, src_l, filter, dst, params, dev, 1)
+}
+
+fn launch_conv2d_with_groups<
+    T: DeviceRepr + WithDType + ValidAsZeroBits + cudarc::cudnn::CudnnDataType,
+    Y: cudarc::cudnn::CudnnDataType,
+>(
+    src: &CudaView<T>,
+    src_l: &crate::Layout,
+    filter: &CudaView<T>,
+    dst: &mut CudaSlice<T>,
+    params: &crate::conv::ParamsConv2D,
+    dev: &crate::cuda_backend::CudaDevice,
+    groups: usize,
+) -> crate::Result<()> {
     use crate::conv::CudnnFwdAlgo as CandleAlgo;
     use cudarc::cudnn::sys::cudnnConvolutionFwdAlgo_t as A;
+
+    if groups == 0 || params.c_in % groups != 0 || params.c_out % groups != 0 {
+        crate::bail!(
+            "invalid grouped conv2d channels: c_in={}, c_out={}, groups={groups}",
+            params.c_in,
+            params.c_out
+        )
+    }
+    if groups > i32::MAX as usize {
+        crate::bail!("grouped conv2d group count {groups} exceeds i32::MAX")
+    }
 
     let device_id = dev.id();
     let cudnn = CUDNN.with(|cudnn| {
@@ -79,19 +105,22 @@ pub(crate) fn launch_conv2d<
         }
         c
     })?;
-    let conv = cudnn.create_conv2d::<Y>(
+    let mut conv = cudnn.create_conv2d::<Y>(
         /* pad */ [params.padding as i32, params.padding as i32],
         /* stride */ [params.stride as i32, params.stride as i32],
         /* dilation */ [params.dilation as i32, params.dilation as i32],
         cudarc::cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
     )?;
+    if groups > 1 {
+        conv.set_group_count(groups as i32)?;
+    }
+
     let x_shape = [
         params.b_size as i32,
         params.c_in as i32,
         params.i_h as i32,
         params.i_w as i32,
     ];
-    // Note that `src` already starts at the proper offset.
     let x = if src_l.is_contiguous() {
         cudnn.create_4d_tensor::<T>(
             cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
@@ -108,7 +137,7 @@ pub(crate) fn launch_conv2d<
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
         [
             params.c_out as i32,
-            params.c_in as i32,
+            (params.c_in / groups) as i32,
             params.k_h as i32,
             params.k_w as i32,
         ],
@@ -151,6 +180,86 @@ pub(crate) fn launch_conv2d<
         )?;
     }
     Ok(())
+}
+
+pub(crate) fn launch_grouped_conv2d(
+    input: &crate::cuda_backend::CudaStorage,
+    input_l: &crate::Layout,
+    kernel: &crate::cuda_backend::CudaStorage,
+    kernel_l: &crate::Layout,
+    params: &crate::conv::ParamsConv2D,
+    groups: usize,
+) -> crate::Result<crate::cuda_backend::CudaStorage> {
+    use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S};
+
+    if !kernel_l.is_contiguous() {
+        crate::bail!("native grouped cuDNN conv2d requires a contiguous kernel")
+    }
+    if convolution_is_disabled(input.device.id()) {
+        crate::bail!("cuDNN convolution is disabled for this CUDA device")
+    }
+    if input.device.id() != kernel.device.id() {
+        crate::bail!("native grouped cuDNN conv2d requires input and kernel on the same device")
+    }
+
+    let device = input.device.clone();
+    let dst_el = params.c_out * params.out_w() * params.out_h() * params.b_size;
+    let slice = match (&input.slice, &kernel.slice) {
+        (S::U8(inp), S::U8(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<u8>(dst_el)? };
+            launch_conv2d_with_groups::<u8, u8>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::U8(out)
+        }
+        (S::BF16(inp), S::BF16(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<half::bf16>(dst_el)? };
+            launch_conv2d_with_groups::<half::bf16, f32>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::BF16(out)
+        }
+        (S::F16(inp), S::F16(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<half::f16>(dst_el)? };
+            launch_conv2d_with_groups::<half::f16, half::f16>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::F16(out)
+        }
+        (S::F32(inp), S::F32(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<f32>(dst_el)? };
+            launch_conv2d_with_groups::<f32, f32>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::F32(out)
+        }
+        (S::F64(inp), S::F64(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<f64>(dst_el)? };
+            launch_conv2d_with_groups::<f64, f64>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::F64(out)
+        }
+        (S::U32(_), S::U32(_)) => crate::bail!("grouped cuDNN conv2d does not support u32"),
+        (S::I16(_), S::I16(_)) => crate::bail!("grouped cuDNN conv2d does not support i16"),
+        (S::I32(_), S::I32(_)) => crate::bail!("grouped cuDNN conv2d does not support i32"),
+        (S::I64(_), S::I64(_)) => crate::bail!("grouped cuDNN conv2d does not support i64"),
+        (S::F8E4M3(_), S::F8E4M3(_)) => {
+            crate::bail!("grouped cuDNN conv2d does not support f8e4m3")
+        }
+        _ => crate::bail!("dtype mismatch in native grouped cuDNN conv2d"),
+    };
+    Ok(CudaStorage { slice, device })
 }
 
 pub(crate) fn launch_conv1d<
