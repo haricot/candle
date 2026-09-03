@@ -44,7 +44,7 @@ fn legacy_grouped_conv2d(
 fn median(values: &mut [f64]) -> f64 {
     values.sort_by(|a, b| a.total_cmp(b));
     let n = values.len();
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         (values[n / 2 - 1] + values[n / 2]) * 0.5
     } else {
         values[n / 2]
