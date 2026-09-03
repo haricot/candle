@@ -1,3 +1,9 @@
+#![allow(
+    clippy::chunks_exact_to_as_chunks,
+    clippy::explicit_auto_deref,
+    clippy::manual_is_multiple_of
+)]
+
 //! ML framework for Rust
 //!
 //! ```rust
