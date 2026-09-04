@@ -3,6 +3,8 @@
 use crate::{op::BackpropOp, op::Op, Error, Result, Tensor};
 
 mod grouped;
+#[cfg(feature = "cudnn")]
+mod grouped_transpose_cudnn;
 use grouped::{GroupedConv1D, GroupedConv2D, GroupedConvTranspose1D, GroupedConvTranspose2D};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
