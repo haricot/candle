@@ -1,4 +1,4 @@
-use cudaforge::{KernelBuilder, Result};
+use cudaforge::{detect_compute_cap, KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
 
@@ -10,9 +10,18 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
     println!("cargo::rerun-if-changed=src/grouped_transpose.cu");
+    println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
+
+    let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
 
     // Build for PTX
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    std::fs::write(
+        out_dir.join("cuda_build_info.rs"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
+    )
+    .expect("failed to write CUDA build compute capability");
+
     let ptx_path = out_dir.join("ptx.rs");
     let bindings = KernelBuilder::new()
         .source_dir("src") // Scan src/ for .cu files
@@ -53,9 +62,6 @@ fn main() -> Result<()> {
 
     // Disable bf16 WMMA kernels on GPUs older than sm_80 (Ampere).
     // bf16 WMMA fragments require compute capability >= 8.0.
-    let compute_cap = cudaforge::detect_compute_cap()
-        .map(|arch| arch.base())
-        .unwrap_or(80);
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }
