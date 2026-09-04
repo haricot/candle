@@ -39,10 +39,13 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
-        let force_kernel = std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
+        let prefer_raw = super::grouped_transpose_dispatch::prefers_raw_cuda(
+            super::grouped_transpose_dispatch::GroupedTransposeDim::D1,
+            self.0.groups,
+        );
 
         #[cfg(feature = "cudnn")]
-        if !force_kernel && kernel_l.is_contiguous() {
+        if !prefer_raw && kernel_l.is_contiguous() {
             match super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
                 input, input_l, kernel, kernel_l, &self.0,
             ) {
@@ -139,10 +142,13 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
-        let force_kernel = std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
+        let prefer_raw = super::grouped_transpose_dispatch::prefers_raw_cuda(
+            super::grouped_transpose_dispatch::GroupedTransposeDim::D2,
+            self.0.groups,
+        );
 
         #[cfg(feature = "cudnn")]
-        if !force_kernel && kernel_l.is_contiguous() {
+        if !prefer_raw && kernel_l.is_contiguous() {
             match super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
                 input, input_l, kernel, kernel_l, &self.0,
             ) {
