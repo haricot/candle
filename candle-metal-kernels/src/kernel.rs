@@ -1,6 +1,6 @@
 use crate::source::{
-    AFFINE, BINARY, CAST, CONV, FILL, GEMV, INDEXING, MLX_GEMM, MLX_SORT, QUANTIZED, RANDOM,
-    REDUCE, SDPA, SORT, TERNARY, UNARY,
+    AFFINE, BINARY, CAST, CONV, FILL, GEMV, GROUPED_TRANSPOSE, INDEXING, MLX_GEMM, MLX_SORT,
+    QUANTIZED, RANDOM, REDUCE, SDPA, SORT, TERNARY, UNARY,
 };
 use crate::utils::get_env_bool;
 use crate::{
@@ -92,6 +92,7 @@ impl Kernels {
             Source::Fill => FILL,
             Source::Gemm => MLX_GEMM,
             Source::Gemv => GEMV,
+            Source::GroupedTranspose => GROUPED_TRANSPOSE,
             Source::Indexing => INDEXING,
             Source::MlxSort => MLX_SORT,
             Source::Quantized => QUANTIZED,
@@ -104,8 +105,6 @@ impl Kernels {
         }
     }
 
-    /// Load the give library from its [`source`].
-    /// If this has been previously loaded it will just fetch it from cache.
     pub fn load_library(
         &self,
         device: &Device,
@@ -116,7 +115,6 @@ impl Kernels {
         }
 
         let mut libraries = self.libraries.write()?;
-        // Recheck after acquiring the write lock in case another thread inserted it.
         if let Some(lib) = libraries.get(&source) {
             Ok(lib.clone())
         } else {
@@ -145,9 +143,6 @@ impl Kernels {
         Ok(func)
     }
 
-    /// Load the give pipeline
-    /// loads the library from source, then gets the function [`name`] from
-    /// that source
     pub fn load_pipeline_with_constants(
         &self,
         device: &Device,
@@ -161,7 +156,6 @@ impl Kernels {
         }
 
         let mut pipelines = self.pipelines.write()?;
-        // Recheck after acquiring the write lock in case another thread inserted it.
         if let Some(pipeline) = pipelines.get(&key) {
             Ok(pipeline.clone())
         } else {
@@ -171,14 +165,10 @@ impl Kernels {
                 .new_compute_pipeline_state_with_function(&func)
                 .map_err(|e| MetalKernelError::FailedToCreatePipeline(e.to_string()))?;
             pipelines.insert((source, name, constants), pipeline.clone());
-
             Ok(pipeline)
         }
     }
 
-    /// Load the give pipeline
-    /// loads the library from source, then gets the function [`name`] from
-    /// that source (without constants)
     pub fn load_pipeline(
         &self,
         device: &Device,
@@ -191,11 +181,7 @@ impl Kernels {
 
 fn get_compile_options() -> Retained<MTLCompileOptions> {
     let compile_options = MTLCompileOptions::new();
-    //unsafe { compile_options.setEnableLogging(true) };
-
     let fast_math_enabled = get_env_bool("CANDLE_METAL_ENABLE_FAST_MATH", true);
-    // Ref availability:
-    // https://developer.apple.com/documentation/metal/mtlcompileoptions/mathmode
     if available!(macos = 15, ios = 18) {
         if fast_math_enabled {
             compile_options.setMathMode(MTLMathMode::Fast);
@@ -205,7 +191,6 @@ fn get_compile_options() -> Retained<MTLCompileOptions> {
             compile_options.setMathFloatingPointFunctions(MTLMathFloatingPointFunctions::Precise);
         }
     } else {
-        // For older OS versions we use the old api
         #[allow(deprecated)]
         compile_options.setFastMathEnabled(fast_math_enabled);
     }
@@ -245,10 +230,6 @@ mod tests {
                     })
                 })
                 .collect::<Vec<_>>();
-            handles
-                .into_iter()
-                .map(|handle| handle.join().unwrap())
-                .collect::<Vec<_>>()
         });
 
         assert!(pipelines
