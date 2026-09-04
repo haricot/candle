@@ -38,6 +38,7 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        #[cfg(feature = "cudnn")]
         let force_kernel =
             std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
 
@@ -137,6 +138,7 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        #[cfg(feature = "cudnn")]
         let force_kernel =
             std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
 
