@@ -36,9 +36,7 @@ fn legacy_conv_transpose1d(
     let ys = xs
         .iter()
         .zip(&ks)
-        .map(|(xg, kg)| {
-            xg.conv_transpose1d(kg, padding, output_padding, stride, dilation, 1)
-        })
+        .map(|(xg, kg)| xg.conv_transpose1d(kg, padding, output_padding, stride, dilation, 1))
         .collect::<Result<Vec<_>>>()?;
     Tensor::cat(&ys, 1)
 }
@@ -80,8 +78,7 @@ fn check_forward(device: &Device) -> Result<()> {
             device,
         )?;
         let grouped = x.conv_transpose1d(&k, padding, out_pad, stride, dilation, groups)?;
-        let legacy =
-            legacy_conv_transpose1d(&x, &k, padding, out_pad, stride, dilation, groups)?;
+        let legacy = legacy_conv_transpose1d(&x, &k, padding, out_pad, stride, dilation, groups)?;
         assert_close(&grouped, &legacy, 1e-4, 1e-4)?;
     }
 
@@ -103,8 +100,7 @@ fn check_forward(device: &Device) -> Result<()> {
         )?;
         let grouped =
             x.conv_transpose2d_with_groups(&k, padding, out_pad, stride, dilation, groups)?;
-        let legacy =
-            legacy_conv_transpose2d(&x, &k, padding, out_pad, stride, dilation, groups)?;
+        let legacy = legacy_conv_transpose2d(&x, &k, padding, out_pad, stride, dilation, groups)?;
         assert_close(&grouped, &legacy, 1e-4, 1e-4)?;
     }
     Ok(())
@@ -189,17 +185,21 @@ fn with_env(vars: &[(&str, &str)], f: impl FnOnce() -> Result<()>) -> Result<()>
 
 #[test]
 fn grouped_conv_transpose_cpu_forward_parity() -> Result<()> {
-    with_env(&[("CANDLE_CPU_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")], || {
-        check_forward(&Device::Cpu)
-    })
+    with_env(
+        &[("CANDLE_CPU_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")],
+        || check_forward(&Device::Cpu),
+    )
 }
 
 #[test]
 fn grouped_conv_transpose_cpu_autograd_parity() -> Result<()> {
-    with_env(&[("CANDLE_CPU_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")], || {
-        check_autograd_1d(&Device::Cpu)?;
-        check_autograd_2d(&Device::Cpu)
-    })
+    with_env(
+        &[("CANDLE_CPU_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")],
+        || {
+            check_autograd_1d(&Device::Cpu)?;
+            check_autograd_2d(&Device::Cpu)
+        },
+    )
 }
 
 #[cfg(feature = "metal")]
@@ -257,11 +257,8 @@ fn grouped_conv_transpose_cuda_cudnn_native_smoke() -> Result<()> {
             assert_close(&y1, &r1, 1e-4, 1e-4)?;
 
             let x2 = Tensor::from_vec(deterministic(8 * 7 * 6, 37, -50), (1, 8, 7, 6), &device)?;
-            let k2 = Tensor::from_vec(
-                deterministic(8 * 6 * 3 * 3, 53, -50),
-                (8, 6, 3, 3),
-                &device,
-            )?;
+            let k2 =
+                Tensor::from_vec(deterministic(8 * 6 * 3 * 3, 53, -50), (8, 6, 3, 3), &device)?;
             let y2 = x2.conv_transpose2d_with_groups(&k2, 1, 0, 1, 1, 2)?;
             let r2 = legacy_conv_transpose2d(&x2, &k2, 1, 0, 1, 1, 2)?;
             assert_close(&y2, &r2, 1e-4, 1e-4)

@@ -1,7 +1,5 @@
 use crate::backend::{BackendDevice, BackendStorage};
-use crate::conv::{
-    ParamsConv1D, ParamsConv2D, ParamsConvTranspose1D, ParamsConvTranspose2D,
-};
+use crate::conv::{ParamsConv1D, ParamsConv2D, ParamsConvTranspose1D, ParamsConvTranspose2D};
 use crate::{CpuStorage, CudaStorage, CustomOp2, Layout, MetalStorage, Result, Shape, Tensor};
 
 fn grouped_conv1d_fallback<S>(
@@ -122,12 +120,8 @@ where
     for group in 0..groups {
         let input_group_l = input_l.narrow(1, group * c_in_group, c_in_group)?;
         let kernel_group_l = kernel_l.narrow(0, group * c_in_group, c_in_group)?;
-        let group_output = input.conv_transpose1d(
-            &input_group_l,
-            kernel,
-            &kernel_group_l,
-            &group_params,
-        )?;
+        let group_output =
+            input.conv_transpose1d(&input_group_l, kernel, &kernel_group_l, &group_params)?;
         group_output.copy2d(
             &mut output,
             params.b_size,
@@ -171,12 +165,8 @@ where
     for group in 0..groups {
         let input_group_l = input_l.narrow(1, group * c_in_group, c_in_group)?;
         let kernel_group_l = kernel_l.narrow(0, group * c_in_group, c_in_group)?;
-        let group_output = input.conv_transpose2d(
-            &input_group_l,
-            kernel,
-            &kernel_group_l,
-            &group_params,
-        )?;
+        let group_output =
+            input.conv_transpose2d(&input_group_l, kernel, &kernel_group_l, &group_params)?;
         group_output.copy2d(
             &mut output,
             params.b_size,
@@ -430,7 +420,8 @@ impl CustomOp2 for GroupedConvTranspose1D {
             ) {
                 Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
                 Err(err)
-                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
+                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
+                        .is_some() =>
                 {
                     return Err(err)
                 }
@@ -521,7 +512,8 @@ impl CustomOp2 for GroupedConvTranspose2D {
             ) {
                 Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
                 Err(err)
-                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
+                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
+                        .is_some() =>
                 {
                     return Err(err)
                 }

@@ -1,5 +1,5 @@
-use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S};
 use crate::conv::{ParamsConvTranspose1D, ParamsConvTranspose2D};
+use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S};
 use crate::{Layout, Result, WithDType};
 use cudarc::cudnn::safe::{ConvBackwardData, Cudnn};
 use cudarc::driver::{CudaSlice, CudaView, DeviceRepr, ValidAsZeroBits};
@@ -172,10 +172,7 @@ fn launch_transpose1d_t<
         )?
     } else {
         let s = input_l.stride();
-        cudnn.create_4d_tensor_ex::<T>(
-            dy_shape,
-            [s[0] as i32, s[1] as i32, s[2] as i32, 1],
-        )?
+        cudnn.create_4d_tensor_ex::<T>(dy_shape, [s[0] as i32, s[1] as i32, s[2] as i32, 1])?
     };
 
     let op = ConvBackwardData {
@@ -214,7 +211,9 @@ pub(super) fn launch_grouped_conv_transpose2d(
         crate::bail!("cuDNN convolution is disabled for this CUDA device")
     }
     if input.device.id() != kernel.device.id() {
-        crate::bail!("native grouped cuDNN conv_transpose2d requires input and kernel on the same device")
+        crate::bail!(
+            "native grouped cuDNN conv_transpose2d requires input and kernel on the same device"
+        )
     }
 
     let device = input.device.clone();
@@ -231,9 +230,7 @@ pub(super) fn launch_grouped_conv_transpose2d(
             let inp = &inp.slice(input_l.start_offset()..);
             let k = &k.slice(kernel_l.start_offset()..);
             let mut out = unsafe { device.alloc::<half::bf16>(dst_el)? };
-            launch_transpose2d_t::<half::bf16, f32>(
-                inp, input_l, k, &mut out, params, &device,
-            )?;
+            launch_transpose2d_t::<half::bf16, f32>(inp, input_l, k, &mut out, params, &device)?;
             S::BF16(out)
         }
         (S::F16(inp), S::F16(k)) => {
@@ -259,10 +256,18 @@ pub(super) fn launch_grouped_conv_transpose2d(
             launch_transpose2d_t::<f64, f64>(inp, input_l, k, &mut out, params, &device)?;
             S::F64(out)
         }
-        (S::U32(_), S::U32(_)) => crate::bail!("grouped cuDNN conv_transpose2d does not support u32"),
-        (S::I16(_), S::I16(_)) => crate::bail!("grouped cuDNN conv_transpose2d does not support i16"),
-        (S::I32(_), S::I32(_)) => crate::bail!("grouped cuDNN conv_transpose2d does not support i32"),
-        (S::I64(_), S::I64(_)) => crate::bail!("grouped cuDNN conv_transpose2d does not support i64"),
+        (S::U32(_), S::U32(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose2d does not support u32")
+        }
+        (S::I16(_), S::I16(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose2d does not support i16")
+        }
+        (S::I32(_), S::I32(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose2d does not support i32")
+        }
+        (S::I64(_), S::I64(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose2d does not support i64")
+        }
         (S::F8E4M3(_), S::F8E4M3(_)) => {
             crate::bail!("grouped cuDNN conv_transpose2d does not support f8e4m3")
         }
@@ -285,7 +290,9 @@ pub(super) fn launch_grouped_conv_transpose1d(
         crate::bail!("cuDNN convolution is disabled for this CUDA device")
     }
     if input.device.id() != kernel.device.id() {
-        crate::bail!("native grouped cuDNN conv_transpose1d requires input and kernel on the same device")
+        crate::bail!(
+            "native grouped cuDNN conv_transpose1d requires input and kernel on the same device"
+        )
     }
 
     let device = input.device.clone();
@@ -302,9 +309,7 @@ pub(super) fn launch_grouped_conv_transpose1d(
             let inp = &inp.slice(input_l.start_offset()..);
             let k = &k.slice(kernel_l.start_offset()..);
             let mut out = unsafe { device.alloc::<half::bf16>(dst_el)? };
-            launch_transpose1d_t::<half::bf16, f32>(
-                inp, input_l, k, &mut out, params, &device,
-            )?;
+            launch_transpose1d_t::<half::bf16, f32>(inp, input_l, k, &mut out, params, &device)?;
             S::BF16(out)
         }
         (S::F16(inp), S::F16(k)) => {
@@ -330,10 +335,18 @@ pub(super) fn launch_grouped_conv_transpose1d(
             launch_transpose1d_t::<f64, f64>(inp, input_l, k, &mut out, params, &device)?;
             S::F64(out)
         }
-        (S::U32(_), S::U32(_)) => crate::bail!("grouped cuDNN conv_transpose1d does not support u32"),
-        (S::I16(_), S::I16(_)) => crate::bail!("grouped cuDNN conv_transpose1d does not support i16"),
-        (S::I32(_), S::I32(_)) => crate::bail!("grouped cuDNN conv_transpose1d does not support i32"),
-        (S::I64(_), S::I64(_)) => crate::bail!("grouped cuDNN conv_transpose1d does not support i64"),
+        (S::U32(_), S::U32(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose1d does not support u32")
+        }
+        (S::I16(_), S::I16(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose1d does not support i16")
+        }
+        (S::I32(_), S::I32(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose1d does not support i32")
+        }
+        (S::I64(_), S::I64(_)) => {
+            crate::bail!("grouped cuDNN conv_transpose1d does not support i64")
+        }
         (S::F8E4M3(_), S::F8E4M3(_)) => {
             crate::bail!("grouped cuDNN conv_transpose1d does not support f8e4m3")
         }

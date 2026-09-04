@@ -25,9 +25,9 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
             {
                 Err(err)
             }
-            Err(_) => GroupedConvTranspose1D(self.0.clone()).cpu_fwd(
-                input, input_l, kernel, kernel_l,
-            ),
+            Err(_) => {
+                GroupedConvTranspose1D(self.0.clone()).cpu_fwd(input, input_l, kernel, kernel_l)
+            }
         }
     }
 
@@ -39,8 +39,7 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
-        let force_kernel =
-            std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
+        let force_kernel = std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
 
         #[cfg(feature = "cudnn")]
         if !force_kernel && kernel_l.is_contiguous() {
@@ -49,7 +48,8 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
             ) {
                 Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
                 Err(err)
-                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
+                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
+                        .is_some() =>
                 {
                     return Err(err)
                 }
@@ -125,9 +125,9 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
             {
                 Err(err)
             }
-            Err(_) => GroupedConvTranspose2D(self.0.clone()).cpu_fwd(
-                input, input_l, kernel, kernel_l,
-            ),
+            Err(_) => {
+                GroupedConvTranspose2D(self.0.clone()).cpu_fwd(input, input_l, kernel, kernel_l)
+            }
         }
     }
 
@@ -139,8 +139,7 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
-        let force_kernel =
-            std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
+        let force_kernel = std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
 
         #[cfg(feature = "cudnn")]
         if !force_kernel && kernel_l.is_contiguous() {
@@ -149,7 +148,8 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
             ) {
                 Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
                 Err(err)
-                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
+                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
+                        .is_some() =>
                 {
                     return Err(err)
                 }

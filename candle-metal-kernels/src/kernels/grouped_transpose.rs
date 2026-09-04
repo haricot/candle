@@ -1,5 +1,8 @@
 use crate::utils::EncoderProvider;
-use crate::{debug_group, set_params, Buffer, ComputeCommandEncoder, Device, Kernels, MetalKernelError, Output, Source};
+use crate::{
+    debug_group, set_params, Buffer, ComputeCommandEncoder, Device, Kernels, MetalKernelError,
+    Output, Source,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub fn call_grouped_conv_transpose1d(
