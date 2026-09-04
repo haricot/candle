@@ -3,15 +3,18 @@
 use crate::{op::BackpropOp, op::Op, Error, Result, Tensor};
 
 mod grouped;
+mod grouped_transpose_cpu;
+#[cfg(feature = "cuda")]
+mod grouped_transpose_cuda;
 #[cfg(feature = "cudnn")]
 mod grouped_transpose_cudnn;
+#[cfg(feature = "metal")]
+mod grouped_transpose_metal;
 use grouped::{GroupedConv1D, GroupedConv2D, GroupedConvTranspose1D, GroupedConvTranspose2D};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamsConv1D {
     pub(crate) b_size: usize,
-    // Maybe we should have a version without l_in as this bit depends on the input and not only on
-    // the weights.
     pub(crate) l_in: usize,
     pub(crate) c_out: usize,
     pub(crate) c_in: usize,
@@ -153,7 +156,6 @@ impl Tensor {
         Ok(crate::tensor::from_storage(storage, out_dims, op, false))
     }
 
-    /// Applies a 1D convolution over the input tensor.
     pub fn conv1d(
         &self,
         kernel: &Self,
@@ -165,7 +167,6 @@ impl Tensor {
         self.conv1d_with_algo(kernel, padding, stride, dilation, groups, None)
     }
 
-    /// Applies a 1D convolution over the input tensor.
     pub fn conv1d_with_algo(
         &self,
         kernel: &Self,
@@ -193,7 +194,6 @@ impl Tensor {
         if !c_out.is_multiple_of(groups) {
             crate::bail!("out_channel {c_out} is not divisible by the number of groups {groups}")
         }
-
         let params = ParamsConv1D {
             b_size,
             l_in,
@@ -213,7 +213,6 @@ impl Tensor {
         }
     }
 
-    /// Applies a 1D transposed convolution over the input tensor.
     pub fn conv_transpose1d(
         &self,
         kernel: &Self,
@@ -232,9 +231,7 @@ impl Tensor {
             crate::bail!("in_channel mismatch between input ({c_in}) and kernel ({c_in_k})")
         }
         if !c_in.is_multiple_of(groups) {
-            crate::bail!(
-                "in_channel {c_in} is not divisible by the number of groups {groups}"
-            )
+            crate::bail!("in_channel {c_in} is not divisible by the number of groups {groups}")
         }
         let c_out = c_out_per_group
             .checked_mul(groups)
@@ -251,7 +248,24 @@ impl Tensor {
             dilation,
             groups,
         };
-        self.apply_op2(kernel, GroupedConvTranspose1D(params))
+
+        if groups == 1 && !self.track_op() && !kernel.track_op() {
+            let storage = self.storage().conv_transpose1d(
+                self.layout(),
+                &kernel.storage(),
+                kernel.layout(),
+                &params,
+            )?;
+            let out_dims = params.out_dims();
+            Ok(crate::tensor::from_storage(
+                storage,
+                out_dims,
+                BackpropOp::none(),
+                false,
+            ))
+        } else {
+            self.apply_op2(kernel, GroupedConvTranspose1D(params))
+        }
     }
 
     fn conv2d_single_group(&self, kernel: &Self, params: &ParamsConv2D) -> Result<Self> {
@@ -269,7 +283,6 @@ impl Tensor {
         Ok(crate::tensor::from_storage(storage, out_dims, op, false))
     }
 
-    /// Applies a 2D convolution over the input tensor.
     pub fn conv2d(
         &self,
         kernel: &Self,
@@ -347,7 +360,6 @@ impl Tensor {
         Ok(crate::tensor::from_storage(storage, out_dims, op, false))
     }
 
-    /// Applies a 2D transposed convolution over the input tensor with one group.
     pub fn conv_transpose2d(
         &self,
         kernel: &Self,
@@ -356,17 +368,9 @@ impl Tensor {
         stride: usize,
         dilation: usize,
     ) -> Result<Self> {
-        self.conv_transpose2d_with_groups(
-            kernel,
-            padding,
-            output_padding,
-            stride,
-            dilation,
-            1,
-        )
+        self.conv_transpose2d_with_groups(kernel, padding, output_padding, stride, dilation, 1)
     }
 
-    /// Applies a grouped 2D transposed convolution over the input tensor.
     pub fn conv_transpose2d_with_groups(
         &self,
         kernel: &Self,
@@ -385,9 +389,7 @@ impl Tensor {
             crate::bail!("in_channel mismatch between input ({c_in}) and kernel ({c_in_k})")
         }
         if !c_in.is_multiple_of(groups) {
-            crate::bail!(
-                "in_channel {c_in} is not divisible by the number of groups {groups}"
-            )
+            crate::bail!("in_channel {c_in} is not divisible by the number of groups {groups}")
         }
         let c_out = c_out_per_group
             .checked_mul(groups)
