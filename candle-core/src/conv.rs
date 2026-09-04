@@ -3,7 +3,7 @@
 use crate::{op::BackpropOp, op::Op, Error, Result, Tensor};
 
 mod grouped;
-use grouped::{GroupedConv1D, GroupedConv2D};
+use grouped::{GroupedConv1D, GroupedConv2D, GroupedConvTranspose1D, GroupedConvTranspose2D};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamsConv1D {
@@ -43,6 +43,7 @@ pub struct ParamsConvTranspose1D {
     pub(crate) output_padding: usize,
     pub(crate) stride: usize,
     pub(crate) dilation: usize,
+    pub(crate) groups: usize,
 }
 
 impl ParamsConvTranspose1D {
@@ -115,6 +116,7 @@ pub struct ParamsConvTranspose2D {
     pub(crate) output_padding: usize,
     pub(crate) stride: usize,
     pub(crate) dilation: usize,
+    pub(crate) groups: usize,
 }
 
 impl ParamsConvTranspose2D {
@@ -242,38 +244,38 @@ impl Tensor {
         dilation: usize,
         groups: usize,
     ) -> Result<Self> {
-        let (c_in_k, c_out, k_size) = kernel.dims3()?;
+        if groups == 0 {
+            crate::bail!("conv_transpose1d groups must be greater than zero")
+        }
+        let (c_in_k, c_out_per_group, k_size) = kernel.dims3()?;
         let (b_size, c_in, l_in) = self.dims3()?;
         if c_in != c_in_k {
             crate::bail!("in_channel mismatch between input ({c_in}) and kernel ({c_in_k})")
         }
-        if c_in % groups != 0 {
-            crate::bail!("in_channel {c_in} is not divisible by the number of groups")
+        if !c_in.is_multiple_of(groups) {
+            crate::bail!(
+                "in_channel {c_in} is not divisible by the number of groups {groups}"
+            )
         }
+        let c_out = c_out_per_group
+            .checked_mul(groups)
+            .ok_or_else(|| Error::Msg("conv_transpose1d output channel count overflow".into()))?;
         let params = ParamsConvTranspose1D {
             b_size,
             l_in,
             k_size,
             c_out,
-            c_in: c_in / groups,
+            c_in,
             padding,
             output_padding,
             stride,
             dilation,
+            groups,
         };
         if groups == 1 {
             self.conv_transpose1d_single_group(kernel, &params)
         } else {
-            // Follow-up: promote groups into ParamsConvTranspose1D/Op::ConvTranspose1D and add
-            // native grouped backend implementations (cuDNN and Metal included).
-            let blocks = self.chunk(groups, 1)?;
-            let kernel = kernel.chunk(groups, 0)?;
-            let blocks = blocks
-                .iter()
-                .zip(&kernel)
-                .map(|(block, kernel)| block.conv_transpose1d_single_group(kernel, &params))
-                .collect::<Result<Vec<_>>>()?;
-            Tensor::cat(&blocks, 1)
+            self.apply_op2(kernel, GroupedConvTranspose1D(params))
         }
     }
 
@@ -347,7 +349,30 @@ impl Tensor {
         }
     }
 
-    /// Applies a 2D transposed convolution over the input tensor.
+    fn conv_transpose2d_single_group(
+        &self,
+        kernel: &Self,
+        params: &ParamsConvTranspose2D,
+    ) -> Result<Self> {
+        let storage = self.storage().conv_transpose2d(
+            self.layout(),
+            &kernel.storage(),
+            kernel.layout(),
+            params,
+        )?;
+        let op = BackpropOp::new2(self, kernel, |arg, kernel| Op::ConvTranspose2D {
+            arg,
+            kernel,
+            padding: params.padding,
+            output_padding: params.output_padding,
+            stride: params.stride,
+            dilation: params.dilation,
+        });
+        let out_dims = params.out_dims();
+        Ok(crate::tensor::from_storage(storage, out_dims, op, false))
+    }
+
+    /// Applies a 2D transposed convolution over the input tensor with one group.
     pub fn conv_transpose2d(
         &self,
         kernel: &Self,
@@ -356,11 +381,42 @@ impl Tensor {
         stride: usize,
         dilation: usize,
     ) -> Result<Self> {
+        self.conv_transpose2d_with_groups(
+            kernel,
+            padding,
+            output_padding,
+            stride,
+            dilation,
+            1,
+        )
+    }
+
+    /// Applies a grouped 2D transposed convolution over the input tensor.
+    pub fn conv_transpose2d_with_groups(
+        &self,
+        kernel: &Self,
+        padding: usize,
+        output_padding: usize,
+        stride: usize,
+        dilation: usize,
+        groups: usize,
+    ) -> Result<Self> {
+        if groups == 0 {
+            crate::bail!("conv_transpose2d groups must be greater than zero")
+        }
         let (b_size, c_in, i_h, i_w) = self.dims4()?;
-        let (c_in_k, c_out, k_h, k_w) = kernel.dims4()?;
+        let (c_in_k, c_out_per_group, k_h, k_w) = kernel.dims4()?;
         if c_in != c_in_k {
             crate::bail!("in_channel mismatch between input ({c_in}) and kernel ({c_in_k})")
         }
+        if !c_in.is_multiple_of(groups) {
+            crate::bail!(
+                "in_channel {c_in} is not divisible by the number of groups {groups}"
+            )
+        }
+        let c_out = c_out_per_group
+            .checked_mul(groups)
+            .ok_or_else(|| Error::Msg("conv_transpose2d output channel count overflow".into()))?;
         let params = ParamsConvTranspose2D {
             b_size,
             i_h,
@@ -373,23 +429,12 @@ impl Tensor {
             output_padding,
             stride,
             dilation,
+            groups,
         };
-        // Follow-up: add a groups argument and native grouped ConvTranspose2D backend support.
-        let storage = self.storage().conv_transpose2d(
-            self.layout(),
-            &kernel.storage(),
-            kernel.layout(),
-            &params,
-        )?;
-        let op = BackpropOp::new2(self, kernel, |arg, kernel| Op::ConvTranspose2D {
-            arg,
-            kernel,
-            padding: params.padding,
-            output_padding: params.output_padding,
-            stride: params.stride,
-            dilation: params.dilation,
-        });
-        let out_dims = params.out_dims();
-        Ok(crate::tensor::from_storage(storage, out_dims, op, false))
+        if groups == 1 {
+            self.conv_transpose2d_single_group(kernel, &params)
+        } else {
+            self.apply_op2(kernel, GroupedConvTranspose2D(params))
+        }
     }
 }
