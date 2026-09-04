@@ -1,3 +1,5 @@
+include!(concat!(env!("OUT_DIR"), "/cuda_build_info.rs"));
+
 mod ptx {
     include!(concat!(env!("OUT_DIR"), "/ptx.rs"));
 }
