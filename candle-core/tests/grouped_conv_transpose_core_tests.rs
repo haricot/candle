@@ -37,14 +37,7 @@ fn legacy_conv_transpose1d(
         .iter()
         .zip(&ks)
         .map(|(xg, kg)| {
-            xg.conv_transpose1d(
-                kg,
-                padding,
-                output_padding,
-                stride,
-                dilation,
-                1,
-            )
+            xg.conv_transpose1d(kg, padding, output_padding, stride, dilation, 1)
         })
         .collect::<Result<Vec<_>>>()?;
     Tensor::cat(&ys, 1)
@@ -87,9 +80,8 @@ fn check_forward(device: &Device) -> Result<()> {
             device,
         )?;
         let grouped = x.conv_transpose1d(&k, padding, out_pad, stride, dilation, groups)?;
-        let legacy = legacy_conv_transpose1d(
-            &x, &k, padding, out_pad, stride, dilation, groups,
-        )?;
+        let legacy =
+            legacy_conv_transpose1d(&x, &k, padding, out_pad, stride, dilation, groups)?;
         assert_close(&grouped, &legacy, 1e-4, 1e-4)?;
     }
 
@@ -109,12 +101,10 @@ fn check_forward(device: &Device) -> Result<()> {
             (c_in, c_out_group, ksize, ksize),
             device,
         )?;
-        let grouped = x.conv_transpose2d_with_groups(
-            &k, padding, out_pad, stride, dilation, groups,
-        )?;
-        let legacy = legacy_conv_transpose2d(
-            &x, &k, padding, out_pad, stride, dilation, groups,
-        )?;
+        let grouped =
+            x.conv_transpose2d_with_groups(&k, padding, out_pad, stride, dilation, groups)?;
+        let legacy =
+            legacy_conv_transpose2d(&x, &k, padding, out_pad, stride, dilation, groups)?;
         assert_close(&grouped, &legacy, 1e-4, 1e-4)?;
     }
     Ok(())
@@ -155,16 +145,8 @@ fn check_autograd_1d(device: &Device) -> Result<()> {
 
 fn check_autograd_2d(device: &Device) -> Result<()> {
     let groups = 4;
-    let x0 = Tensor::from_vec(
-        deterministic(2 * 8 * 5 * 4, 37, -50),
-        (2, 8, 5, 4),
-        device,
-    )?;
-    let k0 = Tensor::from_vec(
-        deterministic(8 * 3 * 3 * 3, 53, -50),
-        (8, 3, 3, 3),
-        device,
-    )?;
+    let x0 = Tensor::from_vec(deterministic(2 * 8 * 5 * 4, 37, -50), (2, 8, 5, 4), device)?;
+    let k0 = Tensor::from_vec(deterministic(8 * 3 * 3 * 3, 53, -50), (8, 3, 3, 3), device)?;
 
     let x_grouped = Var::from_tensor(&x0)?;
     let k_grouped = Var::from_tensor(&k0)?;
@@ -194,24 +176,44 @@ fn check_autograd_2d(device: &Device) -> Result<()> {
     Ok(())
 }
 
+fn with_env(vars: &[(&str, &str)], f: impl FnOnce() -> Result<()>) -> Result<()> {
+    for (name, value) in vars {
+        std::env::set_var(name, value);
+    }
+    let result = f();
+    for (name, _) in vars {
+        std::env::remove_var(name);
+    }
+    result
+}
+
 #[test]
 fn grouped_conv_transpose_cpu_forward_parity() -> Result<()> {
-    check_forward(&Device::Cpu)
+    with_env(&[("CANDLE_CPU_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")], || {
+        check_forward(&Device::Cpu)
+    })
 }
 
 #[test]
 fn grouped_conv_transpose_cpu_autograd_parity() -> Result<()> {
-    check_autograd_1d(&Device::Cpu)?;
-    check_autograd_2d(&Device::Cpu)
+    with_env(&[("CANDLE_CPU_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")], || {
+        check_autograd_1d(&Device::Cpu)?;
+        check_autograd_2d(&Device::Cpu)
+    })
 }
 
 #[cfg(feature = "metal")]
 #[test]
 fn grouped_conv_transpose_metal_forward_and_autograd_parity() -> Result<()> {
-    let device = Device::new_metal(0)?;
-    check_forward(&device)?;
-    check_autograd_1d(&device)?;
-    check_autograd_2d(&device)
+    with_env(
+        &[("CANDLE_METAL_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")],
+        || {
+            let device = Device::new_metal(0)?;
+            check_forward(&device)?;
+            check_autograd_1d(&device)?;
+            check_autograd_2d(&device)
+        },
+    )
 }
 
 #[cfg(all(feature = "cuda", feature = "cudnn"))]
@@ -223,32 +225,46 @@ fn grouped_conv_transpose_cuda_forward_and_autograd_parity() -> Result<()> {
     check_autograd_2d(&device)
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn grouped_conv_transpose_cuda_native_kernel_smoke() -> Result<()> {
+    with_env(
+        &[
+            ("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL", "1"),
+            ("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT", "1"),
+        ],
+        || {
+            let device = Device::new_cuda(0)?;
+            check_forward(&device)?;
+            check_autograd_1d(&device)?;
+            check_autograd_2d(&device)
+        },
+    )
+}
+
 #[cfg(all(feature = "cuda", feature = "cudnn"))]
 #[test]
 fn grouped_conv_transpose_cuda_cudnn_native_smoke() -> Result<()> {
-    std::env::set_var("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT", "1");
-    let device = Device::new_cuda(0)?;
+    with_env(
+        &[("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT", "1")],
+        || {
+            let device = Device::new_cuda(0)?;
 
-    let x1 = Tensor::from_vec(deterministic(8 * 9, 37, -50), (1, 8, 9), &device)?;
-    let k1 = Tensor::from_vec(deterministic(8 * 6 * 3, 53, -50), (8, 6, 3), &device)?;
-    let y1 = x1.conv_transpose1d(&k1, 1, 0, 1, 1, 2)?;
-    let r1 = legacy_conv_transpose1d(&x1, &k1, 1, 0, 1, 1, 2)?;
-    assert_close(&y1, &r1, 1e-4, 1e-4)?;
+            let x1 = Tensor::from_vec(deterministic(8 * 9, 37, -50), (1, 8, 9), &device)?;
+            let k1 = Tensor::from_vec(deterministic(8 * 6 * 3, 53, -50), (8, 6, 3), &device)?;
+            let y1 = x1.conv_transpose1d(&k1, 1, 0, 1, 1, 2)?;
+            let r1 = legacy_conv_transpose1d(&x1, &k1, 1, 0, 1, 1, 2)?;
+            assert_close(&y1, &r1, 1e-4, 1e-4)?;
 
-    let x2 = Tensor::from_vec(
-        deterministic(8 * 7 * 6, 37, -50),
-        (1, 8, 7, 6),
-        &device,
-    )?;
-    let k2 = Tensor::from_vec(
-        deterministic(8 * 6 * 3 * 3, 53, -50),
-        (8, 6, 3, 3),
-        &device,
-    )?;
-    let y2 = x2.conv_transpose2d_with_groups(&k2, 1, 0, 1, 1, 2)?;
-    let r2 = legacy_conv_transpose2d(&x2, &k2, 1, 0, 1, 1, 2)?;
-    assert_close(&y2, &r2, 1e-4, 1e-4)?;
-
-    std::env::remove_var("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT");
-    Ok(())
+            let x2 = Tensor::from_vec(deterministic(8 * 7 * 6, 37, -50), (1, 8, 7, 6), &device)?;
+            let k2 = Tensor::from_vec(
+                deterministic(8 * 6 * 3 * 3, 53, -50),
+                (8, 6, 3, 3),
+                &device,
+            )?;
+            let y2 = x2.conv_transpose2d_with_groups(&k2, 1, 0, 1, 1, 2)?;
+            let r2 = legacy_conv_transpose2d(&x2, &k2, 1, 0, 1, 1, 2)?;
+            assert_close(&y2, &r2, 1e-4, 1e-4)
+        },
+    )
 }
