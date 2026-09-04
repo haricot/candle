@@ -1,12 +1,25 @@
+use crate::backend::BackendStorage;
 use crate::conv::{ParamsConvTranspose1D, ParamsConvTranspose2D};
-use crate::{Layout, MetalStorage, Result};
-use candle_metal_kernels::{BufferOffset, Output};
+use crate::{DType, Layout, MetalStorage, Result};
 
-fn output_buffer(storage: &MetalStorage, layout: &Layout) -> BufferOffset<'_> {
-    BufferOffset {
-        buffer: &storage.buffer,
-        offset_in_bytes: layout.start_offset() * storage.dtype.size_in_bytes(),
-    }
+fn kernel_name_1d(dtype: DType) -> Result<&'static str> {
+    Ok(match dtype {
+        DType::F32 => "grouped_conv_transpose1d_f32",
+        DType::F16 => "grouped_conv_transpose1d_f16",
+        DType::BF16 => "grouped_conv_transpose1d_bf16",
+        DType::U8 => "grouped_conv_transpose1d_u8",
+        DType::U32 => "grouped_conv_transpose1d_u32",
+        _ => crate::bail!("native grouped Metal conv_transpose1d does not support {dtype:?}"),
+    })
+}
+
+fn kernel_name_2d(dtype: DType) -> Result<&'static str> {
+    Ok(match dtype {
+        DType::F32 => "grouped_conv_transpose2d_f32",
+        DType::F16 => "grouped_conv_transpose2d_f16",
+        DType::BF16 => "grouped_conv_transpose2d_bf16",
+        _ => crate::bail!("native grouped Metal conv_transpose2d does not support {dtype:?}"),
+    })
 }
 
 pub(super) fn launch1d(
@@ -16,50 +29,38 @@ pub(super) fn launch1d(
     kernel_l: &Layout,
     p: &ParamsConvTranspose1D,
 ) -> Result<MetalStorage> {
-    if input.device.id() != kernel.device.id() {
-        crate::bail!("native grouped Metal conv_transpose1d requires one device")
-    }
-    let l_out = p.l_out();
-    let dst_el = p.b_size * p.c_out * l_out;
-    let dtype = input.dtype;
-    if dtype != kernel.dtype {
+    if input.dtype() != kernel.dtype() {
         crate::bail!("native grouped Metal conv_transpose1d dtype mismatch")
     }
-    let name = match dtype {
-        crate::DType::F32 => "grouped_conv_transpose1d_f32",
-        crate::DType::F16 => "grouped_conv_transpose1d_f16",
-        crate::DType::BF16 => "grouped_conv_transpose1d_bf16",
-        crate::DType::U32 => "grouped_conv_transpose1d_u32",
-        crate::DType::U8 => "grouped_conv_transpose1d_u8",
-        _ => crate::bail!("native grouped Metal conv_transpose1d {dtype:?} not implemented"),
-    };
-    let device = input.device.clone();
-    let buffer = device
-        .new_buffer_builder()
-        .with_size_for(dst_el, dtype)
-        .with_label("grouped-conv-transpose1d")
-        .build()?;
+    let dtype = input.dtype();
+    let device = input.device().clone();
+    let l_out = p.l_out();
+    let dst_el = p.b_size * p.c_out * l_out;
+    let output = device.new_buffer(dst_el, dtype, "grouped-conv-transpose1d")?;
     let encoder = device.command_encoder()?;
     candle_metal_kernels::call_grouped_conv_transpose1d(
-        &device.device,
+        device.metal_device(),
         &encoder,
-        &device.kernels,
-        name,
+        device.kernels(),
+        kernel_name_1d(dtype)?,
+        l_out,
         p.stride,
         p.padding,
         p.output_padding,
         p.dilation,
         p.groups,
-        l_out,
         input_l.dims(),
         input_l.stride(),
         kernel_l.dims(),
         kernel_l.stride(),
-        output_buffer(input, input_l),
-        output_buffer(kernel, kernel_l),
-        Output::Buffer(&buffer),
-    )?;
-    Ok(MetalStorage::new(buffer, device, dst_el, dtype))
+        input.buffer(),
+        input_l.start_offset() * dtype.size_in_bytes(),
+        kernel.buffer(),
+        kernel_l.start_offset() * dtype.size_in_bytes(),
+        &output,
+    )
+    .map_err(crate::metal_backend::MetalError::from)?;
+    Ok(MetalStorage::new(output, device, dst_el, dtype))
 }
 
 pub(super) fn launch2d(
@@ -69,48 +70,38 @@ pub(super) fn launch2d(
     kernel_l: &Layout,
     p: &ParamsConvTranspose2D,
 ) -> Result<MetalStorage> {
-    if input.device.id() != kernel.device.id() {
-        crate::bail!("native grouped Metal conv_transpose2d requires one device")
+    if input.dtype() != kernel.dtype() {
+        crate::bail!("native grouped Metal conv_transpose2d dtype mismatch")
     }
+    let dtype = input.dtype();
+    let device = input.device().clone();
     let out_h = p.out_h();
     let out_w = p.out_w();
     let dst_el = p.b_size * p.c_out * out_h * out_w;
-    let dtype = input.dtype;
-    if dtype != kernel.dtype {
-        crate::bail!("native grouped Metal conv_transpose2d dtype mismatch")
-    }
-    let name = match dtype {
-        crate::DType::F32 => "grouped_conv_transpose2d_f32",
-        crate::DType::F16 => "grouped_conv_transpose2d_f16",
-        crate::DType::BF16 => "grouped_conv_transpose2d_bf16",
-        _ => crate::bail!("native grouped Metal conv_transpose2d {dtype:?} not implemented"),
-    };
-    let device = input.device.clone();
-    let buffer = device
-        .new_buffer_builder()
-        .with_size_for(dst_el, dtype)
-        .with_label("grouped-conv-transpose2d")
-        .build()?;
+    let output = device.new_buffer(dst_el, dtype, "grouped-conv-transpose2d")?;
     let encoder = device.command_encoder()?;
     candle_metal_kernels::call_grouped_conv_transpose2d(
-        &device.device,
+        device.metal_device(),
         &encoder,
-        &device.kernels,
-        name,
+        device.kernels(),
+        kernel_name_2d(dtype)?,
+        out_w,
+        out_h,
         p.stride,
         p.padding,
         p.output_padding,
         p.dilation,
         p.groups,
-        out_w,
-        out_h,
         input_l.dims(),
         input_l.stride(),
         kernel_l.dims(),
         kernel_l.stride(),
-        output_buffer(input, input_l),
-        output_buffer(kernel, kernel_l),
-        Output::Buffer(&buffer),
-    )?;
-    Ok(MetalStorage::new(buffer, device, dst_el, dtype))
+        input.buffer(),
+        input_l.start_offset() * dtype.size_in_bytes(),
+        kernel.buffer(),
+        kernel_l.start_offset() * dtype.size_in_bytes(),
+        &output,
+    )
+    .map_err(crate::metal_backend::MetalError::from)?;
+    Ok(MetalStorage::new(output, device, dst_el, dtype))
 }

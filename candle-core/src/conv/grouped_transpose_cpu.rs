@@ -1,3 +1,4 @@
+use crate::backend::BackendStorage;
 use crate::conv::{ParamsConvTranspose1D, ParamsConvTranspose2D};
 use crate::{CpuStorage, Layout, Result, WithDType};
 use rayon::prelude::*;
@@ -44,8 +45,7 @@ fn launch1d_t<T: WithDType>(
                 }
                 for src_c_idx in src_c_begin..src_c_end {
                     let src_idx = b_idx * s[0] + src_c_idx * s[1] + inp_x * s[2];
-                    let k_idx =
-                        src_c_idx * ks[0] + dst_c_local * ks[1] + k_x * ks[2];
+                    let k_idx = src_c_idx * ks[0] + dst_c_local * ks[1] + k_x * ks[2];
                     d += input[src_idx].to_f64() * kernel[k_idx].to_f64();
                 }
             }
@@ -109,12 +109,9 @@ fn launch2d_t<T: WithDType>(
                         continue;
                     }
                     for src_c_idx in src_c_begin..src_c_end {
-                        let src_idx =
-                            b_idx * s[0] + src_c_idx * s[1] + inp_y * s[2] + inp_x * s[3];
-                        let k_idx = src_c_idx * ks[0]
-                            + dst_c_local * ks[1]
-                            + k_y * ks[2]
-                            + k_x * ks[3];
+                        let src_idx = b_idx * s[0] + src_c_idx * s[1] + inp_y * s[2] + inp_x * s[3];
+                        let k_idx =
+                            src_c_idx * ks[0] + dst_c_local * ks[1] + k_y * ks[2] + k_x * ks[3];
                         d += input[src_idx].to_f64() * kernel[k_idx].to_f64();
                     }
                 }
