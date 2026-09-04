@@ -1,3 +1,4 @@
+use crate::backend::BackendStorage;
 use crate::conv::{ParamsConvTranspose1D, ParamsConvTranspose2D};
 use crate::{CpuStorage, Layout, Result, WithDType};
 use rayon::prelude::*;
@@ -33,8 +34,8 @@ fn launch1d_t<T: WithDType>(
             let mut d = 0f64;
 
             for k_x in 0..p.k_size {
-                let inp_x_stride = out_x as isize + p.padding as isize
-                    - (k_x * p.dilation) as isize;
+                let inp_x_stride =
+                    out_x as isize + p.padding as isize - (k_x * p.dilation) as isize;
                 if inp_x_stride < 0 || inp_x_stride % p.stride as isize != 0 {
                     continue;
                 }
@@ -88,8 +89,8 @@ fn launch2d_t<T: WithDType>(
             let mut d = 0f64;
 
             for k_x in 0..p.k_w {
-                let inp_x_stride = out_x as isize + p.padding as isize
-                    - (k_x * p.dilation) as isize;
+                let inp_x_stride =
+                    out_x as isize + p.padding as isize - (k_x * p.dilation) as isize;
                 if inp_x_stride < 0 || inp_x_stride % p.stride as isize != 0 {
                     continue;
                 }
@@ -98,8 +99,8 @@ fn launch2d_t<T: WithDType>(
                     continue;
                 }
                 for k_y in 0..p.k_h {
-                    let inp_y_stride = out_y as isize + p.padding as isize
-                        - (k_y * p.dilation) as isize;
+                    let inp_y_stride =
+                        out_y as isize + p.padding as isize - (k_y * p.dilation) as isize;
                     if inp_y_stride < 0 || inp_y_stride % p.stride as isize != 0 {
                         continue;
                     }
@@ -134,11 +135,22 @@ pub(super) fn launch1d(
     p: &ParamsConvTranspose1D,
 ) -> Result<CpuStorage> {
     match (input, kernel) {
-        (CpuStorage::F32(_), CpuStorage::F32(_)) => launch1d_t::<f32>(input, input_l, kernel, kernel_l, p),
-        (CpuStorage::F64(_), CpuStorage::F64(_)) => launch1d_t::<f64>(input, input_l, kernel, kernel_l, p),
-        (CpuStorage::F16(_), CpuStorage::F16(_)) => launch1d_t::<half::f16>(input, input_l, kernel, kernel_l, p),
-        (CpuStorage::BF16(_), CpuStorage::BF16(_)) => launch1d_t::<half::bf16>(input, input_l, kernel, kernel_l, p),
-        _ => crate::bail!("native grouped CPU conv_transpose1d does not support {:?}", input.dtype()),
+        (CpuStorage::F32(_), CpuStorage::F32(_)) => {
+            launch1d_t::<f32>(input, input_l, kernel, kernel_l, p)
+        }
+        (CpuStorage::F64(_), CpuStorage::F64(_)) => {
+            launch1d_t::<f64>(input, input_l, kernel, kernel_l, p)
+        }
+        (CpuStorage::F16(_), CpuStorage::F16(_)) => {
+            launch1d_t::<half::f16>(input, input_l, kernel, kernel_l, p)
+        }
+        (CpuStorage::BF16(_), CpuStorage::BF16(_)) => {
+            launch1d_t::<half::bf16>(input, input_l, kernel, kernel_l, p)
+        }
+        _ => crate::bail!(
+            "native grouped CPU conv_transpose1d does not support {:?}",
+            input.dtype()
+        ),
     }
 }
 
@@ -150,10 +162,21 @@ pub(super) fn launch2d(
     p: &ParamsConvTranspose2D,
 ) -> Result<CpuStorage> {
     match (input, kernel) {
-        (CpuStorage::F32(_), CpuStorage::F32(_)) => launch2d_t::<f32>(input, input_l, kernel, kernel_l, p),
-        (CpuStorage::F64(_), CpuStorage::F64(_)) => launch2d_t::<f64>(input, input_l, kernel, kernel_l, p),
-        (CpuStorage::F16(_), CpuStorage::F16(_)) => launch2d_t::<half::f16>(input, input_l, kernel, kernel_l, p),
-        (CpuStorage::BF16(_), CpuStorage::BF16(_)) => launch2d_t::<half::bf16>(input, input_l, kernel, kernel_l, p),
-        _ => crate::bail!("native grouped CPU conv_transpose2d does not support {:?}", input.dtype()),
+        (CpuStorage::F32(_), CpuStorage::F32(_)) => {
+            launch2d_t::<f32>(input, input_l, kernel, kernel_l, p)
+        }
+        (CpuStorage::F64(_), CpuStorage::F64(_)) => {
+            launch2d_t::<f64>(input, input_l, kernel, kernel_l, p)
+        }
+        (CpuStorage::F16(_), CpuStorage::F16(_)) => {
+            launch2d_t::<half::f16>(input, input_l, kernel, kernel_l, p)
+        }
+        (CpuStorage::BF16(_), CpuStorage::BF16(_)) => {
+            launch2d_t::<half::bf16>(input, input_l, kernel, kernel_l, p)
+        }
+        _ => crate::bail!(
+            "native grouped CPU conv_transpose2d does not support {:?}",
+            input.dtype()
+        ),
     }
 }
