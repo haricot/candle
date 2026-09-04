@@ -10,7 +10,9 @@ mod grouped_transpose_cuda;
 mod grouped_transpose_cudnn;
 #[cfg(feature = "metal")]
 mod grouped_transpose_metal;
-use grouped::{GroupedConv1D, GroupedConv2D, GroupedConvTranspose1D, GroupedConvTranspose2D};
+mod grouped_transpose_native;
+use grouped::{GroupedConv1D, GroupedConv2D};
+use grouped_transpose_native::{NativeGroupedConvTranspose1D, NativeGroupedConvTranspose2D};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamsConv1D {
@@ -264,7 +266,7 @@ impl Tensor {
                 false,
             ))
         } else {
-            self.apply_op2(kernel, GroupedConvTranspose1D(params))
+            self.apply_op2(kernel, NativeGroupedConvTranspose1D(params))
         }
     }
 
@@ -411,7 +413,7 @@ impl Tensor {
         if groups == 1 {
             self.conv_transpose2d_single_group(kernel, &params)
         } else {
-            self.apply_op2(kernel, GroupedConvTranspose2D(params))
+            self.apply_op2(kernel, NativeGroupedConvTranspose2D(params))
         }
     }
 }
