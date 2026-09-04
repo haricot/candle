@@ -13,11 +13,16 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_BF16");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
-    println!("cargo:rustc-env=CANDLE_CUDA_BUILD_COMPUTE_CAP={compute_cap}");
     let legacy_bf16 = compute_cap < 80 && env::var_os("CARGO_FEATURE_CUDA_LEGACY_BF16").is_some();
     let legacy_fp8 = compute_cap < 89 && env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    std::fs::write(
+        out_dir.join("cuda_build_info.rs"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
+    )
+    .expect("failed to write CUDA build compute capability");
+
     let ptx_path = out_dir.join("ptx.rs");
     let mut ptx_builder = KernelBuilder::new()
         .compute_cap(compute_cap)
