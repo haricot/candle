@@ -213,29 +213,6 @@ impl Tensor {
         }
     }
 
-    fn conv_transpose1d_single_group(
-        &self,
-        kernel: &Self,
-        params: &ParamsConvTranspose1D,
-    ) -> Result<Self> {
-        let storage = self.storage().conv_transpose1d(
-            self.layout(),
-            &kernel.storage(),
-            kernel.layout(),
-            params,
-        )?;
-        let op = BackpropOp::new2(self, kernel, |arg, kernel| Op::ConvTranspose1D {
-            arg,
-            kernel,
-            padding: params.padding,
-            output_padding: params.output_padding,
-            stride: params.stride,
-            dilation: params.dilation,
-        });
-        let out_dims = params.out_dims();
-        Ok(crate::tensor::from_storage(storage, out_dims, op, false))
-    }
-
     /// Applies a 1D transposed convolution over the input tensor.
     pub fn conv_transpose1d(
         &self,
@@ -274,11 +251,7 @@ impl Tensor {
             dilation,
             groups,
         };
-        if groups == 1 {
-            self.conv_transpose1d_single_group(kernel, &params)
-        } else {
-            self.apply_op2(kernel, GroupedConvTranspose1D(params))
-        }
+        self.apply_op2(kernel, GroupedConvTranspose1D(params))
     }
 
     fn conv2d_single_group(&self, kernel: &Self, params: &ParamsConv2D) -> Result<Self> {
