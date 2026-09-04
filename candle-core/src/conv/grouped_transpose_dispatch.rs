@@ -173,13 +173,8 @@ pub(super) fn prefers_raw_cuda(dim: GroupedTransposeDim, groups: usize) -> bool 
     let force_kernel = std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
     let requested = std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok();
     let sm = candle_kernels::CUDA_BUILD_COMPUTE_CAP;
-    let decision = resolve_grouped_transpose_dispatch(
-        dim,
-        groups,
-        sm,
-        force_kernel,
-        requested.as_deref(),
-    );
+    let decision =
+        resolve_grouped_transpose_dispatch(dim, groups, sm, force_kernel, requested.as_deref());
 
     if grouped_transpose_trace_enabled() {
         eprintln!(
@@ -237,13 +232,8 @@ mod tests {
 
     #[test]
     fn dispatch_force_kernel_override_wins_over_cudnn() {
-        let decision = resolve_grouped_transpose_dispatch(
-            GroupedTransposeDim::D1,
-            2,
-            61,
-            true,
-            Some("cudnn"),
-        );
+        let decision =
+            resolve_grouped_transpose_dispatch(GroupedTransposeDim::D1, 2, 61, true, Some("cudnn"));
         assert_eq!(decision.requested, GroupedTransposeDispatchRequest::Cudnn);
         assert_eq!(decision.selected, GroupedTransposeDispatchPath::Raw);
         assert_eq!(
