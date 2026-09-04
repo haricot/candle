@@ -65,12 +65,72 @@ fn grouped_cudnn_matches_legacy_decomposition() -> Result<()> {
     std::env::set_var("CANDLE_CUDNN_NATIVE_GROUPED_STRICT", "1");
 
     let cases = [
-        Case { batch: 1, c_in: 16, c_out: 24, h: 32, w: 24, kernel: 3, padding: 1, stride: 1, groups: 2 },
-        Case { batch: 1, c_in: 32, c_out: 48, h: 32, w: 24, kernel: 3, padding: 1, stride: 2, groups: 4 },
-        Case { batch: 3, c_in: 32, c_out: 64, h: 24, w: 20, kernel: 5, padding: 2, stride: 1, groups: 8 },
-        Case { batch: 1, c_in: 48, c_out: 48, h: 64, w: 48, kernel: 5, padding: 2, stride: 1, groups: 48 },
-        Case { batch: 3, c_in: 96, c_out: 96, h: 32, w: 24, kernel: 5, padding: 2, stride: 1, groups: 96 },
-        Case { batch: 1, c_in: 384, c_out: 384, h: 8, w: 6, kernel: 5, padding: 2, stride: 1, groups: 384 },
+        Case {
+            batch: 1,
+            c_in: 16,
+            c_out: 24,
+            h: 32,
+            w: 24,
+            kernel: 3,
+            padding: 1,
+            stride: 1,
+            groups: 2,
+        },
+        Case {
+            batch: 1,
+            c_in: 32,
+            c_out: 48,
+            h: 32,
+            w: 24,
+            kernel: 3,
+            padding: 1,
+            stride: 2,
+            groups: 4,
+        },
+        Case {
+            batch: 3,
+            c_in: 32,
+            c_out: 64,
+            h: 24,
+            w: 20,
+            kernel: 5,
+            padding: 2,
+            stride: 1,
+            groups: 8,
+        },
+        Case {
+            batch: 1,
+            c_in: 48,
+            c_out: 48,
+            h: 64,
+            w: 48,
+            kernel: 5,
+            padding: 2,
+            stride: 1,
+            groups: 48,
+        },
+        Case {
+            batch: 3,
+            c_in: 96,
+            c_out: 96,
+            h: 32,
+            w: 24,
+            kernel: 5,
+            padding: 2,
+            stride: 1,
+            groups: 96,
+        },
+        Case {
+            batch: 1,
+            c_in: 384,
+            c_out: 384,
+            h: 8,
+            w: 6,
+            kernel: 5,
+            padding: 2,
+            stride: 1,
+            groups: 384,
+        },
     ];
 
     for case in cases {
@@ -83,7 +143,12 @@ fn grouped_cudnn_matches_legacy_decomposition() -> Result<()> {
         )?;
         let kernel = Tensor::from_vec(
             deterministic_values(k_len, 53, -50),
-            (case.c_out, case.c_in / case.groups, case.kernel, case.kernel),
+            (
+                case.c_out,
+                case.c_in / case.groups,
+                case.kernel,
+                case.kernel,
+            ),
             &device,
         )?;
 
