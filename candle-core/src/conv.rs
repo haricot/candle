@@ -187,9 +187,7 @@ impl Tensor {
             .bt())?
         }
         if !c_out.is_multiple_of(groups) {
-            crate::bail!(
-                "out_channel {c_out} is not divisible by the number of groups {groups}"
-            )
+            crate::bail!("out_channel {c_out} is not divisible by the number of groups {groups}")
         }
 
         let params = ParamsConv1D {
@@ -326,9 +324,7 @@ impl Tensor {
             )
         }
         if !c_out.is_multiple_of(groups) {
-            crate::bail!(
-                "out_channel {c_out} is not divisible by the number of groups {groups}"
-            )
+            crate::bail!("out_channel {c_out} is not divisible by the number of groups {groups}")
         }
         let params = ParamsConv2D {
             b_size,
