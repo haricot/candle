@@ -104,11 +104,7 @@ fn check_forward(device: &Device) -> Result<()> {
 
 fn check_autograd(device: &Device) -> Result<()> {
     let groups = 4;
-    let x0 = Tensor::from_vec(
-        deterministic(2 * 8 * 9 * 7, 37, -50),
-        (2, 8, 9, 7),
-        device,
-    )?;
+    let x0 = Tensor::from_vec(deterministic(2 * 8 * 9 * 7, 37, -50), (2, 8, 9, 7), device)?;
     let k0 = Tensor::from_vec(
         deterministic(12 * 2 * 3 * 3, 53, -50),
         (12, 2, 3, 3),
