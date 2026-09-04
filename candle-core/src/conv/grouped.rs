@@ -425,11 +425,13 @@ impl CustomOp2 for GroupedConvTranspose1D {
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
         if kernel_l.is_contiguous() {
-            match crate::cudnn::launch_grouped_conv_transpose1d(
+            match super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
                 input, input_l, kernel, kernel_l, &self.0,
             ) {
                 Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
-                Err(err) if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() => {
+                Err(err)
+                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
+                {
                     return Err(err)
                 }
                 Err(_) => {}
@@ -514,11 +516,13 @@ impl CustomOp2 for GroupedConvTranspose2D {
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
         if kernel_l.is_contiguous() {
-            match crate::cudnn::launch_grouped_conv_transpose2d(
+            match super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
                 input, input_l, kernel, kernel_l, &self.0,
             ) {
                 Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
-                Err(err) if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() => {
+                Err(err)
+                    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
+                {
                     return Err(err)
                 }
                 Err(_) => {}
