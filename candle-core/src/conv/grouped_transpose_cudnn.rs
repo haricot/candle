@@ -207,9 +207,6 @@ pub(super) fn launch_grouped_conv_transpose2d(
     if !kernel_l.is_contiguous() {
         crate::bail!("native grouped cuDNN conv_transpose2d requires a contiguous kernel")
     }
-    if crate::cuda_backend::cudnn::convolution_is_disabled(input.device.id()) {
-        crate::bail!("cuDNN convolution is disabled for this CUDA device")
-    }
     if input.device.id() != kernel.device.id() {
         crate::bail!(
             "native grouped cuDNN conv_transpose2d requires input and kernel on the same device"
@@ -285,9 +282,6 @@ pub(super) fn launch_grouped_conv_transpose1d(
 ) -> Result<CudaStorage> {
     if !kernel_l.is_contiguous() {
         crate::bail!("native grouped cuDNN conv_transpose1d requires a contiguous kernel")
-    }
-    if crate::cuda_backend::cudnn::convolution_is_disabled(input.device.id()) {
-        crate::bail!("cuDNN convolution is disabled for this CUDA device")
     }
     if input.device.id() != kernel.device.id() {
         crate::bail!(
