@@ -2,13 +2,17 @@ use crate::backend::{BackendDevice, BackendStorage};
 use crate::conv::{ParamsConv1D, ParamsConv2D};
 use crate::{CpuStorage, CudaStorage, CustomOp2, Layout, MetalStorage, Result, Shape, Tensor};
 
-fn grouped_conv1d_fallback<S: BackendStorage>(
+fn grouped_conv1d_fallback<S>(
     input: &S,
     input_l: &Layout,
     kernel: &S,
     kernel_l: &Layout,
     params: &ParamsConv1D,
-) -> Result<S> {
+) -> Result<S>
+where
+    S: BackendStorage,
+    S::Device: BackendDevice<Storage = S>,
+{
     let groups = params.groups;
     let c_in_group = params.c_in / groups;
     let c_out_group = params.c_out / groups;
@@ -28,12 +32,7 @@ fn grouped_conv1d_fallback<S: BackendStorage>(
     for group in 0..groups {
         let input_group_l = input_l.narrow(1, group * c_in_group, c_in_group)?;
         let kernel_group_l = kernel_l.narrow(0, group * c_out_group, c_out_group)?;
-        let group_output = input.conv1d(
-            &input_group_l,
-            kernel,
-            &kernel_group_l,
-            &group_params,
-        )?;
+        let group_output = input.conv1d(&input_group_l, kernel, &kernel_group_l, &group_params)?;
         group_output.copy2d(
             &mut output,
             params.b_size,
@@ -47,13 +46,17 @@ fn grouped_conv1d_fallback<S: BackendStorage>(
     Ok(output)
 }
 
-fn grouped_conv2d_fallback<S: BackendStorage>(
+fn grouped_conv2d_fallback<S>(
     input: &S,
     input_l: &Layout,
     kernel: &S,
     kernel_l: &Layout,
     params: &ParamsConv2D,
-) -> Result<S> {
+) -> Result<S>
+where
+    S: BackendStorage,
+    S::Device: BackendDevice<Storage = S>,
+{
     let groups = params.groups;
     let c_in_group = params.c_in / groups;
     let c_out_group = params.c_out / groups;
@@ -73,12 +76,7 @@ fn grouped_conv2d_fallback<S: BackendStorage>(
     for group in 0..groups {
         let input_group_l = input_l.narrow(1, group * c_in_group, c_in_group)?;
         let kernel_group_l = kernel_l.narrow(0, group * c_out_group, c_out_group)?;
-        let group_output = input.conv2d(
-            &input_group_l,
-            kernel,
-            &kernel_group_l,
-            &group_params,
-        )?;
+        let group_output = input.conv2d(&input_group_l, kernel, &kernel_group_l, &group_params)?;
         group_output.copy2d(
             &mut output,
             params.b_size,
@@ -171,13 +169,7 @@ impl CustomOp2 for GroupedConv1D {
 
             let grad_kernel = arg_g
                 .transpose(0, 1)?
-                .conv1d(
-                    &grad_g.transpose(0, 1)?,
-                    p.padding,
-                    p.dilation,
-                    p.stride,
-                    1,
-                )?
+                .conv1d(&grad_g.transpose(0, 1)?, p.padding, p.dilation, p.stride, 1)?
                 .transpose(0, 1)?;
             let (_, _, k0) = kernel_g.dims3()?;
             let (_, _, g_k0) = grad_kernel.dims3()?;
@@ -275,8 +267,7 @@ impl CustomOp2 for GroupedConv2D {
 
             let grad_h = grad_g.dim(2)?;
             let k_h = kernel_g.dim(2)?;
-            let out_size =
-                (grad_h - 1) * p.stride + p.dilation * (k_h - 1) + 1 - 2 * p.padding;
+            let out_size = (grad_h - 1) * p.stride + p.dilation * (k_h - 1) + 1 - 2 * p.padding;
             let out_padding = arg_g.dim(2)? - out_size;
             grad_args.push(grad_g.conv_transpose2d(
                 kernel_g,
@@ -288,13 +279,7 @@ impl CustomOp2 for GroupedConv2D {
 
             let grad_kernel = arg_g
                 .transpose(0, 1)?
-                .conv2d(
-                    &grad_g.transpose(0, 1)?,
-                    p.padding,
-                    p.dilation,
-                    p.stride,
-                    1,
-                )?
+                .conv2d(&grad_g.transpose(0, 1)?, p.padding, p.dilation, p.stride, 1)?
                 .transpose(0, 1)?;
             let (_, _, k0, k1) = kernel_g.dims4()?;
             let (_, _, g_k0, g_k1) = grad_kernel.dims4()?;
