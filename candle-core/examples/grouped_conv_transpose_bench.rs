@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_WARMUP: usize = 20;
 const DEFAULT_ITERS: usize = 100;
+const GROUPS: [usize; 7] = [1, 2, 4, 8, 16, 32, 64];
 
 #[derive(Clone, Copy)]
 enum CaseKind {
@@ -32,6 +33,21 @@ enum CaseKind {
         dilation: usize,
         groups: usize,
     },
+}
+
+impl CaseKind {
+    fn dim(self) -> &'static str {
+        match self {
+            Self::ConvTranspose1D { .. } => "1d",
+            Self::ConvTranspose2D { .. } => "2d",
+        }
+    }
+
+    fn groups(self) -> usize {
+        match self {
+            Self::ConvTranspose1D { groups, .. } | Self::ConvTranspose2D { groups, .. } => groups,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -63,7 +79,8 @@ struct EnvGuard {
 
 impl EnvGuard {
     fn for_path(path: Path) -> Self {
-        const KEYS: [&str; 3] = [
+        const KEYS: [&str; 4] = [
+            "CANDLE_GROUPED_TRANSPOSE_DISPATCH",
             "CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL",
             "CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT",
             "CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT",
@@ -78,10 +95,11 @@ impl EnvGuard {
         match path {
             Path::Legacy => {}
             Path::RawCuda => {
-                std::env::set_var("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL", "1");
+                std::env::set_var("CANDLE_GROUPED_TRANSPOSE_DISPATCH", "raw");
                 std::env::set_var("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT", "1");
             }
             Path::Cudnn => {
+                std::env::set_var("CANDLE_GROUPED_TRANSPOSE_DISPATCH", "cudnn");
                 std::env::set_var("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT", "1");
             }
         }
@@ -190,9 +208,7 @@ fn legacy(case: BenchCase, x: &Tensor, kernel: &Tensor) -> Result<Tensor> {
             let ys = xs
                 .iter()
                 .zip(&ks)
-                .map(|(xg, kg)| {
-                    xg.conv_transpose2d(kg, padding, output_padding, stride, dilation)
-                })
+                .map(|(xg, kg)| xg.conv_transpose2d(kg, padding, output_padding, stride, dilation))
                 .collect::<Result<Vec<_>>>()?;
             Tensor::cat(&ys, 1)
         }
@@ -289,9 +305,8 @@ fn measure(
             Path::RawCuda | Path::Cudnn => native(case, x, kernel)?,
         };
         device.synchronize()?;
-        let elapsed = start.elapsed();
+        samples.push(start.elapsed());
         std::hint::black_box(y);
-        samples.push(elapsed);
     }
     samples.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     Ok((
@@ -308,8 +323,72 @@ fn ms(duration: Duration) -> f64 {
 fn parse_count(flag: &str, default: usize) -> usize {
     let args = std::env::args().collect::<Vec<_>>();
     args.windows(2)
-        .find_map(|pair| (pair[0] == flag).then(|| pair[1].parse::<usize>().ok()).flatten())
+        .find_map(|pair| {
+            (pair[0] == flag)
+                .then(|| pair[1].parse::<usize>().ok())
+                .flatten()
+        })
         .unwrap_or(default)
+}
+
+fn cases() -> Vec<BenchCase> {
+    let mut cases = Vec::with_capacity(GROUPS.len() * 2);
+    for &groups in &GROUPS {
+        let name = match groups {
+            1 => "convt1d-g1",
+            2 => "convt1d-g2",
+            4 => "convt1d-g4",
+            8 => "convt1d-g8",
+            16 => "convt1d-g16",
+            32 => "convt1d-g32",
+            64 => "convt1d-g64-depthwise",
+            _ => unreachable!(),
+        };
+        cases.push(BenchCase {
+            name,
+            kind: CaseKind::ConvTranspose1D {
+                batch: 1,
+                c_in: 64,
+                c_out: 64,
+                len: 128,
+                kernel: 3,
+                padding: 1,
+                output_padding: 1,
+                stride: 2,
+                dilation: 1,
+                groups,
+            },
+        });
+    }
+    for &groups in &GROUPS {
+        let name = match groups {
+            1 => "convt2d-g1",
+            2 => "convt2d-g2",
+            4 => "convt2d-g4",
+            8 => "convt2d-g8",
+            16 => "convt2d-g16",
+            32 => "convt2d-g32",
+            64 => "convt2d-g64-depthwise",
+            _ => unreachable!(),
+        };
+        cases.push(BenchCase {
+            name,
+            kind: CaseKind::ConvTranspose2D {
+                batch: 1,
+                c_in: 64,
+                c_out: 64,
+                h: 32,
+                w: 32,
+                kernel: 3,
+                padding: 1,
+                output_padding: 1,
+                stride: 2,
+                dilation: 1,
+                groups,
+            },
+        });
+    }
+    cases
 }
 
 fn main() -> Result<()> {
@@ -320,103 +399,7 @@ fn main() -> Result<()> {
     }
 
     let device = Device::new_cuda(0)?;
-    let cases = [
-        BenchCase {
-            name: "convt1d-g2",
-            kind: CaseKind::ConvTranspose1D {
-                batch: 1,
-                c_in: 64,
-                c_out: 96,
-                len: 128,
-                kernel: 3,
-                padding: 1,
-                output_padding: 1,
-                stride: 2,
-                dilation: 1,
-                groups: 2,
-            },
-        },
-        BenchCase {
-            name: "convt1d-g8",
-            kind: CaseKind::ConvTranspose1D {
-                batch: 1,
-                c_in: 64,
-                c_out: 64,
-                len: 128,
-                kernel: 3,
-                padding: 1,
-                output_padding: 1,
-                stride: 2,
-                dilation: 1,
-                groups: 8,
-            },
-        },
-        BenchCase {
-            name: "convt1d-depthwise-g64",
-            kind: CaseKind::ConvTranspose1D {
-                batch: 1,
-                c_in: 64,
-                c_out: 64,
-                len: 128,
-                kernel: 3,
-                padding: 1,
-                output_padding: 1,
-                stride: 2,
-                dilation: 1,
-                groups: 64,
-            },
-        },
-        BenchCase {
-            name: "convt2d-g2",
-            kind: CaseKind::ConvTranspose2D {
-                batch: 1,
-                c_in: 64,
-                c_out: 96,
-                h: 32,
-                w: 32,
-                kernel: 3,
-                padding: 1,
-                output_padding: 1,
-                stride: 2,
-                dilation: 1,
-                groups: 2,
-            },
-        },
-        BenchCase {
-            name: "convt2d-g8",
-            kind: CaseKind::ConvTranspose2D {
-                batch: 1,
-                c_in: 64,
-                c_out: 64,
-                h: 32,
-                w: 32,
-                kernel: 3,
-                padding: 1,
-                output_padding: 1,
-                stride: 2,
-                dilation: 1,
-                groups: 8,
-            },
-        },
-        BenchCase {
-            name: "convt2d-depthwise-g64",
-            kind: CaseKind::ConvTranspose2D {
-                batch: 1,
-                c_in: 64,
-                c_out: 64,
-                h: 32,
-                w: 32,
-                kernel: 3,
-                padding: 1,
-                output_padding: 1,
-                stride: 2,
-                dilation: 1,
-                groups: 64,
-            },
-        },
-    ];
-
-    println!("=== GROUPED TRANSPOSE BENCH V4-B ===");
+    println!("=== GROUPED TRANSPOSE BENCH V4-B2 MEASURED DISPATCH FRONTIER ===");
     println!("device={:?}", device.location());
     println!("dtype=f32");
     println!("warmup={warmup}");
@@ -426,9 +409,10 @@ fn main() -> Result<()> {
         std::env::var("CUDA_COMPUTE_CAP").unwrap_or_else(|_| "auto".into())
     );
     println!("measurement=api_wall_time_with_device_sync");
+    println!("auto_policy_modified=false");
 
     let mut all_pass = true;
-    for case in cases {
+    for case in cases() {
         let (x, kernel) = tensors(case, &device)?;
         let reference = run_path(Path::Legacy, case, &x, &kernel)?;
         device.synchronize()?;
@@ -443,33 +427,21 @@ fn main() -> Result<()> {
         let cudnn_parity = cudnn_abs <= 1e-4 || cudnn_rel <= 1e-4;
         all_pass &= raw_parity && cudnn_parity;
 
-        let (legacy_med, legacy_p10, legacy_p90) = measure(
-            Path::Legacy,
-            case,
-            &x,
-            &kernel,
-            &device,
-            warmup,
-            iters,
-        )?;
-        let (raw_med, raw_p10, raw_p90) = measure(
-            Path::RawCuda,
-            case,
-            &x,
-            &kernel,
-            &device,
-            warmup,
-            iters,
-        )?;
-        let (cudnn_med, cudnn_p10, cudnn_p90) = measure(
-            Path::Cudnn,
-            case,
-            &x,
-            &kernel,
-            &device,
-            warmup,
-            iters,
-        )?;
+        let (legacy_med, legacy_p10, legacy_p90) =
+            measure(Path::Legacy, case, &x, &kernel, &device, warmup, iters)?;
+        let (raw_med, raw_p10, raw_p90) =
+            measure(Path::RawCuda, case, &x, &kernel, &device, warmup, iters)?;
+        let (cudnn_med, cudnn_p10, cudnn_p90) =
+            measure(Path::Cudnn, case, &x, &kernel, &device, warmup, iters)?;
+
+        let raw_ms = ms(raw_med);
+        let cudnn_ms = ms(cudnn_med);
+        let winner = if raw_ms < cudnn_ms { "raw" } else { "cudnn" };
+        let winner_speedup = if raw_ms < cudnn_ms {
+            cudnn_ms / raw_ms
+        } else {
+            raw_ms / cudnn_ms
+        };
 
         println!();
         println!("CASE {}", case.name);
@@ -481,25 +453,36 @@ fn main() -> Result<()> {
             ms(legacy_p90)
         );
         println!(
-            "{} median_ms={:.6} p10_ms={:.6} p90_ms={:.6} speedup={:.3}x max_abs={:.8} max_rel={:.8} parity={}",
+            "{} median_ms={:.6} p10_ms={:.6} p90_ms={:.6} speedup_vs_legacy={:.3}x max_abs={:.8} max_rel={:.8} parity={}",
             Path::RawCuda.name(),
-            ms(raw_med),
+            raw_ms,
             ms(raw_p10),
             ms(raw_p90),
-            ms(legacy_med) / ms(raw_med),
+            ms(legacy_med) / raw_ms,
             raw_abs,
             raw_rel,
             raw_parity
         );
         println!(
-            "{} median_ms={:.6} p10_ms={:.6} p90_ms={:.6} speedup={:.3}x max_abs={:.8} max_rel={:.8} parity={}",
+            "{} median_ms={:.6} p10_ms={:.6} p90_ms={:.6} speedup_vs_legacy={:.3}x max_abs={:.8} max_rel={:.8} parity={}",
             Path::Cudnn.name(),
-            ms(cudnn_med),
+            cudnn_ms,
             ms(cudnn_p10),
             ms(cudnn_p90),
-            ms(legacy_med) / ms(cudnn_med),
+            ms(legacy_med) / cudnn_ms,
             cudnn_abs,
             cudnn_rel,
+            cudnn_parity
+        );
+        println!(
+            "FRONTIER dim={} groups={} winner={} winner_speedup={:.3}x raw_ms={:.6} cudnn_ms={:.6} raw_parity={} cudnn_parity={}",
+            case.kind.dim(),
+            case.kind.groups(),
+            winner,
+            winner_speedup,
+            raw_ms,
+            cudnn_ms,
+            raw_parity,
             cudnn_parity
         );
     }
