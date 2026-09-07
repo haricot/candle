@@ -8,15 +8,6 @@ use crate::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use half::{bf16, f16, slice::HalfFloatSliceExt};
 
-#[cfg(target_arch = "aarch64")]
-use super::repack::BlockQ4Kx8;
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn has_avx2_fma() -> bool {
-    let features = crate::cpu::features::get();
-    features.avx2 && features.fma
-}
-
 // Default to QK_K 256 rather than 64.
 pub const QK_K: usize = 256;
 pub const K_SCALE_SIZE: usize = 12;
@@ -27,6 +18,7 @@ pub const QK5_0: usize = 32;
 pub const QK5_1: usize = 32;
 pub const QK8_0: usize = 32;
 pub const QK8_1: usize = 32;
+pub const QK_MXFP4: usize = 32;
 
 pub trait GgmlType: Sized + Clone + Send + Sync {
     const DTYPE: GgmlDType;
@@ -198,6 +190,27 @@ pub struct BlockQ8K {
 }
 const _: () = assert!(4 + QK_K + QK_K / 16 * 2 == std::mem::size_of::<BlockQ8K>());
 
+/// 8 Q4K blocks packed in interleaved format facilitating 8-column GEMV.
+/// Currently only compiled on AArch64 (with dotprod enabled).
+#[cfg(all(target_arch = "aarch64", target_feature = "dotprod"))]
+#[derive(
+    Clone,
+    Copy,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::KnownLayout,
+    zerocopy::Immutable,
+)]
+#[repr(C)]
+pub(crate) struct BlockQ4Kx8 {
+    pub(crate) d: [f16; 8],
+    pub(crate) dmin: [f16; 8],
+    pub(crate) scales: [u8; 96],
+    pub(crate) qs: [u8; 1024],
+}
+#[cfg(all(target_arch = "aarch64", target_feature = "dotprod"))]
+const _: () = assert!(std::mem::size_of::<BlockQ4Kx8>() == 1152);
+
 impl GgmlType for BlockQ4_0 {
     const DTYPE: GgmlDType = GgmlDType::Q4_0;
     const BLCK_SIZE: usize = QK4_0;
@@ -267,10 +280,8 @@ impl GgmlType for BlockQ4_0 {
     // https://github.com/ggerganov/llama.cpp/blob/b5ffb2849d23afe73647f68eec7b68187af09be6/ggml.c#L2361C10-L2361C122
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q4_0_q8_0(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q4_0_q8_0(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q4_0_q8_0(n, xs, ys);
@@ -621,11 +632,146 @@ impl GgmlType for BlockQ5_1 {
     }
 }
 
+// MXFP4 (microscaling FP4, OCP MX spec): a block of 32 elements stored as one
+// E8M0 exponent byte plus 16 bytes of packed 4-bit E2M1 codes.
+// See https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf
+// and ggml's block_mxfp4 (ggml-common.h).
+#[derive(Debug, Clone, PartialEq)]
+#[repr(C)]
+pub struct BlockMxfp4 {
+    pub(crate) e: u8,
+    pub(crate) qs: [u8; QK_MXFP4 / 2],
+}
+const _: () = assert!(std::mem::size_of::<BlockMxfp4>() == 17);
+
+// E2M1 values doubled, shared by MXFP4 and NVFP4 (ggml-common.h kvalues_fp4).
+const KVALUES_MXFP4: [i8; 16] = [0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12];
+
+// ggml_e8m0_to_fp32_half: 0.5 * 2^(e - 127) = 2^(e - 128), used with the doubled
+// kvalues above so that kvalues[d] * d gives the exact E2M1 * E8M0 product.
+fn e8m0_to_f32_half(e: u8) -> f32 {
+    let bits = if e < 2 {
+        0x0020_0000u32 << e
+    } else {
+        ((e - 1) as u32) << 23
+    };
+    f32::from_bits(bits)
+}
+
+// best_index_mxfp4 from ggml-quants.c: nearest kvalues[i] * e to x.
+fn best_index_mxfp4(x: f32, e: f32) -> u8 {
+    let mut best_index = 0u8;
+    let mut best_err = (KVALUES_MXFP4[0] as f32 * e - x).abs();
+    for (i, &k) in KVALUES_MXFP4.iter().enumerate().skip(1) {
+        let err = (k as f32 * e - x).abs();
+        if err < best_err {
+            best_index = i as u8;
+            best_err = err;
+        }
+    }
+    best_index
+}
+
+impl GgmlType for BlockMxfp4 {
+    const DTYPE: GgmlDType = GgmlDType::Mxfp4;
+    const BLCK_SIZE: usize = QK_MXFP4;
+    // llama.cpp pairs MXFP4 weights with Q8_0-quantized activations
+    // (ggml_vec_dot_mxfp4_q8_0).
+    type VecDotType = BlockQ8_0;
+
+    // dequantize_row_mxfp4 from ggml-quants.c
+    fn to_float(xs: &[Self], ys: &mut [f32]) {
+        let k = ys.len();
+        debug_assert!(
+            k.is_multiple_of(QK_MXFP4),
+            "dequantize_row_mxfp4: {k} is not divisible by {QK_MXFP4}"
+        );
+
+        let nb = k / QK_MXFP4;
+
+        for i in 0..nb {
+            let d = e8m0_to_f32_half(xs[i].e);
+
+            for j in 0..QK_MXFP4 / 2 {
+                ys[i * QK_MXFP4 + j] = KVALUES_MXFP4[(xs[i].qs[j] & 0x0F) as usize] as f32 * d;
+                ys[i * QK_MXFP4 + j + QK_MXFP4 / 2] =
+                    KVALUES_MXFP4[(xs[i].qs[j] >> 4) as usize] as f32 * d;
+            }
+        }
+    }
+
+    // quantize_row_mxfp4_ref from ggml-quants.c
+    fn from_float(xs: &[f32], ys: &mut [Self]) {
+        let k = xs.len();
+        debug_assert!(
+            k.is_multiple_of(Self::BLCK_SIZE),
+            "{k} is not divisible by {}",
+            Self::BLCK_SIZE
+        );
+        debug_assert_eq!(
+            ys.len(),
+            k / Self::BLCK_SIZE,
+            "size mismatch {} {} {}",
+            xs.len(),
+            ys.len(),
+            Self::BLCK_SIZE
+        );
+        for (i, y) in ys.iter_mut().enumerate() {
+            let xs = &xs[i * Self::BLCK_SIZE..(i + 1) * Self::BLCK_SIZE];
+
+            let mut amax = 0f32;
+            for &x in xs.iter() {
+                amax = amax.max(x.abs());
+            }
+
+            let e = if amax > 0.0 {
+                (amax.log2().floor() - 2.0 + 127.0) as u8
+            } else {
+                0
+            };
+            y.e = e;
+
+            let d = e8m0_to_f32_half(e);
+            for j in 0..Self::BLCK_SIZE / 2 {
+                let x0 = best_index_mxfp4(xs[j], d);
+                let x1 = best_index_mxfp4(xs[j + Self::BLCK_SIZE / 2], d);
+                y.qs[j] = x0 | (x1 << 4);
+            }
+        }
+    }
+
+    fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
+        Self::vec_dot_unopt(n, xs, ys)
+    }
+
+    // ggml_vec_dot_mxfp4_q8_0_generic from ggml-cpu/quants.c
+    fn vec_dot_unopt(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
+        debug_assert!(
+            n.is_multiple_of(QK_MXFP4),
+            "vec_dot_mxfp4_q8_0: {n} is not divisible by {QK_MXFP4}"
+        );
+
+        let mut sumf = 0f32;
+        for (xs, ys) in xs.iter().zip(ys.iter()) {
+            let d = f16::to_f32(ys.d) * e8m0_to_f32_half(xs.e);
+
+            let mut sumi1 = 0i32;
+            let mut sumi2 = 0i32;
+            for j in 0..QK_MXFP4 / 2 {
+                sumi1 += ys.qs[j] as i32 * KVALUES_MXFP4[(xs.qs[j] & 0x0F) as usize] as i32;
+                sumi2 +=
+                    ys.qs[j + QK_MXFP4 / 2] as i32 * KVALUES_MXFP4[(xs.qs[j] >> 4) as usize] as i32;
+            }
+            sumf += d * (sumi1 + sumi2) as f32;
+        }
+        sumf
+    }
+}
+
 impl GgmlType for BlockQ8_0 {
     const DTYPE: GgmlDType = GgmlDType::Q8_0;
     const BLCK_SIZE: usize = QK8_0;
     type VecDotType = BlockQ8_0;
-
     // https://github.com/ggerganov/llama.cpp/blob/468ea24fb4633a0d681f7ac84089566c1c6190cb/ggml.c#L1619
     fn to_float(xs: &[Self], ys: &mut [f32]) {
         let k = ys.len();
@@ -646,49 +792,40 @@ impl GgmlType for BlockQ8_0 {
     }
 
     fn from_float(xs: &[f32], ys: &mut [Self]) {
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            super::neon::quantize_q8_0(xs, ys);
-        }
-
-        #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-        {
-            let k = xs.len();
-            debug_assert!(
-                k.is_multiple_of(Self::BLCK_SIZE),
-                "{k} is not divisible by {}",
-                Self::BLCK_SIZE
-            );
-            debug_assert_eq!(
-                ys.len(),
-                k / Self::BLCK_SIZE,
-                "size mismatch {} {} {}",
-                xs.len(),
-                ys.len(),
-                Self::BLCK_SIZE
-            );
-            for (i, ys) in ys.iter_mut().enumerate() {
-                let mut amax = 0f32;
-                let xs = &xs[i * Self::BLCK_SIZE..(i + 1) * Self::BLCK_SIZE];
-                for &x in xs.iter() {
-                    amax = amax.max(x.abs())
-                }
-                let d = amax / ((1 << 7) - 1) as f32;
-                let id = if d != 0f32 { 1. / d } else { 0. };
-                ys.d = f16::from_f32(d);
-                for (y, &x) in ys.qs.iter_mut().zip(xs.iter()) {
-                    *y = f32::round(x * id) as i8
-                }
+        // quantize_row_q8_0
+        let k = xs.len();
+        debug_assert!(
+            k.is_multiple_of(Self::BLCK_SIZE),
+            "{k} is not divisible by {}",
+            Self::BLCK_SIZE
+        );
+        debug_assert_eq!(
+            ys.len(),
+            k / Self::BLCK_SIZE,
+            "size mismatch {} {} {}",
+            xs.len(),
+            ys.len(),
+            Self::BLCK_SIZE
+        );
+        for (i, ys) in ys.iter_mut().enumerate() {
+            let mut amax = 0f32;
+            let xs = &xs[i * Self::BLCK_SIZE..(i + 1) * Self::BLCK_SIZE];
+            for &x in xs.iter() {
+                amax = amax.max(x.abs())
+            }
+            let d = amax / ((1 << 7) - 1) as f32;
+            let id = if d != 0f32 { 1. / d } else { 0. };
+            ys.d = f16::from_f32(d);
+            for (y, &x) in ys.qs.iter_mut().zip(xs.iter()) {
+                *y = f32::round(x * id) as i8
             }
         }
     }
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q8_0_q8_0(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q8_0_q8_0(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q8_0_q8_0(n, xs, ys);
@@ -806,7 +943,8 @@ impl GgmlType for BlockQ8_1 {
             ys.len(),
             Self::BLCK_SIZE
         );
-        for (block, ys) in xs.iter().zip(ys.chunks_exact_mut(Self::BLCK_SIZE)) {
+        let (y_chunks, _) = ys.as_chunks_mut::<{ Self::BLCK_SIZE }>();
+        for (block, ys) in xs.iter().zip(y_chunks) {
             let d = block.d.to_f32();
             for (dst, &src) in ys.iter_mut().zip(block.qs.iter()) {
                 *dst = src as f32 * d;
@@ -822,10 +960,8 @@ impl GgmlType for BlockQ2K {
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q2k_q8k(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q2k_q8k(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q2k_q8k(n, xs, ys);
@@ -964,7 +1100,8 @@ impl GgmlType for BlockQ2K {
 
             let sum_x2 = x.iter().map(|x| x * x).sum::<f32>();
             let sigma2 = sum_x2 / QK_K as f32;
-            for (j, x_scale_slice) in x.chunks_exact(16).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<16>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 for (l, (w_elem, x_elem)) in weights.iter_mut().zip(x_scale_slice).enumerate() {
                     let imatrix_row = sblk_idx % (n_per_row / QK_K);
                     let imatrix_w = imatrix_weights[imatrix_row * QK_K + 16 * j + l];
@@ -1018,7 +1155,9 @@ impl GgmlType for BlockQ2K {
 
             let mut is = 0;
 
-            for (y_block, qs) in y.chunks_exact_mut(128).zip(block.qs.chunks_exact(32)) {
+            let (y_chunks, _) = y.as_chunks_mut::<128>();
+            let (qs_chunks, _) = block.qs.as_chunks::<32>();
+            for (y_block, qs) in y_chunks.iter_mut().zip(qs_chunks) {
                 // Step by 32 over q.
                 let mut shift = 0;
                 let mut y_block_index = 0;
@@ -1057,10 +1196,8 @@ impl GgmlType for BlockQ3K {
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q3k_q8k(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q3k_q8k(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q3k_q8k(n, xs, ys);
@@ -1193,7 +1330,8 @@ impl GgmlType for BlockQ3K {
     fn from_float(xs: &[f32], ys: &mut [Self]) {
         for (block, x) in group_for_quantization(xs, ys) {
             let mut scales: [f32; QK_K / 16] = [0.0; QK_K / 16];
-            for (j, x_scale_slice) in x.chunks_exact(16).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<16>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 scales[j] = make_q3_quants(x_scale_slice, 4, true);
             }
 
@@ -1282,7 +1420,8 @@ impl GgmlType for BlockQ3K {
             let sum_x2 = x.iter().map(|x| x * x).sum::<f32>();
             let sigma2 = 2. * sum_x2 / QK_K as f32;
 
-            for (j, x_scale_slice) in x.chunks_exact(16).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<16>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 for (l_idx, (w_elem, x_elem)) in weights.iter_mut().zip(x_scale_slice).enumerate() {
                     let imatrix_row = sblk_idx % (n_per_row / QK_K);
                     let imatrix_w = imatrix_weights[imatrix_row * QK_K + 16 * j + l_idx];
@@ -1395,11 +1534,16 @@ impl GgmlType for BlockQ3K {
             // Dequantize both 128 long blocks
             // 32 qs values per 128 long block
             // Each 16 elements get a scale
-            for (y, qs) in y.chunks_exact_mut(128).zip(block.qs.chunks_exact(32)) {
+            let (y_chunks, _) = y.as_chunks_mut::<128>();
+            let (qs_chunks, _) = block.qs.as_chunks::<32>();
+            for (y, qs) in y_chunks.iter_mut().zip(qs_chunks) {
                 let mut shift = 0;
-                for shift_scoped_y in y.chunks_exact_mut(32) {
-                    for (scale_index, scale_scoped_y) in
-                        shift_scoped_y.chunks_exact_mut(16).enumerate()
+
+                let (scoped_y_chunks, _) = y.as_chunks_mut::<32>();
+                for shift_scoped_y in scoped_y_chunks {
+                    let (shift_scoped_chunks, _) = shift_scoped_y.as_chunks_mut::<16>();
+
+                    for (scale_index, scale_scoped_y) in shift_scoped_chunks.iter_mut().enumerate()
                     {
                         let dl = d_all * (scales[is] as f32 - 32.0);
                         for (i, inner_y) in scale_scoped_y.iter_mut().enumerate() {
@@ -1431,10 +1575,8 @@ impl GgmlType for BlockQ4K {
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q4k_q8k(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q4k_q8k(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q4k_q8k(n, xs, ys);
@@ -1549,7 +1691,8 @@ impl GgmlType for BlockQ4K {
             let mut mins: [f32; QK_K / 32] = [0.0; QK_K / 32];
             let mut scales: [f32; QK_K / 32] = [0.0; QK_K / 32];
 
-            for (j, x_scale_slice) in x.chunks_exact(32).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<32>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 (scales[j], mins[j]) = make_qkx1_quants(15, 5, x_scale_slice);
             }
 
@@ -1616,7 +1759,8 @@ impl GgmlType for BlockQ4K {
             let sum_x2 = x.iter().map(|x| x * x).sum::<f32>();
             let sigma2 = 2. * sum_x2 / QK_K as f32;
 
-            for (j, x_scale_slice) in x.chunks_exact(32).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<32>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 for (l, (w_elem, x_elem)) in weights.iter_mut().zip(x_scale_slice).enumerate() {
                     let imatrix_row = sblk_idx % (n_per_row / QK_K);
                     let imatrix_w = imatrix_weights[imatrix_row * QK_K + 32 * j + l];
@@ -1707,10 +1851,8 @@ impl GgmlType for BlockQ5K {
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q5k_q8k(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q5k_q8k(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q5k_q8k(n, xs, ys);
@@ -1813,7 +1955,8 @@ impl GgmlType for BlockQ5K {
             let mut mins: [f32; QK_K / 32] = [0.0; QK_K / 32];
             let mut scales: [f32; QK_K / 32] = [0.0; QK_K / 32];
 
-            for (j, x_scale_slice) in x.chunks_exact(32).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<32>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 (scales[j], mins[j]) = make_qkx1_quants(31, 5, x_scale_slice);
             }
 
@@ -1895,7 +2038,8 @@ impl GgmlType for BlockQ5K {
             let sum_x2 = x.iter().map(|x| x * x).sum::<f32>();
             let sigma2 = 2. * sum_x2 / QK_K as f32;
 
-            for (j, x_scale_slice) in x.chunks_exact(32).enumerate() {
+            let (x_chunks, _) = x.as_chunks::<32>();
+            for (j, x_scale_slice) in x_chunks.iter().enumerate() {
                 for (l, (w_elem, x_elem)) in weights.iter_mut().zip(x_scale_slice).enumerate() {
                     let imatrix_row = sblk_idx % (n_per_row / QK_K);
                     let imatrix_w = imatrix_weights[imatrix_row * QK_K + 32 * j + l];
@@ -2010,10 +2154,8 @@ impl GgmlType for BlockQ6K {
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q6k_q8k(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q6k_q8k(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q6k_q8k(n, xs, ys);
@@ -2294,10 +2436,8 @@ impl GgmlType for BlockQ8K {
 
     #[allow(unreachable_code)]
     fn vec_dot(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if has_avx2_fma() {
-            return unsafe { super::avx::vec_dot_q8k_q8k(n, xs, ys) };
-        }
+        #[cfg(target_feature = "avx2")]
+        return super::avx::vec_dot_q8k_q8k(n, xs, ys);
 
         #[cfg(target_feature = "neon")]
         return super::neon::vec_dot_q8k_q8k(n, xs, ys);
@@ -2442,6 +2582,8 @@ pub fn matmul<T: GgmlType>(
         let n_tail = n - n_quad; // 0..=3
         let pool = crate::utils::barrier_pool();
         // Workers 0..n_workers + calling thread as worker n_workers.
+        let n_total = pool.n_workers() + 1;
+        let quads_per_thread = quads_total.div_ceil(n_total);
         let lhs_b: &[T::VecDotType] = lhs_b;
 
         for row_idx in 0..m {
@@ -2450,9 +2592,14 @@ pub fn matmul<T: GgmlType>(
             let (main, tail) = dst_row.split_at_mut(n_quad);
             let main_ptr = main.as_mut_ptr() as usize;
 
-            pool.execute_chunked(quads_total, |range| {
+            pool.execute(|tid| {
+                let start = tid * quads_per_thread;
+                if start >= quads_total {
+                    return;
+                }
+                let end = quads_total.min((tid + 1) * quads_per_thread);
                 let main_ptr = main_ptr as *mut f32;
-                for quad_idx in range {
+                for quad_idx in start..end {
                     let col = quad_idx * 4;
                     let (d0, d1, d2, d3) = T::vec_dot_4(
                         k,
@@ -2495,8 +2642,91 @@ pub fn matmul<T: GgmlType>(
     })
 }
 
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "dotprod")]
+/// Pack Q4K blocks into the 8-column interleaved format for 8 x GEMV
+#[cfg(all(target_arch = "aarch64", target_feature = "dotprod"))]
+pub(crate) fn pack_to_q4kx8(blocks: &[BlockQ4K], n: usize) -> Vec<BlockQ4Kx8> {
+    debug_assert!(n.is_multiple_of(8));
+    debug_assert_eq!(blocks.len() % n, 0);
+    let k_blocks = blocks.len() / n;
+    let n_groups = n / 8;
+    let count = n_groups * k_blocks;
+    let mut packed: Vec<BlockQ4Kx8> = Vec::with_capacity(count);
+    for g in 0..n_groups {
+        for b in 0..k_blocks {
+            let mut p = BlockQ4Kx8 {
+                d: [f16::ZERO; 8],
+                dmin: [f16::ZERO; 8],
+                scales: [0; 96],
+                qs: [0; 1024],
+            };
+
+            let src: [&BlockQ4K; 8] = std::array::from_fn(|i| &blocks[(g * 8 + i) * k_blocks + b]);
+            for (i, s) in src.iter().enumerate() {
+                p.d[i] = s.d;
+                p.dmin[i] = s.dmin;
+            }
+            // Interleave nibbles 8 bytes at a time.
+            for i in 0..128usize {
+                let col = i % 8;
+                let off = (i / 8) * 8;
+                p.qs[i * 8..i * 8 + 8].copy_from_slice(&src[col].qs[off..off + 8]);
+            }
+            // First 48 bytes of scales: lo-nibble scales[0..3] and mins[0..3] for all 8 cols.
+            for i in 0..4usize {
+                let mut s = [0u8; 8];
+                let mut m = [0u8; 8];
+                for j in 0..8 {
+                    s[j] = src[j].scales[i] & 63;
+                    m[j] = src[j].scales[i + 4] & 63;
+                }
+                let b12 = i * 12;
+                p.scales[b12] = (s[0] & 63) + ((s[4] & 48) << 2);
+                p.scales[b12 + 1] = (s[1] & 63) + ((s[5] & 48) << 2);
+                p.scales[b12 + 2] = (s[2] & 63) + ((s[6] & 48) << 2);
+                p.scales[b12 + 3] = (s[3] & 63) + ((s[7] & 48) << 2);
+                p.scales[b12 + 4] = (m[0] & 63) + ((m[4] & 48) << 2);
+                p.scales[b12 + 5] = (m[1] & 63) + ((m[5] & 48) << 2);
+                p.scales[b12 + 6] = (m[2] & 63) + ((m[6] & 48) << 2);
+                p.scales[b12 + 7] = (m[3] & 63) + ((m[7] & 48) << 2);
+                p.scales[b12 + 8] = (s[4] & 15) + ((m[4] & 15) << 4);
+                p.scales[b12 + 9] = (s[5] & 15) + ((m[5] & 15) << 4);
+                p.scales[b12 + 10] = (s[6] & 15) + ((m[6] & 15) << 4);
+                p.scales[b12 + 11] = (s[7] & 15) + ((m[7] & 15) << 4);
+            }
+            // Last 48 bytes of scales: hi-nibble scales[4..7] and mins[4..7] for all 8 cols.
+            for i in 0..4usize {
+                let mut s = [0u8; 8];
+                let mut m = [0u8; 8];
+                for j in 0..8 {
+                    s[j] = ((src[j].scales[i] & 192) >> 2) | (src[j].scales[i + 8] & 15);
+                    m[j] =
+                        ((src[j].scales[i + 4] & 192) >> 2) | ((src[j].scales[i + 8] & 240) >> 4);
+                }
+                let b12 = i * 12 + 48;
+                p.scales[b12] = (s[0] & 63) + ((s[4] & 48) << 2);
+                p.scales[b12 + 1] = (s[1] & 63) + ((s[5] & 48) << 2);
+                p.scales[b12 + 2] = (s[2] & 63) + ((s[6] & 48) << 2);
+                p.scales[b12 + 3] = (s[3] & 63) + ((s[7] & 48) << 2);
+                p.scales[b12 + 4] = (m[0] & 63) + ((m[4] & 48) << 2);
+                p.scales[b12 + 5] = (m[1] & 63) + ((m[5] & 48) << 2);
+                p.scales[b12 + 6] = (m[2] & 63) + ((m[6] & 48) << 2);
+                p.scales[b12 + 7] = (m[3] & 63) + ((m[7] & 48) << 2);
+                p.scales[b12 + 8] = (s[4] & 15) + ((m[4] & 15) << 4);
+                p.scales[b12 + 9] = (s[5] & 15) + ((m[5] & 15) << 4);
+                p.scales[b12 + 10] = (s[6] & 15) + ((m[6] & 15) << 4);
+                p.scales[b12 + 11] = (s[7] & 15) + ((m[7] & 15) << 4);
+            }
+
+            packed.push(p);
+        }
+    }
+    packed
+}
+
+/// Q4K matmul with 8-column `BlockQ4Kx8` interleaved layout.
+///
+/// Currently only enabled on AArch64 (with dotprod enabled).
+#[cfg(all(target_arch = "aarch64", target_feature = "dotprod"))]
 pub(crate) fn matmul_q4k_x8(
     (m, k, n): (usize, usize, usize),
     lhs: &[f32],
@@ -2531,45 +2761,28 @@ pub(crate) fn matmul_q4k_x8(
         }
 
         let pool = crate::utils::barrier_pool();
+        let n_total = pool.n_workers() + 1;
+        let groups_per_thread = n_groups.div_ceil(n_total);
         let lhs_b: &[BlockQ8K] = lhs_b;
         let repacked_ptr = repacked.as_ptr() as usize;
         let x8_block_bytes = std::mem::size_of::<BlockQ4Kx8>();
-
-        if m == 1 {
-            let lhs_row_ptr = lhs_b.as_ptr() as usize;
-            let dst_row_ptr = dst.as_mut_ptr() as usize;
-            pool.execute_chunked(n_groups, |range| {
-                let lhs_row: &[BlockQ8K] = unsafe {
-                    std::slice::from_raw_parts(lhs_row_ptr as *const BlockQ8K, k_in_blocks)
-                };
-                let dst_ptr = dst_row_ptr as *mut f32;
-                for g in range {
-                    let xs = unsafe {
-                        std::slice::from_raw_parts(
-                            (repacked_ptr + g * k_in_blocks * x8_block_bytes) as *const BlockQ4Kx8,
-                            k_in_blocks,
-                        )
-                    };
-                    let results = vec_dot_8_q4k_q8k(k, xs, lhs_row);
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(results.as_ptr(), dst_ptr.add(g * 8), 8);
-                    }
-                }
-            });
-            return Ok(());
-        }
 
         for row_idx in 0..m {
             let lhs_row = &lhs_b[row_idx * k_in_blocks..(row_idx + 1) * k_in_blocks];
             let lhs_row_ptr = lhs_row.as_ptr() as usize;
             let dst_row_ptr = dst[row_idx * n..(row_idx + 1) * n].as_mut_ptr() as usize;
 
-            pool.execute_chunked(n_groups, |range| {
+            pool.execute(|tid| {
+                let start = tid * groups_per_thread;
+                if start >= n_groups {
+                    return;
+                }
+                let end = n_groups.min((tid + 1) * groups_per_thread);
                 let lhs_row: &[BlockQ8K] = unsafe {
                     std::slice::from_raw_parts(lhs_row_ptr as *const BlockQ8K, k_in_blocks)
                 };
                 let dst_ptr = dst_row_ptr as *mut f32;
-                for g in range {
+                for g in start..end {
                     let xs = unsafe {
                         std::slice::from_raw_parts(
                             (repacked_ptr + g * k_in_blocks * x8_block_bytes) as *const BlockQ4Kx8,

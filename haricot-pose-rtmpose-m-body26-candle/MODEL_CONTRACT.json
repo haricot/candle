@@ -1,0 +1,49 @@
+{
+  "schema": "haricot.pose.rtmpose.body26.model.v3",
+  "model": "RTMPose-m",
+  "dataset": "Halpe26",
+  "input": {
+    "layout": "NCHW",
+    "channels": 3,
+    "width": 192,
+    "height": 256,
+    "color": "RGB",
+    "mean": [123.675, 116.28, 103.53],
+    "std": [58.395, 57.12, 57.375],
+    "bbox_padding": 1.25
+  },
+  "backbone": {
+    "type": "CSPNeXt-P5",
+    "widen_factor": 0.75,
+    "deepen_factor": 0.67,
+    "stage_blocks": [2, 4, 4, 2],
+    "stage_channels": [96, 192, 384, 768],
+    "out": [768, 8, 6]
+  },
+  "head": {
+    "type": "RTMCCHead",
+    "keypoints": 26,
+    "hidden_dims": 256,
+    "gau_s": 128,
+    "simcc_split_ratio": 2.0,
+    "simcc_x_bins": 384,
+    "simcc_y_bins": 512
+  },
+  "runtime": {
+    "native_candle": true,
+    "onnx_runtime": false,
+    "conv_batchnorm_fused_offline": true,
+    "single_pass_no_flip_tta": true
+  },
+  "candle_base": {
+    "repository": "https://github.com/haricot/candle",
+    "branch": "cuda_sm61_grouped_cudnn_probe",
+    "commit": "19e061d1c9615a21cb3a60870a6c2a746f2e985b"
+  },
+  "validated_sm61": {
+    "rtmpose_f32_b1_median_ms": 25.9956135,
+    "rtmpose_f32_b1_p95_ms": 30.0421451,
+    "poses_per_second_median": 38.468028461801836,
+    "generic_grouped_conv_numerical_max_abs": 0.0
+  }
+}

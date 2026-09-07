@@ -241,7 +241,7 @@ pub struct ConvTranspose2dConfig {
     pub output_padding: usize,
     pub stride: usize,
     pub dilation: usize,
-    // TODO: support groups.
+    pub groups: usize,
 }
 
 impl Default for ConvTranspose2dConfig {
@@ -251,6 +251,7 @@ impl Default for ConvTranspose2dConfig {
             output_padding: 0,
             stride: 1,
             dilation: 1,
+            groups: 1,
         }
     }
 }
@@ -286,12 +287,13 @@ impl ConvTranspose2d {
 
 impl crate::Module for ConvTranspose2d {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let x = x.conv_transpose2d(
+        let x = x.conv_transpose2d_with_groups(
             &self.weight,
             self.config.padding,
             self.config.output_padding,
             self.config.stride,
             self.config.dilation,
+            self.config.groups,
         )?;
         match &self.bias {
             None => Ok(x),
@@ -444,7 +446,12 @@ pub fn conv_transpose2d(
         up: bound,
     };
     let ws = vb.get_with_hints(
-        (in_channels, out_channels, kernel_size, kernel_size),
+        (
+            in_channels,
+            out_channels / cfg.groups,
+            kernel_size,
+            kernel_size,
+        ),
         "weight",
         init,
     )?;
@@ -465,7 +472,12 @@ pub fn conv_transpose2d_no_bias(
         up: bound,
     };
     let ws = vb.get_with_hints(
-        (in_channels, out_channels, kernel_size, kernel_size),
+        (
+            in_channels,
+            out_channels / cfg.groups,
+            kernel_size,
+            kernel_size,
+        ),
         "weight",
         init,
     )?;

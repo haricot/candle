@@ -7,6 +7,7 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
+    println!("cargo::rerun-if-changed=src/grouped_transpose.cu");
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");
     println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_BF16");
@@ -16,11 +17,29 @@ fn main() -> Result<()> {
     let legacy_fp8 = compute_cap < 89 && env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    std::fs::write(
+        out_dir.join("cuda_build_info.rs"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
+    )
+    .expect("failed to write CUDA build compute capability");
+
     let ptx_path = out_dir.join("ptx.rs");
     let mut ptx_builder = KernelBuilder::new()
         .compute_cap(compute_cap)
-        .source_dir("src")
-        .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"])
+        .source_files(vec![
+            "src/affine.cu",
+            "src/binary.cu",
+            "src/cast.cu",
+            "src/conv.cu",
+            "src/fill.cu",
+            "src/grouped_transpose.cu",
+            "src/indexing.cu",
+            "src/quantized.cu",
+            "src/reduce.cu",
+            "src/sort.cu",
+            "src/ternary.cu",
+            "src/unary.cu",
+        ])
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");
