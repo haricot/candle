@@ -14,25 +14,25 @@ impl GroupedTransposeDim {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct GroupedTransposeCudaPolicy {
+struct GroupedTransposeCudaRule {
     raw_min_groups_1d: Option<usize>,
     raw_min_groups_2d: Option<usize>,
 }
 
-const fn policy_for_sm(_sm: u32) -> GroupedTransposeCudaPolicy {
-    // Thresholds are intentionally unset in the scaffold. V4-B2 will fill
-    // architecture-specific crossovers from measured dispatch frontiers.
-    GroupedTransposeCudaPolicy {
+const fn dispatch_rule_for_sm(_sm: u32) -> GroupedTransposeCudaRule {
+    // Thresholds remain intentionally unset until V4-B2.1 provides stable,
+    // architecture-specific crossover evidence for promotion in V4-B3.
+    GroupedTransposeCudaRule {
         raw_min_groups_1d: None,
         raw_min_groups_2d: None,
     }
 }
 
 fn auto_prefers_raw(dim: GroupedTransposeDim, groups: usize, sm: u32) -> bool {
-    let policy = policy_for_sm(sm);
+    let rule = dispatch_rule_for_sm(sm);
     let threshold = match dim {
-        GroupedTransposeDim::D1 => policy.raw_min_groups_1d,
-        GroupedTransposeDim::D2 => policy.raw_min_groups_2d,
+        GroupedTransposeDim::D1 => rule.raw_min_groups_1d,
+        GroupedTransposeDim::D2 => rule.raw_min_groups_2d,
     };
     threshold.is_some_and(|min_groups| groups >= min_groups)
 }
@@ -85,7 +85,7 @@ enum GroupedTransposeDispatchReason {
     ForceKernelOverride,
     ExplicitRaw,
     ExplicitCudnn,
-    AutoPolicy,
+    AutoRule,
     InvalidFallsBackToAuto,
 }
 
@@ -95,7 +95,7 @@ impl GroupedTransposeDispatchReason {
             Self::ForceKernelOverride => "force_kernel_override",
             Self::ExplicitRaw => "explicit_raw",
             Self::ExplicitCudnn => "explicit_cudnn",
-            Self::AutoPolicy => "auto_policy",
+            Self::AutoRule => "auto_rule",
             Self::InvalidFallsBackToAuto => "invalid_falls_back_to_auto",
         }
     }
@@ -143,7 +143,7 @@ fn resolve_grouped_transpose_dispatch(
                 GroupedTransposeDispatchPath::Cudnn
             };
             let reason = match requested {
-                GroupedTransposeDispatchRequest::Auto => GroupedTransposeDispatchReason::AutoPolicy,
+                GroupedTransposeDispatchRequest::Auto => GroupedTransposeDispatchReason::AutoRule,
                 GroupedTransposeDispatchRequest::Invalid => {
                     GroupedTransposeDispatchReason::InvalidFallsBackToAuto
                 }
@@ -196,12 +196,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dispatch_auto_sm61_keeps_unpromoted_cudnn_policy() {
+    fn dispatch_auto_sm61_keeps_unpromoted_cudnn_rule() {
         let decision =
             resolve_grouped_transpose_dispatch(GroupedTransposeDim::D2, 4, 61, false, Some("auto"));
         assert_eq!(decision.requested, GroupedTransposeDispatchRequest::Auto);
         assert_eq!(decision.selected, GroupedTransposeDispatchPath::Cudnn);
-        assert_eq!(decision.reason, GroupedTransposeDispatchReason::AutoPolicy);
+        assert_eq!(decision.reason, GroupedTransposeDispatchReason::AutoRule);
     }
 
     #[test]
