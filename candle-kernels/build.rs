@@ -25,7 +25,9 @@ fn main() -> Result<()> {
         format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
     )
     .expect("failed to write CUDA build compute capability");
-    asd_exact_build_adapter::materialize_for_candle_build(compute_cap)
+    let asd_build_sm = u32::try_from(compute_cap)
+        .expect("CUDA compute capability does not fit in u32");
+    asd_exact_build_adapter::materialize_for_candle_build(asd_build_sm)
         .unwrap_or_else(|err| panic!("failed to materialize ASD exact policy: {err}"));
 
     let ptx_path = out_dir.join("ptx.rs");
