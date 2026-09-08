@@ -1,9 +1,12 @@
+mod asd_exact_build_adapter;
+
 use cudaforge::{detect_compute_cap, KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=asd_exact_build_adapter.rs");
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
@@ -22,6 +25,8 @@ fn main() -> Result<()> {
         format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
     )
     .expect("failed to write CUDA build compute capability");
+    asd_exact_build_adapter::materialize_for_candle_build(compute_cap)
+        .unwrap_or_else(|err| panic!("failed to materialize ASD exact policy: {err}"));
 
     let ptx_path = out_dir.join("ptx.rs");
     let mut ptx_builder = KernelBuilder::new()

@@ -1,5 +1,9 @@
 include!(concat!(env!("OUT_DIR"), "/cuda_build_info.rs"));
 
+pub mod asd_exact {
+    include!(concat!(env!("OUT_DIR"), "/asd_exact_dispatch.rs"));
+}
+
 mod ptx {
     include!(concat!(env!("OUT_DIR"), "/ptx.rs"));
 }

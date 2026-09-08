@@ -1,3 +1,4 @@
+use crate::backend::BackendStorage;
 use crate::{CpuStorage, CudaStorage, CustomOp2, Layout, MetalStorage, Result, Shape, Tensor};
 
 use super::grouped::{GroupedConvTranspose1D, GroupedConvTranspose2D};
@@ -39,17 +40,23 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
-        let prefer_raw = super::grouped_transpose_dispatch::prefers_raw_cuda(
-            super::grouped_transpose_dispatch::GroupedTransposeDim::D1,
-            self.0.groups,
+        let decision = super::grouped_transpose_dispatch::decision_1d(
+            &self.0,
+            input_l,
+            kernel_l,
+            input.dtype(),
         );
 
         #[cfg(feature = "cudnn")]
-        if !prefer_raw && kernel_l.is_contiguous() {
+        if !decision.prefers_raw() && kernel_l.is_contiguous() {
             match super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
                 input, input_l, kernel, kernel_l, &self.0,
             ) {
-                Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
+                Ok(out) => {
+                    decision.trace_submission("cudnn");
+                    return Ok((out, Shape::from(self.0.out_dims())));
+                }
+                Err(err) if decision.is_exact_asd() => return Err(err),
                 Err(err)
                     if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
                         .is_some() =>
@@ -62,7 +69,13 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
 
         #[cfg(feature = "cuda")]
         match super::grouped_transpose_cuda::launch1d(input, input_l, kernel, kernel_l, &self.0) {
-            Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
+            Ok(out) => {
+                #[cfg(feature = "cudnn")]
+                decision.trace_submission("raw");
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            #[cfg(feature = "cudnn")]
+            Err(err) if decision.is_exact_asd() => return Err(err),
             Err(err)
                 if std::env::var_os("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
             {
@@ -142,17 +155,23 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cudnn")]
-        let prefer_raw = super::grouped_transpose_dispatch::prefers_raw_cuda(
-            super::grouped_transpose_dispatch::GroupedTransposeDim::D2,
-            self.0.groups,
+        let decision = super::grouped_transpose_dispatch::decision_2d(
+            &self.0,
+            input_l,
+            kernel_l,
+            input.dtype(),
         );
 
         #[cfg(feature = "cudnn")]
-        if !prefer_raw && kernel_l.is_contiguous() {
+        if !decision.prefers_raw() && kernel_l.is_contiguous() {
             match super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
                 input, input_l, kernel, kernel_l, &self.0,
             ) {
-                Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
+                Ok(out) => {
+                    decision.trace_submission("cudnn");
+                    return Ok((out, Shape::from(self.0.out_dims())));
+                }
+                Err(err) if decision.is_exact_asd() => return Err(err),
                 Err(err)
                     if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
                         .is_some() =>
@@ -165,7 +184,13 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
 
         #[cfg(feature = "cuda")]
         match super::grouped_transpose_cuda::launch2d(input, input_l, kernel, kernel_l, &self.0) {
-            Ok(out) => return Ok((out, Shape::from(self.0.out_dims()))),
+            Ok(out) => {
+                #[cfg(feature = "cudnn")]
+                decision.trace_submission("raw");
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            #[cfg(feature = "cudnn")]
+            Err(err) if decision.is_exact_asd() => return Err(err),
             Err(err)
                 if std::env::var_os("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() =>
             {
