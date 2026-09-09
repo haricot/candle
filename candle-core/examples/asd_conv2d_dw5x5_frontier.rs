@@ -20,14 +20,13 @@ mod enabled {
     const RAW_FN: &str = "asd_measure_dw5x5_conv2d_f32";
     const RAW_MODULE: &str = "asd_measure_conv2d_dw5x5_v0";
 
+    // Header-free on purpose: NVRTC does not inherit the host compiler's
+    // system include search path. The three dimensions use an explicit 64-bit ABI.
     const RAW_CUDA: &str = r#"
-#include <stddef.h>
-#include <math.h>
-
 extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
-    const size_t channels,
-    const size_t height,
-    const size_t width,
+    const unsigned long long channels,
+    const unsigned long long height,
+    const unsigned long long width,
     const float *src,
     const float *weight,
     float *dst
@@ -44,7 +43,7 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
     const int tx = (int)threadIdx.x;
     const int ty = (int)threadIdx.y;
     const int tid = ty * BX + tx;
-    const size_t channel = (size_t)blockIdx.z;
+    const unsigned long long channel = (unsigned long long)blockIdx.z;
     if (channel >= channels) {
         return;
     }
@@ -59,14 +58,16 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
         const int ix = base_x + lx - R;
         float value = 0.0f;
         if ((unsigned)iy < (unsigned)height && (unsigned)ix < (unsigned)width) {
-            const size_t src_i = (channel * height + (size_t)iy) * width + (size_t)ix;
+            const unsigned long long src_i =
+                (channel * height + (unsigned long long)iy) * width +
+                (unsigned long long)ix;
             value = __ldg(src + src_i);
         }
         tile[i] = value;
     }
 
     if (tid < 25) {
-        filter[tid] = __ldg(weight + channel * 25 + (size_t)tid);
+        filter[tid] = __ldg(weight + channel * 25ull + (unsigned long long)tid);
     }
     __syncthreads();
 
@@ -81,10 +82,12 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
     for (int ky = 0; ky < 5; ++ky) {
 #pragma unroll
         for (int kx = 0; kx < 5; ++kx) {
-            acc = fmaf(tile[(ty + ky) * TW + tx + kx], filter[ky * 5 + kx], acc);
+            acc += tile[(ty + ky) * TW + tx + kx] * filter[ky * 5 + kx];
         }
     }
-    const size_t dst_i = (channel * height + (size_t)oy) * width + (size_t)ox;
+    const unsigned long long dst_i =
+        (channel * height + (unsigned long long)oy) * width +
+        (unsigned long long)ox;
     dst[dst_i] = acc;
 }
 "#;
@@ -190,8 +193,10 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
             .find(|case| case.c == c && case.h == h && case.w == w)
             .ok_or_else(|| {
                 candle_core::Error::Msg(
-                    format!("ASD DW5x5 signature is outside the four measurement cases: c={c} h={h} w={w}")
-                        .into(),
+                    format!(
+                        "ASD DW5x5 signature is outside the four measurement cases: c={c} h={h} w={w}"
+                    )
+                    .into(),
                 )
             })
     }
@@ -233,10 +238,13 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
                 block_dim: (16, 8, 1),
                 shared_mem_bytes: 0,
             };
+            let channels = case.c as u64;
+            let height = case.h as u64;
+            let width = case.w as u64;
             let mut builder = func.builder();
-            builder.arg(&case.c);
-            builder.arg(&case.h);
-            builder.arg(&case.w);
+            builder.arg(&channels);
+            builder.arg(&height);
+            builder.arg(&width);
             builder.arg(src);
             builder.arg(weight);
             builder.arg(&out);
@@ -347,9 +355,9 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
 
     fn parse_backend_filter() -> Result<Option<Backend>> {
         let args = std::env::args().collect::<Vec<_>>();
-        let value = args.windows(2).find_map(|pair| {
-            (pair[0] == "--backend").then(|| pair[1].as_str())
-        });
+        let value = args
+            .windows(2)
+            .find_map(|pair| (pair[0] == "--backend").then(|| pair[1].as_str()));
         match value {
             None | Some("frontier") => Ok(None),
             Some("raw_dw5x5") => Ok(Some(Backend::RawDw5x5)),
@@ -514,7 +522,9 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
             _ => candle_core::bail!("ASD DW5x5 frontier requires CUDA"),
         };
         let ptx = cudarc::nvrtc::compile_ptx(RAW_CUDA).map_err(|err| {
-            candle_core::Error::Msg(format!("NVRTC failed for ASD DW5x5 measurement kernel: {err}").into())
+            candle_core::Error::Msg(
+                format!("NVRTC failed for ASD DW5x5 measurement kernel: {err}").into(),
+            )
         })?;
         let raw = RawDw5x5 {
             ptx: Arc::new(ptx.to_src()),
@@ -529,6 +539,7 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
         println!("asd_policy_modified=false");
         println!("production_activation=false");
         println!("candidate_state=measured_only");
+        println!("nvrtc_source=header_free");
         println!("device={:?}", device.location());
         println!(
             "cuda_build_compute_cap={}",
