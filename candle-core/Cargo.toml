@@ -58,7 +58,6 @@ metal = [
     "dep:objc2-metal",
     "dep:objc2-foundation",
     "dep:candle-metal-kernels",
-    "candle-ug?/metal",
 ]
 metal-debug-labels = ["metal", "candle-metal-kernels/debug-labels"]
 ug = ["dep:candle-ug"]
@@ -77,4 +76,8 @@ required-features = ["cuda"]
 
 [[example]]
 name = "grouped_conv_transpose_bench"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "asd_conv2d_dw5x5_frontier"
 required-features = ["cuda", "cudnn"]
