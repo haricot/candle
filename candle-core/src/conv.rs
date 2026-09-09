@@ -3,6 +3,8 @@
 use crate::{op::BackpropOp, op::Op, Error, Result, Tensor};
 
 mod grouped;
+#[cfg(feature = "cuda")]
+mod grouped_conv2d_asd;
 mod grouped_transpose_cpu;
 #[cfg(feature = "cuda")]
 mod grouped_transpose_cuda;
@@ -243,9 +245,9 @@ impl Tensor {
         let params = ParamsConvTranspose1D {
             b_size,
             l_in,
-            k_size,
             c_out,
             c_in,
+            k_size,
             padding,
             output_padding,
             stride,
