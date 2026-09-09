@@ -81,3 +81,7 @@ required-features = ["cuda", "cudnn"]
 [[example]]
 name = "asd_conv2d_dw5x5_frontier"
 required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv2d_asd_validate"
+required-features = ["cuda", "cudnn"]
