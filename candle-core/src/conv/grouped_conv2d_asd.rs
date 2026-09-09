@@ -5,11 +5,29 @@ use crate::cuda_backend::{kernels, CudaStorage, CudaStorageSlice as S, WrapErr};
 use crate::{Layout, Result};
 use cudarc::driver::{CudaSlice, LaunchConfig, PushKernelArg};
 
-fn trace_enabled() -> bool {
+fn env_truthy(name: &str) -> bool {
     matches!(
-        std::env::var("CANDLE_ASD_EXACT_TRACE").ok().as_deref(),
+        std::env::var(name).ok().as_deref(),
         Some("1") | Some("true") | Some("yes") | Some("on")
     )
+}
+
+fn trace_enabled() -> bool {
+    env_truthy("CANDLE_ASD_EXACT_TRACE")
+}
+
+fn exact_disabled() -> bool {
+    env_truthy("CANDLE_ASD_EXACT_DISABLE")
+}
+
+pub(super) fn real_dispatch_validation_enabled() -> bool {
+    candle_kernels::asd_exact_conv2d::VALIDATION_BUILD
+        && env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION")
+}
+
+pub(super) fn require_cudnn_submission() -> bool {
+    real_dispatch_validation_enabled()
+        && env_truthy("CANDLE_ASD_REAL_DISPATCH_REQUIRE_CUDNN")
 }
 
 fn exact_call(
@@ -138,8 +156,22 @@ pub(super) fn try_launch_exact(
     Ok(Some(CudaStorage { slice, device: dev }))
 }
 
+pub(super) fn trace_current_selection() {
+    if real_dispatch_validation_enabled() && trace_enabled() {
+        let reason = if exact_disabled() {
+            "asd_disabled"
+        } else {
+            "exact_miss"
+        };
+        eprintln!(
+            "[candle grouped-conv2d] requested=auto selected=current reason={} asd_policy=none asd_decision=none asd_state=none",
+            reason
+        );
+    }
+}
+
 pub(super) fn trace_current_submission(backend: &str) {
-    if trace_enabled() {
+    if real_dispatch_validation_enabled() && trace_enabled() {
         eprintln!(
             "[candle grouped-conv2d] submitted_backend={} launch_submission=success asd_policy=none asd_decision=none asd_state=none",
             backend

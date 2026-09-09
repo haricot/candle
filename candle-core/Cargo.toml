@@ -89,3 +89,7 @@ required-features = ["cuda", "cudnn"]
 [[example]]
 name = "grouped_conv2d_asd_validate_timed"
 required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv2d_asd_real_dispatch_validate"
+required-features = ["cuda", "cudnn"]

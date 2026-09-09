@@ -305,10 +305,24 @@ impl CustomOp2 for GroupedConv2D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        #[cfg(feature = "cuda")]
+        if super::grouped_conv2d_asd::real_dispatch_validation_enabled() {
+            if let Some(out) = super::grouped_conv2d_asd::try_launch_exact(
+                input,
+                input_l,
+                kernel,
+                kernel_l,
+                &self.0,
+            )? {
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            super::grouped_conv2d_asd::trace_current_selection();
+        }
+
         #[cfg(feature = "cudnn")]
         {
             if kernel_l.is_contiguous() {
-                if let Ok(out) = crate::cudnn::launch_grouped_conv2d(
+                match crate::cudnn::launch_grouped_conv2d(
                     input,
                     input_l,
                     kernel,
@@ -316,10 +330,30 @@ impl CustomOp2 for GroupedConv2D {
                     &self.0,
                     self.0.groups,
                 ) {
-                    return Ok((out, Shape::from(self.0.out_dims())));
+                    Ok(out) => {
+                        #[cfg(feature = "cuda")]
+                        super::grouped_conv2d_asd::trace_current_submission("cudnn");
+                        return Ok((out, Shape::from(self.0.out_dims())));
+                    }
+                    Err(err) => {
+                        #[cfg(feature = "cuda")]
+                        if super::grouped_conv2d_asd::require_cudnn_submission() {
+                            return Err(err);
+                        }
+                    }
+                }
+            } else {
+                #[cfg(feature = "cuda")]
+                if super::grouped_conv2d_asd::require_cudnn_submission() {
+                    crate::bail!(
+                        "real GroupedConv2D validation requires contiguous kernel for cuDNN reference"
+                    )
                 }
             }
         }
+
+        #[cfg(feature = "cuda")]
+        super::grouped_conv2d_asd::trace_current_submission("grouped_fallback");
         let out = grouped_conv2d_fallback(input, input_l, kernel, kernel_l, &self.0)?;
         Ok((out, Shape::from(self.0.out_dims())))
     }
