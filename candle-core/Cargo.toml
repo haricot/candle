@@ -59,7 +59,7 @@ metal = [
     "dep:objc2-foundation",
     "dep:candle-metal-kernels",
 ]
-metal-debug-labels = ["metal", "candle-metal-kernels/debug-labels"]
+metal-debug-labels = ["metal", "dep:objc2-metal"]
 ug = ["dep:candle-ug"]
 
 [[bench]]
@@ -84,4 +84,8 @@ required-features = ["cuda", "cudnn"]
 
 [[example]]
 name = "grouped_conv2d_asd_validate"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv2d_asd_validate_timed"
 required-features = ["cuda", "cudnn"]
