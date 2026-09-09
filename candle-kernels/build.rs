@@ -17,6 +17,11 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");
     println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_BF16");
+    println!("cargo::rerun-if-env-changed=CANDLE_ASD_EXACT_POLICY");
+    println!("cargo::rerun-if-env-changed=CANDLE_ASD_VALIDATION");
+    println!("cargo::rerun-if-env-changed=CANDLE_ASD_TARGET_GPU_UUID");
+    println!("cargo::rerun-if-env-changed=CANDLE_ASD_EXACT_DISABLE");
+    println!("cargo::rerun-if-env-changed=CANDLE_ASD_EXACT_TRACE");
     println!("cargo:rustc-check-cfg=cfg(candle_asd_exact_v2)");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
@@ -31,6 +36,16 @@ fn main() -> Result<()> {
     .expect("failed to write CUDA build compute capability");
     let asd_build_sm = u32::try_from(compute_cap)
         .expect("CUDA compute capability does not fit in u32");
+
+    let validation_requested = matches!(
+        env::var("CANDLE_ASD_VALIDATION").ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    );
+    if validation_requested && env::var_os("CANDLE_ASD_EXACT_POLICY").is_none() {
+        panic!(
+            "CANDLE_ASD_VALIDATION=1 requires CANDLE_ASD_EXACT_POLICY to be present at build time"
+        );
+    }
 
     let exact_v2 = env::var_os("CANDLE_ASD_EXACT_POLICY")
         .and_then(|path| std::fs::read_to_string(path).ok())
