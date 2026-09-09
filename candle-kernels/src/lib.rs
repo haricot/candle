@@ -4,6 +4,81 @@ pub mod asd_exact {
     include!(concat!(env!("OUT_DIR"), "/asd_exact_dispatch.rs"));
 }
 
+pub mod asd_exact_conv2d {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct ExactConv2dCall {
+        pub batch: usize,
+        pub c_in: usize,
+        pub c_out: usize,
+        pub spatial0: usize,
+        pub spatial1: usize,
+        pub weight0: usize,
+        pub weight1: usize,
+        pub weight2: usize,
+        pub weight3: usize,
+        pub groups: usize,
+        pub kernel: usize,
+        pub stride: usize,
+        pub padding: usize,
+        pub dilation: usize,
+        pub dtype: &'static str,
+        pub input_contiguous: bool,
+        pub input_start_offset: usize,
+        pub weight_contiguous: bool,
+        pub weight_start_offset: usize,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct ExactAsdMatch {
+        pub policy_id: &'static str,
+        pub decision_id: &'static str,
+        pub state: &'static str,
+        pub selected_backend: &'static str,
+        pub evidence_sha256: &'static str,
+        pub min_integrated_speedup_x: f64,
+    }
+
+    pub const VALIDATION_BUILD: bool = cfg!(candle_asd_exact_v2);
+
+    #[cfg(candle_asd_exact_v2)]
+    pub fn lookup(call: ExactConv2dCall) -> Option<ExactAsdMatch> {
+        let generated = super::asd_exact::lookup_conv2d(super::asd_exact::ExactConv2dCall {
+            batch: call.batch,
+            c_in: call.c_in,
+            c_out: call.c_out,
+            spatial0: call.spatial0,
+            spatial1: call.spatial1,
+            weight0: call.weight0,
+            weight1: call.weight1,
+            weight2: call.weight2,
+            weight3: call.weight3,
+            groups: call.groups,
+            kernel: call.kernel,
+            stride: call.stride,
+            padding: call.padding,
+            dilation: call.dilation,
+            dtype: call.dtype,
+            input_contiguous: call.input_contiguous,
+            input_start_offset: call.input_start_offset,
+            weight_contiguous: call.weight_contiguous,
+            weight_start_offset: call.weight_start_offset,
+        })?;
+        Some(ExactAsdMatch {
+            policy_id: generated.policy_id,
+            decision_id: generated.decision_id,
+            state: generated.state,
+            selected_backend: generated.selected_backend,
+            evidence_sha256: generated.evidence_sha256,
+            min_integrated_speedup_x: generated.min_integrated_speedup_x,
+        })
+    }
+
+    #[cfg(not(candle_asd_exact_v2))]
+    pub fn lookup(_call: ExactConv2dCall) -> Option<ExactAsdMatch> {
+        None
+    }
+}
+
 mod ptx {
     include!(concat!(env!("OUT_DIR"), "/ptx.rs"));
 }
