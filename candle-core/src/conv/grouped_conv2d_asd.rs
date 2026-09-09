@@ -119,13 +119,12 @@ pub(super) fn try_launch_exact(
         );
     }
 
+    // Exact V2 lookup already requires contiguous_zero_offset, so using the
+    // original slices preserves the launch ABI and avoids converting them to
+    // CudaView values.
     let dev = input.device.clone();
     let slice = match (&input.slice, &kernel.slice) {
-        (S::F32(x), S::F32(k)) => {
-            let x = x.slice(input_l.start_offset()..);
-            let k = k.slice(kernel_l.start_offset()..);
-            S::F32(launch_f32(&x, &k, p, &dev)?)
-        }
+        (S::F32(x), S::F32(k)) => S::F32(launch_f32(x, k, p, &dev)?),
         _ => crate::bail!("exact ASD DW5x5 raw v1 requires matching f32 input and kernel"),
     };
     if trace_enabled() {
