@@ -38,7 +38,11 @@ pub mod asd_exact_conv2d {
         pub min_integrated_speedup_x: f64,
     }
 
-    pub const VALIDATION_BUILD: bool = cfg!(candle_asd_exact_v2);
+    #[cfg(candle_asd_exact_v2)]
+    pub const VALIDATION_BUILD: bool = super::asd_exact::VALIDATION_BUILD;
+
+    #[cfg(not(candle_asd_exact_v2))]
+    pub const VALIDATION_BUILD: bool = false;
 
     #[cfg(candle_asd_exact_v2)]
     pub fn lookup(call: ExactConv2dCall) -> Option<ExactAsdMatch> {
