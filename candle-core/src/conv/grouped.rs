@@ -308,11 +308,7 @@ impl CustomOp2 for GroupedConv2D {
         #[cfg(feature = "cuda")]
         if super::grouped_conv2d_asd::exact_dispatch_enabled() {
             if let Some(out) = super::grouped_conv2d_asd::try_launch_exact(
-                input,
-                input_l,
-                kernel,
-                kernel_l,
-                &self.0,
+                input, input_l, kernel, kernel_l, &self.0,
             )? {
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
@@ -335,7 +331,8 @@ impl CustomOp2 for GroupedConv2D {
                         super::grouped_conv2d_asd::trace_current_submission("cudnn");
                         return Ok((out, Shape::from(self.0.out_dims())));
                     }
-                    Err(err) => {
+                    Err(err) =>
+                    {
                         #[cfg(feature = "cuda")]
                         if super::grouped_conv2d_asd::require_cudnn_submission() {
                             return Err(err);

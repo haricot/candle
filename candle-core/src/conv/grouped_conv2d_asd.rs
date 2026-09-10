@@ -36,8 +36,7 @@ pub(super) fn real_dispatch_validation_enabled() -> bool {
 }
 
 pub(super) fn require_cudnn_submission() -> bool {
-    real_dispatch_validation_enabled()
-        && env_truthy("CANDLE_ASD_REAL_DISPATCH_REQUIRE_CUDNN")
+    real_dispatch_validation_enabled() && env_truthy("CANDLE_ASD_REAL_DISPATCH_REQUIRE_CUDNN")
 }
 
 fn exact_call(
