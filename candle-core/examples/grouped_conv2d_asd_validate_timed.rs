@@ -19,9 +19,21 @@ struct Case {
 }
 
 const CASES: [Case; 4] = [
-    Case { c: 48, h: 64, w: 48 },
-    Case { c: 96, h: 32, w: 24 },
-    Case { c: 192, h: 16, w: 12 },
+    Case {
+        c: 48,
+        h: 64,
+        w: 48,
+    },
+    Case {
+        c: 96,
+        h: 32,
+        w: 24,
+    },
+    Case {
+        c: 192,
+        h: 16,
+        w: 12,
+    },
     Case { c: 384, h: 8, w: 6 },
 ];
 
@@ -173,10 +185,7 @@ impl CustomOp2 for RawExactDw5x5 {
         if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
             candle_core::bail!("ASD V2 candidate requires validation build")
         }
-        if matched.selected_backend != "raw_cuda"
-            || dims[0] != 1
-            || wdims != [case.c, 1, 5, 5]
-        {
+        if matched.selected_backend != "raw_cuda" || dims[0] != 1 || wdims != [case.c, 1, 5, 5] {
             candle_core::bail!("exact DW5x5 ASD raw candidate contract mismatch")
         }
 
@@ -238,7 +247,9 @@ fn candidate(case: Case, x: &Tensor, kernel: &Tensor, trace: bool) -> Result<Ten
         }
         let out = current(x, kernel, case.c)?;
         if trace {
-            println!("SUBMIT mode=asd_candidate submitted_backend=current launch_submission=success");
+            println!(
+                "SUBMIT mode=asd_candidate submitted_backend=current launch_submission=success"
+            );
         }
         Ok(out)
     }
@@ -413,7 +424,10 @@ fn main() -> Result<()> {
     println!("scope=validation_only");
     println!("production_dispatch_modified=false");
     println!("device={:?}", device.location());
-    println!("cuda_build_compute_cap={}", candle_kernels::CUDA_BUILD_COMPUTE_CAP);
+    println!(
+        "cuda_build_compute_cap={}",
+        candle_kernels::CUDA_BUILD_COMPUTE_CAP
+    );
     println!("cases={}", CASES.len());
     println!("warmup_policy=time_equivalent_per_backend");
     println!("warmup_ms={warmup_ms:.3}");
@@ -428,8 +442,11 @@ fn main() -> Result<()> {
         let (x, kernel) = tensors(case, &device)?;
         let matched = lookup(case).ok_or_else(|| {
             candle_core::Error::Msg(
-                format!("missing exact ASD V2 decision for c={} h={} w={}", case.c, case.h, case.w)
-                    .into(),
+                format!(
+                    "missing exact ASD V2 decision for c={} h={} w={}",
+                    case.c, case.h, case.w
+                )
+                .into(),
             )
         })?;
         println!(
@@ -458,22 +475,70 @@ fn main() -> Result<()> {
         );
 
         let current_a = measure(
-            "current_a", Mode::Current, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "current_a",
+            Mode::Current,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let asd_b = measure(
-            "asd_b", Mode::AsdCandidate, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "asd_b",
+            Mode::AsdCandidate,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let current_a2 = measure(
-            "current_a2", Mode::Current, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "current_a2",
+            Mode::Current,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let asd_a = measure(
-            "asd_a", Mode::AsdCandidate, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "asd_a",
+            Mode::AsdCandidate,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let current_b = measure(
-            "current_b", Mode::Current, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "current_b",
+            Mode::Current,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let asd_a2 = measure(
-            "asd_a2", Mode::AsdCandidate, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "asd_a2",
+            Mode::AsdCandidate,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
 
         print_phase("current_a", Mode::Current, current_a);
@@ -483,7 +548,11 @@ fn main() -> Result<()> {
         print_phase("current_b", Mode::Current, current_b);
         print_phase("asd_a2", Mode::AsdCandidate, asd_a2);
 
-        let current_us = median3(current_a.median_us, current_a2.median_us, current_b.median_us);
+        let current_us = median3(
+            current_a.median_us,
+            current_a2.median_us,
+            current_b.median_us,
+        );
         let asd_us = median3(asd_b.median_us, asd_a.median_us, asd_a2.median_us);
         let current_p90 = median3(current_a.p90_us, current_a2.p90_us, current_b.p90_us);
         let asd_p90 = median3(asd_b.p90_us, asd_a.p90_us, asd_a2.p90_us);
@@ -524,7 +593,11 @@ fn main() -> Result<()> {
     }
 
     println!("\n=== NEGATIVE DOMAIN PROBE ===");
-    let miss = Case { c: 64, h: 32, w: 24 };
+    let miss = Case {
+        c: 64,
+        h: 32,
+        w: 24,
+    };
     let (x_miss, k_miss) = tensors(miss, &device)?;
     let lookup_miss = lookup(miss).is_none();
     println!("DOMAIN_LOOKUP c=64 h=32 w=24 miss={lookup_miss}");

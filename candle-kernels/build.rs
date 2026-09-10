@@ -34,8 +34,8 @@ fn main() -> Result<()> {
         format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
     )
     .expect("failed to write CUDA build compute capability");
-    let asd_build_sm = u32::try_from(compute_cap)
-        .expect("CUDA compute capability does not fit in u32");
+    let asd_build_sm =
+        u32::try_from(compute_cap).expect("CUDA compute capability does not fit in u32");
 
     let validation_requested = matches!(
         env::var("CANDLE_ASD_VALIDATION").ok().as_deref(),

@@ -259,7 +259,7 @@ fn trace_decision(
     }
 }
 
-fn exact_call(
+struct ExactCallArgs<'a> {
     dim: GroupedTransposeDim,
     batch: usize,
     c_in: usize,
@@ -272,37 +272,39 @@ fn exact_call(
     padding: usize,
     output_padding: usize,
     dilation: usize,
-    input_l: &Layout,
-    kernel_l: &Layout,
+    input_l: &'a Layout,
+    kernel_l: &'a Layout,
     dtype: DType,
-) -> candle_kernels::asd_exact::ExactConvTransposeCall {
-    let weight = kernel_l.dims();
+}
+
+fn exact_call(args: ExactCallArgs<'_>) -> candle_kernels::asd_exact::ExactConvTransposeCall {
+    let weight = args.kernel_l.dims();
     candle_kernels::asd_exact::ExactConvTransposeCall {
-        dim: match dim {
+        dim: match args.dim {
             GroupedTransposeDim::D1 => 1,
             GroupedTransposeDim::D2 => 2,
         },
-        batch,
-        c_in,
-        c_out,
-        spatial0,
-        spatial1,
+        batch: args.batch,
+        c_in: args.c_in,
+        c_out: args.c_out,
+        spatial0: args.spatial0,
+        spatial1: args.spatial1,
         weight_rank: weight.len(),
         weight0: weight.first().copied().unwrap_or(0),
         weight1: weight.get(1).copied().unwrap_or(0),
         weight2: weight.get(2).copied().unwrap_or(0),
         weight3: weight.get(3).copied().unwrap_or(0),
-        groups,
-        kernel,
-        stride,
-        padding,
-        output_padding,
-        dilation,
-        dtype: dtype.as_str(),
-        input_contiguous: input_l.is_contiguous(),
-        input_start_offset: input_l.start_offset(),
-        weight_contiguous: kernel_l.is_contiguous(),
-        weight_start_offset: kernel_l.start_offset(),
+        groups: args.groups,
+        kernel: args.kernel,
+        stride: args.stride,
+        padding: args.padding,
+        output_padding: args.output_padding,
+        dilation: args.dilation,
+        dtype: args.dtype.as_str(),
+        input_contiguous: args.input_l.is_contiguous(),
+        input_start_offset: args.input_l.start_offset(),
+        weight_contiguous: args.kernel_l.is_contiguous(),
+        weight_start_offset: args.kernel_l.start_offset(),
     }
 }
 
@@ -333,23 +335,23 @@ pub(super) fn decision_1d(
     kernel_l: &Layout,
     dtype: DType,
 ) -> GroupedTransposeDispatchDecision {
-    let call = exact_call(
-        GroupedTransposeDim::D1,
-        p.b_size,
-        p.c_in,
-        p.c_out,
-        p.l_in,
-        0,
-        p.groups,
-        p.k_size,
-        p.stride,
-        p.padding,
-        p.output_padding,
-        p.dilation,
+    let call = exact_call(ExactCallArgs {
+        dim: GroupedTransposeDim::D1,
+        batch: p.b_size,
+        c_in: p.c_in,
+        c_out: p.c_out,
+        spatial0: p.l_in,
+        spatial1: 0,
+        groups: p.groups,
+        kernel: p.k_size,
+        stride: p.stride,
+        padding: p.padding,
+        output_padding: p.output_padding,
+        dilation: p.dilation,
         input_l,
         kernel_l,
         dtype,
-    );
+    });
     resolve_runtime(GroupedTransposeDim::D1, p.groups, call)
 }
 
@@ -359,23 +361,23 @@ pub(super) fn decision_2d(
     kernel_l: &Layout,
     dtype: DType,
 ) -> GroupedTransposeDispatchDecision {
-    let call = exact_call(
-        GroupedTransposeDim::D2,
-        p.b_size,
-        p.c_in,
-        p.c_out,
-        p.i_h,
-        p.i_w,
-        p.groups,
-        p.k_h,
-        p.stride,
-        p.padding,
-        p.output_padding,
-        p.dilation,
+    let call = exact_call(ExactCallArgs {
+        dim: GroupedTransposeDim::D2,
+        batch: p.b_size,
+        c_in: p.c_in,
+        c_out: p.c_out,
+        spatial0: p.i_h,
+        spatial1: p.i_w,
+        groups: p.groups,
+        kernel: p.k_h,
+        stride: p.stride,
+        padding: p.padding,
+        output_padding: p.output_padding,
+        dilation: p.dilation,
         input_l,
         kernel_l,
         dtype,
-    );
+    });
     resolve_runtime(GroupedTransposeDim::D2, p.groups, call)
 }
 
@@ -412,7 +414,10 @@ mod tests {
         let decision = resolve(GroupedTransposeDim::D2, 4, Some("cudnn"));
         assert_eq!(decision.requested, GroupedTransposeDispatchRequest::Cudnn);
         assert!(!decision.prefers_raw());
-        assert_eq!(decision.reason, GroupedTransposeDispatchReason::ExplicitCudnn);
+        assert_eq!(
+            decision.reason,
+            GroupedTransposeDispatchReason::ExplicitCudnn
+        );
     }
 
     #[test]

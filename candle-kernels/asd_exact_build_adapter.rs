@@ -55,10 +55,7 @@ pub fn materialize_for_candle_build(
     let policy = parse(&fs::read_to_string(&policy_path)?)?;
     validate(&policy, build_sm)?;
     let validation_mode = env_truthy("CANDLE_ASD_VALIDATION");
-    let has_non_promoted = policy
-        .decisions
-        .iter()
-        .any(|d| d.state != "promoted");
+    let has_non_promoted = policy.decisions.iter().any(|d| d.state != "promoted");
     if has_non_promoted && !validation_mode {
         return Err(
             "candidate/integrated ASD exact policy requires CANDLE_ASD_VALIDATION=1".into(),
@@ -106,8 +103,8 @@ fn parse(text: &str) -> Result<Policy, Box<dyn std::error::Error>> {
             let signature = parse_kv_list(parts[4], ',')?;
             let impl_id = value_after(parts[5], "impl=")?.to_owned();
             let evidence_sha256 = value_after(parts[6], "evidence=")?.to_owned();
-            let min_integrated_speedup_x = value_after(parts[7], "min_integrated_speedup_x=")?
-                .parse::<f64>()?;
+            let min_integrated_speedup_x =
+                value_after(parts[7], "min_integrated_speedup_x=")?.parse::<f64>()?;
             decisions.push(Decision {
                 id: parts[1].to_owned(),
                 state: parts[2].to_owned(),
@@ -172,7 +169,7 @@ fn parse_dims(input: &str) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
         .split('x')
         .map(str::parse::<usize>)
         .collect::<Result<Vec<_>, _>>()?;
-    if dims.is_empty() || dims.iter().any(|v| *v == 0) {
+    if dims.is_empty() || dims.contains(&0) {
         return Err("invalid ASD exact dimensions".into());
     }
     Ok(dims)
@@ -194,9 +191,8 @@ fn validate(policy: &Policy, build_sm: u32) -> Result<(), Box<dyn std::error::Er
     let scope = required(&policy.fields, "target.scope")?;
     if scope == "device" {
         let expected = required(&policy.fields, "target.gpu_uuid")?;
-        let actual = env::var("CANDLE_ASD_TARGET_GPU_UUID").map_err(|_| {
-            "device-scoped ASD exact policy requires CANDLE_ASD_TARGET_GPU_UUID"
-        })?;
+        let actual = env::var("CANDLE_ASD_TARGET_GPU_UUID")
+            .map_err(|_| "device-scoped ASD exact policy requires CANDLE_ASD_TARGET_GPU_UUID")?;
         if actual != expected {
             return Err("ASD exact GPU UUID does not match build target".into());
         }
@@ -248,9 +244,7 @@ fn validate(policy: &Policy, build_sm: u32) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn validate_signature(
-    s: &BTreeMap<String, String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_signature(s: &BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
     let expected = [
         "dim",
         "batch",
@@ -296,9 +290,7 @@ fn validate_signature(
     if c_in % groups != 0 || c_out % groups != 0 {
         return Err("ASD exact channels are not divisible by groups".into());
     }
-    if weight[0] != c_in
-        || weight[1] != c_out / groups
-        || weight[2..].iter().any(|v| *v != kernel)
+    if weight[0] != c_in || weight[1] != c_out / groups || weight[2..].iter().any(|v| *v != kernel)
     {
         return Err("ASD exact weight shape mismatch".into());
     }
@@ -314,7 +306,11 @@ fn validate_signature(
 }
 
 fn bool_literal(value: bool) -> &'static str {
-    if value { "true" } else { "false" }
+    if value {
+        "true"
+    } else {
+        "false"
+    }
 }
 
 fn render_native(

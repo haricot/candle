@@ -673,7 +673,6 @@ impl Model {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -16,9 +16,21 @@ struct Case {
 }
 
 const CASES: [Case; 4] = [
-    Case { c: 48, h: 64, w: 48 },
-    Case { c: 96, h: 32, w: 24 },
-    Case { c: 192, h: 16, w: 12 },
+    Case {
+        c: 48,
+        h: 64,
+        w: 48,
+    },
+    Case {
+        c: 96,
+        h: 32,
+        w: 24,
+    },
+    Case {
+        c: 192,
+        h: 16,
+        w: 12,
+    },
     Case { c: 384, h: 8, w: 6 },
 ];
 
@@ -140,7 +152,13 @@ fn lookup(case: Case) -> Option<candle_kernels::asd_exact_conv2d::ExactAsdMatch>
     candle_kernels::asd_exact_conv2d::lookup(exact_call(case))
 }
 
-fn dispatch_once(mode: Mode, case: Case, x: &Tensor, kernel: &Tensor, trace: bool) -> Result<Tensor> {
+fn dispatch_once(
+    mode: Mode,
+    case: Case,
+    x: &Tensor,
+    kernel: &Tensor,
+    trace: bool,
+) -> Result<Tensor> {
     configure_mode(mode, trace);
     x.conv2d(kernel, 2, 1, 1, case.c)
 }
@@ -311,7 +329,10 @@ fn main() -> Result<()> {
     println!("candidate_backend=raw_cuda");
     println!("production_activation=false");
     println!("device={:?}", device.location());
-    println!("cuda_build_compute_cap={}", candle_kernels::CUDA_BUILD_COMPUTE_CAP);
+    println!(
+        "cuda_build_compute_cap={}",
+        candle_kernels::CUDA_BUILD_COMPUTE_CAP
+    );
     println!("policy_id={}", first.policy_id);
     println!("policy_state={}", first.state);
     println!("cases={}", CASES.len());
@@ -332,7 +353,8 @@ fn main() -> Result<()> {
                 format!(
                     "missing promoted exact ASD V2 decision for c={} h={} w={}",
                     case.c, case.h, case.w
-                ).into(),
+                )
+                .into(),
             )
         })?;
         if matched.state != "promoted" {
@@ -375,22 +397,70 @@ fn main() -> Result<()> {
         );
 
         let current_a = measure(
-            "current_a", Mode::Current, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "current_a",
+            Mode::Current,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let asd_b = measure(
-            "asd_b", Mode::Asd, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "asd_b",
+            Mode::Asd,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let current_a2 = measure(
-            "current_a2", Mode::Current, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "current_a2",
+            Mode::Current,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let asd_a = measure(
-            "asd_a", Mode::Asd, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "asd_a",
+            Mode::Asd,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let current_b = measure(
-            "current_b", Mode::Current, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "current_b",
+            Mode::Current,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
         let asd_a2 = measure(
-            "asd_a2", Mode::Asd, case, &x, &kernel, &device, warmup_ms, iters, inner,
+            "asd_a2",
+            Mode::Asd,
+            case,
+            &x,
+            &kernel,
+            &device,
+            warmup_ms,
+            iters,
+            inner,
         )?;
 
         print_phase("current_a", Mode::Current, current_a);
@@ -400,7 +470,11 @@ fn main() -> Result<()> {
         print_phase("current_b", Mode::Current, current_b);
         print_phase("asd_a2", Mode::Asd, asd_a2);
 
-        let current_us = median3(current_a.median_us, current_a2.median_us, current_b.median_us);
+        let current_us = median3(
+            current_a.median_us,
+            current_a2.median_us,
+            current_b.median_us,
+        );
         let asd_us = median3(asd_b.median_us, asd_a.median_us, asd_a2.median_us);
         let current_p90 = median3(current_a.p90_us, current_a2.p90_us, current_b.p90_us);
         let asd_p90 = median3(asd_b.p90_us, asd_a.p90_us, asd_a2.p90_us);
@@ -427,7 +501,11 @@ fn main() -> Result<()> {
     }
 
     println!("\n=== NEGATIVE DOMAIN PROBE ===");
-    let miss = Case { c: 64, h: 32, w: 24 };
+    let miss = Case {
+        c: 64,
+        h: 32,
+        w: 24,
+    };
     let (x_miss, k_miss) = tensors(miss, &device)?;
 
     configure_mode(Mode::Asd, false);
@@ -452,7 +530,9 @@ fn main() -> Result<()> {
 
     println!(
         "\nREAL_DISPATCH_GATE cases={} domain_miss={} production_activation=false pass={}",
-        CASES.len(), domain_pass, all_pass
+        CASES.len(),
+        domain_pass,
+        all_pass
     );
     println!("STATUS={}", if all_pass { "PASS" } else { "HOLD" });
 

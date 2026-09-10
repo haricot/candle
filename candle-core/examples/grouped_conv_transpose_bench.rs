@@ -606,15 +606,13 @@ fn main() -> Result<()> {
         cudnn_a2.print("cudnn_a2", Path::Cudnn);
 
         let raw_consensus_us = median3(raw_a.median_us, raw_b.median_us, raw_a2.median_us);
-        let cudnn_consensus_us =
-            median3(cudnn_a.median_us, cudnn_b.median_us, cudnn_a2.median_us);
+        let cudnn_consensus_us = median3(cudnn_a.median_us, cudnn_b.median_us, cudnn_a2.median_us);
         let raw_p90_us = median3(raw_a.p90_us, raw_b.p90_us, raw_a2.p90_us);
         let cudnn_p90_us = median3(cudnn_a.p90_us, cudnn_b.p90_us, cudnn_a2.p90_us);
 
         let raw_drift_pct = relative_drift_pct(raw_a.median_us, raw_a2.median_us);
         let cudnn_drift_pct = relative_drift_pct(cudnn_a.median_us, cudnn_a2.median_us);
-        let drift_pass =
-            raw_drift_pct <= max_drift_pct && cudnn_drift_pct <= max_drift_pct;
+        let drift_pass = raw_drift_pct <= max_drift_pct && cudnn_drift_pct <= max_drift_pct;
 
         let consensus_winner = winner(raw_consensus_us, cudnn_consensus_us);
         let round1_winner = winner(raw_a.median_us, cudnn_a.median_us);

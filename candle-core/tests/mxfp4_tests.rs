@@ -189,7 +189,6 @@ fn dtype_plumbing() -> Result<()> {
     Ok(())
 }
 
-
 #[cfg(feature = "cuda")]
 #[test]
 fn cuda_dequantize_matches_cpu() -> Result<()> {
@@ -208,11 +207,7 @@ fn cuda_dequantize_matches_cpu() -> Result<()> {
     let q_cpu = QTensor::quantize(&src, GgmlDType::Mxfp4)?;
     let expected_f32 = q_cpu.dequantize(&cpu)?;
 
-    let storage = QStorage::from_data(
-        Cow::Owned(q_cpu.data()?.to_vec()),
-        &cuda,
-        GgmlDType::Mxfp4,
-    )?;
+    let storage = QStorage::from_data(Cow::Owned(q_cpu.data()?.to_vec()), &cuda, GgmlDType::Mxfp4)?;
     let q_cuda = QTensor::new(storage, (10 * QK,))?;
 
     let got_f32 = q_cuda.dequantize(&cuda)?.to_device(&cpu)?;
@@ -232,14 +227,12 @@ fn cuda_dequantize_matches_cpu() -> Result<()> {
         .to_dtype(DType::F32)?
         .to_vec1::<f32>()?;
     assert_eq!(
-        got_f16_as_f32,
-        expected_f16_as_f32,
+        got_f16_as_f32, expected_f16_as_f32,
         "MXFP4 CUDA f16 dequantization differs from CPU reference"
     );
 
     Ok(())
 }
-
 
 #[cfg(feature = "cuda")]
 #[test]
@@ -298,7 +291,6 @@ fn cuda_mxfp4_dp4a_batch_1_to_8() -> Result<()> {
     Ok(())
 }
 
-
 #[cfg(feature = "cuda")]
 #[test]
 #[ignore = "benchmark gate: run explicitly on the target CUDA device"]
@@ -313,7 +305,11 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
 
     println!(
         "MXFP4_BENCH_CONFIG profile={} n={n} k={k}",
-        if cfg!(debug_assertions) { "debug" } else { "release" }
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
     );
 
     let weights = (0..n * k)
@@ -369,10 +365,7 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
     }
 
     // F32 CPU is the numerical baseline used to attribute quantization error.
-    let reference_f32 = x_cpu
-        .matmul(&w_cpu.t()?)?
-        .flatten_all()?
-        .to_vec1::<f32>()?;
+    let reference_f32 = x_cpu.matmul(&w_cpu.t()?)?.flatten_all()?.to_vec1::<f32>()?;
 
     let x_cuda = x_cpu.to_device(&cuda)?;
     let w_f16 = w_cpu.to_dtype(DType::F16)?.to_device(&cuda)?;
@@ -429,9 +422,7 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
         );
         println!(
             "MXFP4_KERNEL_PARITY dtype={dtype:?} max_abs={:.6} mean_abs={:.6} cosine={:.8}",
-            kernel_quality.0,
-            kernel_quality.1,
-            kernel_quality.2
+            kernel_quality.0, kernel_quality.1, kernel_quality.2
         );
         println!(
             "MXFP4_BENCH_RESULT dtype={dtype:?} bytes={bytes} bits_per_weight={bits_per_weight:.4} latency_us={latency_us:.3} effective_gbps={:.3} speedup_vs_f16={:.3} e2e_max_abs={:.6} e2e_mean_abs={:.6} e2e_cosine={:.8}",
@@ -457,25 +448,28 @@ fn mxfp4_sm61_benchmark_gate() -> Result<()> {
         .find(|(dtype, ..)| *dtype == GgmlDType::Mxfp4)
         .expect("MXFP4 result missing");
 
-    assert!(mxfp4.2 < 5.0, "MXFP4 storage is not actually packed: {} bits/weight", mxfp4.2);
     assert!(
-        mxfp4.4.2 >= 0.99999,
+        mxfp4.2 < 5.0,
+        "MXFP4 storage is not actually packed: {} bits/weight",
+        mxfp4.2
+    );
+    assert!(
+        mxfp4.4 .2 >= 0.99999,
         "MXFP4 CUDA kernel parity regressed: cosine={}",
-        mxfp4.4.2
+        mxfp4.4 .2
     );
     assert!(
-        mxfp4.4.1 < 0.05,
+        mxfp4.4 .1 < 0.05,
         "MXFP4 CUDA kernel parity mean_abs unexpectedly high: {}",
-        mxfp4.4.1
+        mxfp4.4 .1
     );
     assert!(
-        mxfp4.5.2.is_finite(),
+        mxfp4.5 .2.is_finite(),
         "MXFP4 end-to-end cosine must be finite"
     );
 
     Ok(())
 }
-
 
 #[cfg(feature = "cuda")]
 #[test]
@@ -555,7 +549,6 @@ fn cuda_mxfp4_prefill_parity() -> Result<()> {
     Ok(())
 }
 
-
 #[cfg(feature = "cuda")]
 #[test]
 fn cuda_mxfp4_indexed_moe_parity() -> Result<()> {
@@ -580,11 +573,7 @@ fn cuda_mxfp4_indexed_moe_parity() -> Result<()> {
         .map(|i| ((i as f32) * 0.013).cos() * 0.70 + 0.05)
         .collect::<Vec<_>>();
     let x_cpu = Tensor::from_vec(x_data, (batch, k), &cpu)?;
-    let ids_cpu = Tensor::from_vec(
-        vec![0u32, 1, 2, 3, 3, 2, 1, 0],
-        (batch, topk),
-        &cpu,
-    )?;
+    let ids_cpu = Tensor::from_vec(vec![0u32, 1, 2, 3, 3, 2, 1, 0], (batch, topk), &cpu)?;
 
     let x = x_cpu.to_vec2::<f32>()?;
     let ids = ids_cpu.to_vec2::<u32>()?;
@@ -603,16 +592,16 @@ fn cuda_mxfp4_indexed_moe_parity() -> Result<()> {
     }
 
     let got = q_cuda
-        .indexed_moe_forward(
-            &x_cpu.to_device(&cuda)?,
-            &ids_cpu.to_device(&cuda)?,
-        )?
+        .indexed_moe_forward(&x_cpu.to_device(&cuda)?, &ids_cpu.to_device(&cuda)?)?
         .to_device(&cpu)?
         .flatten_all()?
         .to_vec1::<f32>()?;
 
     assert_eq!(got.len(), expected.len());
-    assert!(got.iter().all(|v| v.is_finite()), "MXFP4 MoE produced non-finite output");
+    assert!(
+        got.iter().all(|v| v.is_finite()),
+        "MXFP4 MoE produced non-finite output"
+    );
 
     let mut max_abs = 0f32;
     let mut mean_abs = 0f32;

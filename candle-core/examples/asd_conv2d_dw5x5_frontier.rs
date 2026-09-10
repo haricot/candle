@@ -100,9 +100,21 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
     }
 
     const CASES: [ExactCase; 4] = [
-        ExactCase { c: 48, h: 64, w: 48 },
-        ExactCase { c: 96, h: 32, w: 24 },
-        ExactCase { c: 192, h: 16, w: 12 },
+        ExactCase {
+            c: 48,
+            h: 64,
+            w: 48,
+        },
+        ExactCase {
+            c: 96,
+            h: 32,
+            w: 24,
+        },
+        ExactCase {
+            c: 192,
+            h: 16,
+            w: 12,
+        },
         ExactCase { c: 384, h: 8, w: 6 },
     ];
 
@@ -506,8 +518,7 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
         let iters = parse_count("--iters", DEFAULT_ITERS);
         let inner = parse_count("--inner", DEFAULT_INNER);
         let max_drift_pct = parse_f64("--max-drift-pct", DEFAULT_MAX_DRIFT_PCT);
-        let frontier_margin_pct =
-            parse_f64("--frontier-margin-pct", DEFAULT_FRONTIER_MARGIN_PCT);
+        let frontier_margin_pct = parse_f64("--frontier-margin-pct", DEFAULT_FRONTIER_MARGIN_PCT);
         let backend_filter = parse_backend_filter()?;
         if warmup == 0 || iters == 0 || inner == 0 {
             candle_core::bail!("--warmup, --iters and --inner must be greater than zero")
@@ -670,11 +681,7 @@ extern "C" __global__ void asd_measure_dw5x5_conv2d_f32(
             print_phase("cudnn_a2", Backend::Cudnn, cudnn_a2);
 
             let raw_us = median3(raw_a.median_us, raw_a2.median_us, raw_b.median_us);
-            let cudnn_us = median3(
-                cudnn_b.median_us,
-                cudnn_a.median_us,
-                cudnn_a2.median_us,
-            );
+            let cudnn_us = median3(cudnn_b.median_us, cudnn_a.median_us, cudnn_a2.median_us);
             let raw_p90 = median3(raw_a.p90_us, raw_a2.p90_us, raw_b.p90_us);
             let cudnn_p90 = median3(cudnn_b.p90_us, cudnn_a.p90_us, cudnn_a2.p90_us);
             let raw_drift_pct = relative_drift_pct(raw_a.median_us, raw_b.median_us);
