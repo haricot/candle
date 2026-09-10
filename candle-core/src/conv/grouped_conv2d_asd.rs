@@ -20,6 +20,16 @@ fn exact_disabled() -> bool {
     env_truthy("CANDLE_ASD_EXACT_DISABLE")
 }
 
+pub(super) fn exact_dispatch_enabled() -> bool {
+    if !candle_kernels::asd_exact_conv2d::POLICY_EMBEDDED {
+        return false;
+    }
+    if candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
+        return env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION");
+    }
+    true
+}
+
 pub(super) fn real_dispatch_validation_enabled() -> bool {
     candle_kernels::asd_exact_conv2d::VALIDATION_BUILD
         && env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION")
@@ -115,8 +125,12 @@ pub(super) fn try_launch_exact(
     let Some(matched) = candle_kernels::asd_exact_conv2d::lookup(call) else {
         return Ok(None);
     };
-    if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
-        crate::bail!("exact Conv2D ASD candidate unexpectedly active outside validation build")
+    if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD && matched.state != "promoted" {
+        crate::bail!(
+            "exact Conv2D ASD decision {} has state={} outside validation build",
+            matched.decision_id,
+            matched.state
+        )
     }
     if matched.selected_backend != "raw_cuda" {
         crate::bail!(
@@ -157,7 +171,7 @@ pub(super) fn try_launch_exact(
 }
 
 pub(super) fn trace_current_selection() {
-    if real_dispatch_validation_enabled() && trace_enabled() {
+    if exact_dispatch_enabled() && trace_enabled() {
         let reason = if exact_disabled() {
             "asd_disabled"
         } else {
@@ -171,7 +185,7 @@ pub(super) fn trace_current_selection() {
 }
 
 pub(super) fn trace_current_submission(backend: &str) {
-    if real_dispatch_validation_enabled() && trace_enabled() {
+    if exact_dispatch_enabled() && trace_enabled() {
         eprintln!(
             "[candle grouped-conv2d] submitted_backend={} launch_submission=success asd_policy=none asd_decision=none asd_state=none",
             backend

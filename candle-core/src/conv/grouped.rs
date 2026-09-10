@@ -306,7 +306,7 @@ impl CustomOp2 for GroupedConv2D {
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
         #[cfg(feature = "cuda")]
-        if super::grouped_conv2d_asd::real_dispatch_validation_enabled() {
+        if super::grouped_conv2d_asd::exact_dispatch_enabled() {
             if let Some(out) = super::grouped_conv2d_asd::try_launch_exact(
                 input,
                 input_l,
