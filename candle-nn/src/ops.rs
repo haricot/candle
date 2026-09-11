@@ -41,6 +41,182 @@ pub fn silu(xs: &Tensor) -> Result<Tensor> {
     xs.silu()
 }
 
+// R4-R1-P1 production activation: exact F32 CUDA Conv2d bias+SiLU epilogue.
+// The ten promoted shapes select this path by default. A kill switch is retained
+// for diagnostics; unsupported devices/dtypes/layouts/backprop always fall back.
+fn conv2d_bias_silu_disabled() -> bool {
+    matches!(
+        std::env::var("CANDLE_CUDA_BIAS_SILU_DISABLE")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
+fn conv2d_bias_silu_trace_enabled() -> bool {
+    matches!(
+        std::env::var("CANDLE_CUDA_BIAS_SILU_TRACE").ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
+fn conv2d_bias_silu_exact_shape(c: usize, h: usize, w: usize) -> bool {
+    matches!(
+        (c, h, w),
+        (48, 128, 96)
+            | (24, 128, 96)
+            | (96, 64, 48)
+            | (48, 64, 48)
+            | (192, 32, 24)
+            | (96, 32, 24)
+            | (384, 16, 12)
+            | (192, 16, 12)
+            | (768, 8, 6)
+            | (384, 8, 6)
+    )
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy, Debug)]
+struct Conv2dBiasSiluF32;
+
+#[cfg(feature = "cuda")]
+impl candle::CustomOp2 for Conv2dBiasSiluF32 {
+    fn name(&self) -> &'static str {
+        "conv2d-bias-silu-f32-r4-r1"
+    }
+
+    fn cpu_fwd(
+        &self,
+        _src: &candle::CpuStorage,
+        _src_l: &candle::Layout,
+        _bias: &candle::CpuStorage,
+        _bias_l: &candle::Layout,
+    ) -> Result<(candle::CpuStorage, candle::Shape)> {
+        candle::bail!("conv2d bias+SiLU CUDA candidate cannot execute on CPU")
+    }
+
+    fn cuda_fwd(
+        &self,
+        src: &candle::CudaStorage,
+        src_l: &candle::Layout,
+        bias: &candle::CudaStorage,
+        bias_l: &candle::Layout,
+    ) -> Result<(candle::CudaStorage, candle::Shape)> {
+        use candle::backend::BackendStorage;
+        use candle::cuda_backend::{cudarc, WrapErr};
+        use cudarc::driver::{LaunchConfig, PushKernelArg};
+
+        if src.device().id() != bias.device().id() {
+            candle::bail!("conv2d bias+SiLU candidate requires one CUDA device")
+        }
+        if src.dtype() != DType::F32 || bias.dtype() != DType::F32 {
+            candle::bail!("conv2d bias+SiLU candidate requires f32")
+        }
+        if !src_l.is_contiguous()
+            || src_l.start_offset() != 0
+            || !bias_l.is_contiguous()
+            || bias_l.start_offset() != 0
+        {
+            candle::bail!("conv2d bias+SiLU candidate requires contiguous zero-offset storage")
+        }
+        let dims = src_l.dims();
+        if dims.len() != 4 || dims[0] != 1 {
+            candle::bail!("conv2d bias+SiLU candidate expects NCHW batch=1, got {dims:?}")
+        }
+        let (channels, height, width) = (dims[1], dims[2], dims[3]);
+        if !conv2d_bias_silu_exact_shape(channels, height, width) {
+            candle::bail!("conv2d bias+SiLU candidate invoked outside exact dispatch domain")
+        }
+        if bias_l.dims() != [channels] {
+            candle::bail!(
+                "conv2d bias+SiLU candidate bias mismatch: src={dims:?} bias={:?}",
+                bias_l.dims()
+            )
+        }
+
+        let total = dims.iter().product::<usize>();
+        let dev = src.device().clone();
+        let src = src.as_cuda_slice::<f32>()?;
+        let bias = bias.as_cuda_slice::<f32>()?;
+        let out = unsafe { dev.alloc::<f32>(total)? };
+        let func = dev.get_or_load_func(
+            "conv2d_bias_silu_f32",
+            &candle::cuda_backend::kernels::BINARY,
+        )?;
+        let cfg = LaunchConfig::for_num_elems(total as u32);
+        let total_u64 = total as u64;
+        let channels_u64 = channels as u64;
+        let spatial_u64 = (height * width) as u64;
+        let mut builder = func.builder();
+        builder.arg(&total_u64);
+        builder.arg(&channels_u64);
+        builder.arg(&spatial_u64);
+        builder.arg(src);
+        builder.arg(bias);
+        builder.arg(&out);
+        unsafe { builder.launch(cfg) }.w()?;
+        Ok((
+            candle::CudaStorage::wrap_cuda_slice(out, dev),
+            candle::Shape::from((1, channels, height, width)),
+        ))
+    }
+}
+
+/// Applies a channel bias followed by SiLU to an NCHW Conv2d output.
+///
+/// R4-R1-P1 promotes the exact CUDA path for the ten RTMPose shapes that
+/// passed the micro and E2E promotion frontier. Every other case uses the ordinary Candle `broadcast_add(...).silu()`
+/// path. Backprop-tracked tensors always fall back.
+pub fn conv2d_bias_silu(xs: &Tensor, bias: &Tensor) -> Result<Tensor> {
+    let (_, channels, height, width) = xs.dims4()?;
+    let bias_channels = bias.dims1()?;
+    if bias_channels != channels {
+        candle::bail!(
+            "conv2d bias+SiLU channel mismatch: output={:?} bias={:?}",
+            xs.dims(),
+            bias.dims()
+        )
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        let exact_production = !conv2d_bias_silu_disabled()
+            && xs.device().is_cuda()
+            && xs.device().same_device(bias.device())
+            && xs.dtype() == DType::F32
+            && bias.dtype() == DType::F32
+            && !xs.track_op()
+            && !bias.track_op()
+            && xs.is_contiguous()
+            && bias.is_contiguous()
+            && xs.layout().start_offset() == 0
+            && bias.layout().start_offset() == 0
+            && xs.dims()[0] == 1
+            && conv2d_bias_silu_exact_shape(channels, height, width);
+        if exact_production {
+            let out = xs.apply_op2_no_bwd(bias, &Conv2dBiasSiluF32)?;
+            if conv2d_bias_silu_trace_enabled() {
+                eprintln!(
+                    "[candle-bias-silu-r4-r1-p1] dispatch=selected kernel=conv2d_bias_silu_f32 shape=1x{channels}x{height}x{width} elems={}",
+                    out.elem_count()
+                );
+            }
+            return Ok(out);
+        }
+    }
+
+    if conv2d_bias_silu_trace_enabled() {
+        eprintln!(
+            "[candle-bias-silu-r4-r1-p1] dispatch=fallback shape={:?} production_disabled={}",
+            xs.dims(),
+            conv2d_bias_silu_disabled()
+        );
+    }
+    let bias = bias.reshape((1, channels, 1, 1))?;
+    xs.broadcast_add(&bias)?.silu()
+}
+
 pub fn swiglu(xs: &Tensor) -> Result<Tensor> {
     let xs = xs.chunk(2, D::Minus1)?;
     &xs[0].silu()? * &xs[1]

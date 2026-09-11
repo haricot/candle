@@ -193,6 +193,25 @@ impl Conv2d {
         self.bias.as_ref()
     }
 
+    /// Conv2d followed by SiLU, with the promoted exact CUDA bias+SiLU epilogue.
+    ///
+    /// Unsupported cases and the diagnostic kill switch use exactly the ordinary
+    /// Conv2d bias path followed by Tensor::silu. Existing `forward` behavior is unchanged.
+    pub fn forward_silu(&self, x: &Tensor) -> Result<Tensor> {
+        let x = x.conv2d_with_algo(
+            &self.weight,
+            self.config.padding,
+            self.config.stride,
+            self.config.dilation,
+            self.config.groups,
+            self.config.cudnn_fwd_algo,
+        )?;
+        match &self.bias {
+            None => x.silu(),
+            Some(bias) => crate::ops::conv2d_bias_silu(&x, bias),
+        }
+    }
+
     pub fn absorb_bn(&self, bn: &BatchNorm) -> Result<Self> {
         if let Some((w_bn, b_bn)) = bn.weight_and_bias() {
             let std_ = w_bn.div(&((bn.running_var() + bn.eps())?.sqrt()?))?;
