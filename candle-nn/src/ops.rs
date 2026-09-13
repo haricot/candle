@@ -217,6 +217,336 @@ pub fn conv2d_bias_silu(xs: &Tensor, bias: &Tensor) -> Result<Tensor> {
     xs.broadcast_add(&bias)?.silu()
 }
 
+// v0.3.19-r2c production C3: exact RTMPose DW5x5 + bias + SiLU fusion.
+//
+// This retains the exact NVRTC kernel path measured by r2b. The four promoted
+// F32 CUDA signatures select by default; a diagnostic kill switch restores the
+// pre-C3 production path (DW5x5 producer followed by the C2 bias+SiLU epilogue).
+fn dw5x5_bias_silu_disabled() -> bool {
+    matches!(
+        std::env::var("CANDLE_CUDA_DW5X5_BIAS_SILU_DISABLE")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
+fn dw5x5_bias_silu_trace_enabled() -> bool {
+    matches!(
+        std::env::var("CANDLE_CUDA_DW5X5_BIAS_SILU_TRACE")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
+fn dw5x5_bias_silu_exact_shape(c: usize, h: usize, w: usize) -> bool {
+    matches!(
+        (c, h, w),
+        (48, 64, 48) | (96, 32, 24) | (192, 16, 12) | (384, 8, 6)
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn dw5x5_bias_silu_device_is_sm61(input: &Tensor) -> bool {
+    use candle::backend::BackendStorage;
+    use candle::cuda_backend::cudarc::driver::{result, sys};
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashMap<candle::cuda_backend::DeviceId, bool>>> = OnceLock::new();
+    let (storage, _) = input.storage_and_layout();
+    let candle::Storage::Cuda(storage) = &*storage else {
+        return false;
+    };
+    let dev = storage.device();
+    let key = dev.id();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().unwrap();
+    if let Some(value) = cache.get(&key) {
+        return *value;
+    }
+    let cu_device = dev.cuda_stream().context().cu_device();
+    let major = unsafe {
+        result::device::get_attribute(
+            cu_device,
+            sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+        )
+    };
+    let minor = unsafe {
+        result::device::get_attribute(
+            cu_device,
+            sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+        )
+    };
+    let is_sm61 = matches!((major, minor), (Ok(6), Ok(1)));
+    cache.insert(key, is_sm61);
+    is_sm61
+}
+
+#[cfg(feature = "cuda")]
+const DW5X5_BIAS_SILU_CUDA_MODULE: &str = "candle_dw5x5_bias_silu_v0319_r2c";
+#[cfg(feature = "cuda")]
+const DW5X5_BIAS_SILU_FN: &str = "flow_c3_rtmpose_dw5x5_bias_silu_f32";
+
+#[cfg(feature = "cuda")]
+const DW5X5_BIAS_SILU_CUDA: &str = r#"extern "C" __global__ void flow_c3_rtmpose_dw5x5_bias_silu_f32(
+    const unsigned long long channels,
+    const unsigned long long height,
+    const unsigned long long width,
+    const float *src,
+    const float *weight,
+    const float *bias,
+    float *dst
+) {
+    constexpr int BX = 16;
+    constexpr int BY = 8;
+    constexpr int R = 2;
+    constexpr int TW = BX + 2 * R;
+    constexpr int TH = BY + 2 * R;
+    __shared__ float tile[TH * TW];
+    __shared__ float filter[25];
+
+    const int tx = (int)threadIdx.x;
+    const int ty = (int)threadIdx.y;
+    const int tid = ty * BX + tx;
+    const unsigned long long channel = (unsigned long long)blockIdx.z;
+    if (channel >= channels) return;
+    const int base_y = (int)blockIdx.y * BY;
+    const int base_x = (int)blockIdx.x * BX;
+
+    for (int i = tid; i < TH * TW; i += BX * BY) {
+        const int ly = i / TW;
+        const int lx = i - ly * TW;
+        const int iy = base_y + ly - R;
+        const int ix = base_x + lx - R;
+        float value = 0.0f;
+        if ((unsigned)iy < (unsigned)height && (unsigned)ix < (unsigned)width) {
+            const unsigned long long src_i =
+                (channel * height + (unsigned long long)iy) * width +
+                (unsigned long long)ix;
+            value = __ldg(src + src_i);
+        }
+        tile[i] = value;
+    }
+    if (tid < 25) {
+        filter[tid] = __ldg(weight + channel * 25ull + (unsigned long long)tid);
+    }
+    __syncthreads();
+
+    const int oy = base_y + ty;
+    const int ox = base_x + tx;
+    if ((unsigned)oy >= (unsigned)height || (unsigned)ox >= (unsigned)width) return;
+
+    float acc = 0.0f;
+#pragma unroll
+    for (int ky = 0; ky < 5; ++ky) {
+#pragma unroll
+        for (int kx = 0; kx < 5; ++kx) {
+            acc += tile[(ty + ky) * TW + tx + kx] * filter[ky * 5 + kx];
+        }
+    }
+    const float x = acc + __ldg(bias + channel);
+    const unsigned long long dst_i =
+        (channel * height + (unsigned long long)oy) * width +
+        (unsigned long long)ox;
+    dst[dst_i] = x / (1.0f + expf(-x));
+}"#;
+
+#[cfg(feature = "cuda")]
+static DW5X5_BIAS_SILU_PTX: std::sync::LazyLock<std::sync::Arc<String>> =
+    std::sync::LazyLock::new(|| {
+        let ptx = candle::cuda_backend::cudarc::nvrtc::compile_ptx(DW5X5_BIAS_SILU_CUDA)
+            .expect("v0.3.19-r2c C3 DW5x5+Bias+SiLU NVRTC compilation failed");
+        std::sync::Arc::new(ptx.to_src())
+    });
+
+#[cfg(feature = "cuda")]
+#[derive(Clone)]
+struct Dw5x5BiasSiluF32 {
+    ptx: std::sync::Arc<String>,
+}
+
+#[cfg(feature = "cuda")]
+fn validate_dw5x5_bias_silu_cuda(
+    input: &candle::CudaStorage,
+    input_l: &candle::Layout,
+    weight: &candle::CudaStorage,
+    weight_l: &candle::Layout,
+    bias: &candle::CudaStorage,
+    bias_l: &candle::Layout,
+) -> Result<(usize, usize, usize)> {
+    use candle::backend::BackendStorage;
+
+    if input.device().id() != weight.device().id() || input.device().id() != bias.device().id() {
+        candle::bail!("C3 DW5x5+Bias+SiLU requires one CUDA device")
+    }
+    if input.dtype() != DType::F32 || weight.dtype() != DType::F32 || bias.dtype() != DType::F32 {
+        candle::bail!("C3 DW5x5+Bias+SiLU requires f32")
+    }
+    if !input_l.is_contiguous()
+        || input_l.start_offset() != 0
+        || !weight_l.is_contiguous()
+        || weight_l.start_offset() != 0
+        || !bias_l.is_contiguous()
+        || bias_l.start_offset() != 0
+    {
+        candle::bail!("C3 DW5x5+Bias+SiLU requires contiguous zero-offset storage")
+    }
+    let dims = input_l.dims();
+    if dims.len() != 4 || dims[0] != 1 {
+        candle::bail!("C3 DW5x5+Bias+SiLU expects NCHW batch=1, got {dims:?}")
+    }
+    let (channels, height, width) = (dims[1], dims[2], dims[3]);
+    if weight_l.dims() != [channels, 1, 5, 5] || bias_l.dims() != [channels] {
+        candle::bail!(
+            "C3 DW5x5+Bias+SiLU weight/bias mismatch input={dims:?} weight={:?} bias={:?}",
+            weight_l.dims(),
+            bias_l.dims()
+        )
+    }
+    if !dw5x5_bias_silu_exact_shape(channels, height, width) {
+        candle::bail!(
+            "C3 DW5x5+Bias+SiLU outside exact four-shape frontier c={channels} h={height} w={width}"
+        )
+    }
+    Ok((channels, height, width))
+}
+
+#[cfg(feature = "cuda")]
+impl candle::CustomOp3 for Dw5x5BiasSiluF32 {
+    fn name(&self) -> &'static str {
+        "candle-dw5x5-bias-silu-f32-v0319-r2c"
+    }
+
+    fn cpu_fwd(
+        &self,
+        _input: &candle::CpuStorage,
+        _input_l: &candle::Layout,
+        _weight: &candle::CpuStorage,
+        _weight_l: &candle::Layout,
+        _bias: &candle::CpuStorage,
+        _bias_l: &candle::Layout,
+    ) -> Result<(candle::CpuStorage, candle::Shape)> {
+        candle::bail!("C3 DW5x5+Bias+SiLU is CUDA-only")
+    }
+
+    fn cuda_fwd(
+        &self,
+        input: &candle::CudaStorage,
+        input_l: &candle::Layout,
+        weight: &candle::CudaStorage,
+        weight_l: &candle::Layout,
+        bias: &candle::CudaStorage,
+        bias_l: &candle::Layout,
+    ) -> Result<(candle::CudaStorage, candle::Shape)> {
+        use candle::backend::BackendStorage;
+        use candle::cuda_backend::cudarc::driver::{LaunchConfig, PushKernelArg};
+        use candle::cuda_backend::WrapErr;
+
+        let (channels, height, width) =
+            validate_dw5x5_bias_silu_cuda(input, input_l, weight, weight_l, bias, bias_l)?;
+        let dev = input.device().clone();
+        let src = input.as_cuda_slice::<f32>()?;
+        let wgt = weight.as_cuda_slice::<f32>()?;
+        let bs = bias.as_cuda_slice::<f32>()?;
+        let out = unsafe { dev.alloc::<f32>(channels * height * width)? };
+        let func = dev.get_or_load_custom_func(
+            DW5X5_BIAS_SILU_FN,
+            DW5X5_BIAS_SILU_CUDA_MODULE,
+            self.ptx.as_str(),
+        )?;
+        let cfg = LaunchConfig {
+            grid_dim: (
+                width.div_ceil(16) as u32,
+                height.div_ceil(8) as u32,
+                channels as u32,
+            ),
+            block_dim: (16, 8, 1),
+            shared_mem_bytes: 0,
+        };
+        let c = channels as u64;
+        let h = height as u64;
+        let w = width as u64;
+        let mut builder = func.builder();
+        builder.arg(&c);
+        builder.arg(&h);
+        builder.arg(&w);
+        builder.arg(src);
+        builder.arg(wgt);
+        builder.arg(bs);
+        builder.arg(&out);
+        unsafe { builder.launch(cfg) }.w()?;
+        Ok((
+            candle::CudaStorage::wrap_cuda_slice(out, dev),
+            candle::Shape::from((1, channels, height, width)),
+        ))
+    }
+}
+
+/// Tries the promoted C3 exact DW5x5 + bias + SiLU CUDA fusion.
+///
+/// `None` means the caller must execute the pre-C3 production path. This
+/// includes CPU, unsupported dtype/layout/shape, backprop, and the diagnostic
+/// kill switch. The function never broadens the four-shape sm61 evidence domain.
+pub fn dw5x5_bias_silu_exact(
+    input: &Tensor,
+    weight: &Tensor,
+    bias: &Tensor,
+) -> Result<Option<Tensor>> {
+    let dims = input.dims();
+    let weight_dims = weight.dims();
+    let bias_dims = bias.dims();
+
+    #[cfg(feature = "cuda")]
+    {
+        let exact = !dw5x5_bias_silu_disabled()
+            && input.device().is_cuda()
+            && dw5x5_bias_silu_device_is_sm61(input)
+            && input.device().same_device(weight.device())
+            && input.device().same_device(bias.device())
+            && input.dtype() == DType::F32
+            && weight.dtype() == DType::F32
+            && bias.dtype() == DType::F32
+            && !input.track_op()
+            && !weight.track_op()
+            && !bias.track_op()
+            && input.is_contiguous()
+            && weight.is_contiguous()
+            && bias.is_contiguous()
+            && input.layout().start_offset() == 0
+            && weight.layout().start_offset() == 0
+            && bias.layout().start_offset() == 0
+            && dims.len() == 4
+            && dims[0] == 1
+            && dw5x5_bias_silu_exact_shape(dims[1], dims[2], dims[3])
+            && weight_dims == [dims[1], 1, 5, 5]
+            && bias_dims == [dims[1]];
+        if exact {
+            let op = Dw5x5BiasSiluF32 {
+                ptx: DW5X5_BIAS_SILU_PTX.clone(),
+            };
+            let out = input.apply_op3_no_bwd(weight, bias, &op)?;
+            if dw5x5_bias_silu_trace_enabled() {
+                eprintln!(
+                    "[candle-dw5x5-bias-silu-v0319-r2c] dispatch=selected kernel={DW5X5_BIAS_SILU_FN} shape={:?} elems={}",
+                    out.dims(),
+                    out.elem_count()
+                );
+            }
+            return Ok(Some(out));
+        }
+    }
+
+    if dw5x5_bias_silu_trace_enabled() {
+        eprintln!(
+            "[candle-dw5x5-bias-silu-v0319-r2c] dispatch=fallback shape={dims:?} weight={weight_dims:?} bias={bias_dims:?} production_disabled={}",
+            dw5x5_bias_silu_disabled()
+        );
+    }
+    Ok(None)
+}
+
 pub fn swiglu(xs: &Tensor) -> Result<Tensor> {
     let xs = xs.chunk(2, D::Minus1)?;
     &xs[0].silu()? * &xs[1]
