@@ -1203,8 +1203,7 @@ mod test {
                         e4m3fn_to_f32_test(scales[row * blocks_per_row + block]) * global_scale;
                     let p = &packed[row * packed_row_bytes + block * 8
                         ..row * packed_row_bytes + block * 8 + 8];
-                    for i in 0..8 {
-                        let byte = p[i];
+                    for (i, &byte) in p.iter().enumerate() {
                         let w0 = E2M1[(byte & 0x0f) as usize] * scale;
                         let w1 = E2M1[(byte >> 4) as usize] * scale;
                         let col = block * 16 + 2 * i;
@@ -1781,7 +1780,7 @@ mod test {
             builder.arg(&out);
             barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(cfg) }.w()?;
-            dev.clone_dtoh(&out.as_view()).map_err(Into::into)
+            dev.clone_dtoh(&out.as_view())
         };
 
         for _ in 0..3 {

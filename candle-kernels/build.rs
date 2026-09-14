@@ -17,6 +17,7 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");
     println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_BF16");
+    println!("cargo::rerun-if-env-changed=CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID");
     println!("cargo::rerun-if-env-changed=CANDLE_ASD_EXACT_POLICY");
     println!("cargo::rerun-if-env-changed=CANDLE_ASD_VALIDATION");
     println!("cargo::rerun-if-env-changed=CANDLE_ASD_TARGET_GPU_UUID");
@@ -29,6 +30,16 @@ fn main() -> Result<()> {
     let legacy_fp8 = compute_cap < 89 && env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let sm61_exact_grouped_evidence_uuid =
+        env::var("CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID").ok();
+    std::fs::write(
+        out_dir.join("sm61_exact_grouped_scope.rs"),
+        format!(
+            "pub const TARGET_SCOPE: &str = \"device\";\npub const EVIDENCE_GPU_UUID: Option<&str> = {};\n",
+            sm61_exact_grouped_evidence_uuid.as_deref().map(|v| format!("Some({v:?})")).unwrap_or_else(|| "None".to_owned())
+        ),
+    )
+    .expect("failed to write SM61 exact-grouped scope");
     std::fs::write(
         out_dir.join("cuda_build_info.rs"),
         format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
@@ -77,6 +88,13 @@ fn main() -> Result<()> {
             "src/sort.cu",
             "src/ternary.cu",
             "src/unary.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k00.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k01.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k02.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k03.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k04.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k05.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k06.cu",
         ])
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")

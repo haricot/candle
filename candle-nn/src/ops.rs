@@ -60,6 +60,7 @@ fn conv2d_bias_silu_trace_enabled() -> bool {
     )
 }
 
+#[cfg(feature = "cuda")]
 fn conv2d_bias_silu_exact_shape(c: usize, h: usize, w: usize) -> bool {
     matches!(
         (c, h, w),
@@ -170,6 +171,8 @@ impl candle::CustomOp2 for Conv2dBiasSiluF32 {
 /// path. Backprop-tracked tensors always fall back.
 pub fn conv2d_bias_silu(xs: &Tensor, bias: &Tensor) -> Result<Tensor> {
     let (_, channels, height, width) = xs.dims4()?;
+    #[cfg(not(feature = "cuda"))]
+    let _ = (height, width);
     let bias_channels = bias.dims1()?;
     if bias_channels != channels {
         candle::bail!(
@@ -240,6 +243,7 @@ fn dw5x5_bias_silu_trace_enabled() -> bool {
     )
 }
 
+#[cfg(feature = "cuda")]
 fn dw5x5_bias_silu_exact_shape(c: usize, h: usize, w: usize) -> bool {
     matches!(
         (c, h, w),

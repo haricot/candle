@@ -70,6 +70,12 @@ struct TimingStats {
     p90_us: f64,
 }
 
+struct MeasureConfig {
+    warmup: usize,
+    iters: usize,
+    inner: usize,
+}
+
 fn parse_count(flag: &str, default: usize) -> usize {
     let args = std::env::args().collect::<Vec<_>>();
     args.windows(2)
@@ -171,24 +177,22 @@ fn measure(
     kernel: &Tensor,
     groups: usize,
     device: &Device,
-    warmup: usize,
-    iters: usize,
-    inner: usize,
+    config: &MeasureConfig,
 ) -> Result<TimingStats> {
     let _guard = EnvGuard::new(mode, false);
-    for _ in 0..warmup {
-        let outputs = batched_launches(x, kernel, groups, inner)?;
+    for _ in 0..config.warmup {
+        let outputs = batched_launches(x, kernel, groups, config.inner)?;
         device.synchronize()?;
         std::hint::black_box(outputs);
     }
 
-    let mut samples = Vec::with_capacity(iters);
-    for _ in 0..iters {
+    let mut samples = Vec::with_capacity(config.iters);
+    for _ in 0..config.iters {
         device.synchronize()?;
         let start = Instant::now();
-        let outputs = batched_launches(x, kernel, groups, inner)?;
+        let outputs = batched_launches(x, kernel, groups, config.inner)?;
         device.synchronize()?;
-        samples.push(start.elapsed().as_secs_f64() * 1_000_000.0 / inner as f64);
+        samples.push(start.elapsed().as_secs_f64() * 1_000_000.0 / config.inner as f64);
         std::hint::black_box(outputs);
     }
     samples.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
@@ -241,6 +245,12 @@ fn main() -> Result<()> {
         candle_core::bail!("invalid validation thresholds")
     }
 
+    let measure_config = MeasureConfig {
+        warmup,
+        iters,
+        inner,
+    };
+
     let device = Device::new_cuda(0)?;
     let (x, kernel) = tensors(2, &device)?;
 
@@ -282,39 +292,12 @@ fn main() -> Result<()> {
     println!("DOMAIN_MISS groups=4 synchronized=true expected_backend=current");
 
     println!("\n=== INTEGRATED A/B/A ===");
-    let current_a = measure(Mode::Current, &x, &kernel, 2, &device, warmup, iters, inner)?;
-    let asd_b = measure(
-        Mode::AsdCandidate,
-        &x,
-        &kernel,
-        2,
-        &device,
-        warmup,
-        iters,
-        inner,
-    )?;
-    let current_a2 = measure(Mode::Current, &x, &kernel, 2, &device, warmup, iters, inner)?;
-    let asd_a = measure(
-        Mode::AsdCandidate,
-        &x,
-        &kernel,
-        2,
-        &device,
-        warmup,
-        iters,
-        inner,
-    )?;
-    let current_b = measure(Mode::Current, &x, &kernel, 2, &device, warmup, iters, inner)?;
-    let asd_a2 = measure(
-        Mode::AsdCandidate,
-        &x,
-        &kernel,
-        2,
-        &device,
-        warmup,
-        iters,
-        inner,
-    )?;
+    let current_a = measure(Mode::Current, &x, &kernel, 2, &device, &measure_config)?;
+    let asd_b = measure(Mode::AsdCandidate, &x, &kernel, 2, &device, &measure_config)?;
+    let current_a2 = measure(Mode::Current, &x, &kernel, 2, &device, &measure_config)?;
+    let asd_a = measure(Mode::AsdCandidate, &x, &kernel, 2, &device, &measure_config)?;
+    let current_b = measure(Mode::Current, &x, &kernel, 2, &device, &measure_config)?;
+    let asd_a2 = measure(Mode::AsdCandidate, &x, &kernel, 2, &device, &measure_config)?;
 
     print_phase("current_a", Mode::Current, current_a);
     print_phase("asd_b", Mode::AsdCandidate, asd_b);

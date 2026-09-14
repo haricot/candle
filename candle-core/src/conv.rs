@@ -15,6 +15,8 @@ mod grouped_transpose_dispatch;
 #[cfg(feature = "metal")]
 mod grouped_transpose_metal;
 mod grouped_transpose_native;
+#[cfg(feature = "cuda")]
+mod sm61_exact_grouped;
 use grouped::{GroupedConv1D, GroupedConv2D};
 use grouped_transpose_native::{NativeGroupedConvTranspose1D, NativeGroupedConvTranspose2D};
 

@@ -206,6 +206,12 @@ impl CustomOp2 for GroupedConv1D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        #[cfg(feature = "cuda")]
+        if let Some(out) =
+            super::sm61_exact_grouped::try_launch_conv1d(input, input_l, kernel, kernel_l, &self.0)?
+        {
+            return Ok((out, Shape::from(self.0.out_dims())));
+        }
         let out = grouped_conv1d_fallback(input, input_l, kernel, kernel_l, &self.0)?;
         Ok((out, Shape::from(self.0.out_dims())))
     }

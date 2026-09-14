@@ -40,6 +40,13 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        #[cfg(feature = "cuda")]
+        if let Some(out) =
+            super::sm61_exact_grouped::try_launch_ct1d(input, input_l, kernel, kernel_l, &self.0)?
+        {
+            return Ok((out, Shape::from(self.0.out_dims())));
+        }
+
         #[cfg(feature = "cudnn")]
         let decision = super::grouped_transpose_dispatch::decision_1d(
             &self.0,
@@ -155,6 +162,13 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        #[cfg(feature = "cuda")]
+        if let Some(out) =
+            super::sm61_exact_grouped::try_launch_ct2d(input, input_l, kernel, kernel_l, &self.0)?
+        {
+            return Ok((out, Shape::from(self.0.out_dims())));
+        }
+
         #[cfg(feature = "cudnn")]
         let decision = super::grouped_transpose_dispatch::decision_2d(
             &self.0,

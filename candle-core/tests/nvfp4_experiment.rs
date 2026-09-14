@@ -112,7 +112,7 @@ fn nvfp4_quantize_experimental(xs: &[f32]) -> Nvfp4Reference {
     let mut packed = vec![0u8; xs.len() / 2];
     let mut scales_e4m3 = vec![0u8; xs.len() / NVFP4_BLOCK];
 
-    for (block_idx, block) in xs.chunks_exact(NVFP4_BLOCK).enumerate() {
+    for (block_idx, block) in xs.as_chunks::<NVFP4_BLOCK>().0.iter().enumerate() {
         let block_amax = block.iter().fold(0f32, |m, &x| m.max(x.abs()));
         let desired_scale = if block_amax == 0.0 {
             0.0
