@@ -1,0 +1,40 @@
+{
+  "schema": "flow.candle.asd.conv1d-candidates.v0.1",
+  "status": "candidate_validation_only",
+  "declared_sm": 61,
+  "declared_cudnn": "9.1.0.2",
+  "evidence_scope": "atomic_bundle_only",
+  "individual_route_speedups_validated": false,
+  "rules": [
+    {
+      "id": "conv1d-f32-sm61-512-k1-l16-candidate",
+      "op": "conv1d",
+      "input": [1, 512, 16],
+      "weight": [512, 512, 1],
+      "padding": 0, "stride": 1, "dilation": 1, "groups": 1,
+      "dtype": "F32", "input_contiguous": true, "weight_contiguous": true,
+      "bias_present": true, "bias_contiguous": true,
+      "route": "k1_gemm"
+    },
+    {
+      "id": "conv1d-f32-sm61-512-k1-l32-candidate",
+      "op": "conv1d",
+      "input": [1, 512, 32],
+      "weight": [512, 512, 1],
+      "padding": 0, "stride": 1, "dilation": 1, "groups": 1,
+      "dtype": "F32", "input_contiguous": true, "weight_contiguous": true,
+      "bias_present": true, "bias_contiguous": true,
+      "route": "k1_gemm"
+    },
+    {
+      "id": "conv1d-f32-sm61-512-k3-l32-candidate",
+      "op": "conv1d",
+      "input": [1, 512, 32],
+      "weight": [512, 512, 3],
+      "padding": 1, "stride": 1, "dilation": 1, "groups": 1,
+      "dtype": "F32", "input_contiguous": true, "weight_contiguous": true,
+      "bias_present": true, "bias_contiguous": true,
+      "route": "cudnn_direct"
+    }
+  ]
+}
