@@ -134,10 +134,23 @@ pub fn with_candidate_profile<R>(profile: &AsdCandidateProfile, run: impl FnOnce
     run()
 }
 
+#[cfg(feature = "cuda")]
+fn runtime_sm61(x: &Tensor) -> bool {
+    match x.device() {
+        Device::Cuda(device) =>
+            device.cuda_stream().context().compute_capability().ok() == Some((6, 1)),
+        _ => false,
+    }
+}
+
+#[cfg(not(feature = "cuda"))]
+fn runtime_sm61(_x: &Tensor) -> bool { false }
+
 fn applicable(rule: &Rule, conv: &Conv1d, x: &Tensor) -> bool {
     let Some(bias) = conv.bias() else { return false; };
     let cfg = conv.config();
     matches!(x.device(), Device::Cuda(_))
+        && runtime_sm61(x)
         && x.device().same_device(conv.weight().device())
         && x.device().same_device(bias.device())
         && x.dtype() == DType::F32 && conv.weight().dtype() == DType::F32
@@ -183,7 +196,20 @@ pub(crate) fn maybe_forward(conv: &Conv1d, x: &Tensor) -> Option<Result<Tensor>>
     ACTIVE.with(|slot| {
         let profile = slot.borrow();
         let p = profile.as_ref()?;
-        let rule = p.rules.iter().find(|r| applicable(r, conv, x))?;
+        // The same operation-key matcher selects grouped and ungrouped routes.
+        let input: [usize; 3] = x.dims().try_into().ok()?;
+        let weight: [usize; 3] = conv.weight().dims().try_into().ok()?;
+        let cfg = conv.config();
+        let key = candle::asd_registry::OperationKey::conv1d(
+            input, weight, cfg.padding, cfg.stride, cfg.dilation, cfg.groups,
+        );
+        let rule = candle::asd_registry::first_exact(&key, &p.rules, |rule| {
+            Some(candle::asd_registry::OperationKey::conv1d(
+                rule.input, rule.weight, rule.padding, rule.stride,
+                rule.dilation, rule.groups,
+            ))
+        })?;
+        if !applicable(rule, conv, x) { return None; }
         let result = match rule.route {
             Route::K1Gemm => run_k1_gemm(conv, x),
             Route::CudnnDirect => run_cudnn_direct(conv, x),

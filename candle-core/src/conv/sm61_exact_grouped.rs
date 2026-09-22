@@ -189,18 +189,13 @@ fn env_truthy(name: &str) -> bool {
     )
 }
 
-fn scope_matches() -> bool {
-    if candle_kernels::CUDA_BUILD_COMPUTE_CAP != 61 {
-        return false;
-    }
-    let Some(expected) = candle_kernels::sm61_exact_grouped_scope::EVIDENCE_GPU_UUID else {
-        return false;
-    };
-    std::env::var("CANDLE_ASD_TARGET_GPU_UUID").ok().as_deref() == Some(expected)
-}
-
-fn enabled() -> bool {
-    scope_matches() && !env_truthy("CANDLE_SM61_EXACT_GROUPED_DISABLE")
+// An UUID never selects a kernel. Existing device-specific performance evidence
+// does not authorize automatic cross-device promotion: require explicit opt-in.
+fn enabled(input: &CudaStorage) -> bool {
+    candle_kernels::CUDA_BUILD_COMPUTE_CAP == 61
+        && input.device.cuda_stream().context().compute_capability().ok() == Some((6, 1))
+        && env_truthy("CANDLE_ASD_SM61_EXACT_GROUPED_ENABLE")
+        && !env_truthy("CANDLE_SM61_EXACT_GROUPED_DISABLE")
 }
 
 fn trace_enabled() -> bool {
@@ -224,57 +219,49 @@ fn exact_call_eligible(
         && input.device.id() == kernel.device.id()
 }
 
+fn decision_key(d: &ExactDecision) -> Option<crate::asd_registry::OperationKey> {
+    use crate::asd_registry::OperationKey;
+    match (d.family, d.dim) {
+        ("conv", 1) => Some(OperationKey::conv1d(
+            [d.batch, d.c_in, d.s0], [d.c_out, d.c_in.checked_div(d.groups)?, d.kernel],
+            d.padding, d.stride, d.dilation, d.groups,
+        )),
+        ("conv_transpose", 1) => Some(OperationKey::conv_transpose1d(
+            [d.batch, d.c_in, d.s0], [d.c_in, d.c_out.checked_div(d.groups)?, d.kernel],
+            d.padding, d.output_padding, d.stride, d.dilation, d.groups,
+        )),
+        ("conv_transpose", 2) => Some(OperationKey::conv_transpose2d(
+            [d.batch, d.c_in, d.s0, d.s1],
+            [d.c_in, d.c_out.checked_div(d.groups)?, d.kernel, d.kernel],
+            d.padding, d.output_padding, d.stride, d.dilation, d.groups,
+        )),
+        _ => None,
+    }
+}
+
 fn find_conv1d(p: &ParamsConv1D) -> Option<&'static ExactDecision> {
-    DECISIONS.iter().find(|d| {
-        d.family == "conv"
-            && d.dim == 1
-            && d.batch == p.b_size
-            && d.c_in == p.c_in
-            && d.c_out == p.c_out
-            && d.s0 == p.l_in
-            && d.kernel == p.k_size
-            && d.stride == p.stride
-            && d.dilation == p.dilation
-            && d.padding == p.padding
-            && d.output_padding == 0
-            && d.groups == p.groups
-    })
+    let key = crate::asd_registry::OperationKey::conv1d(
+        [p.b_size, p.c_in, p.l_in], [p.c_out, p.c_in.checked_div(p.groups)?, p.k_size],
+        p.padding, p.stride, p.dilation, p.groups,
+    );
+    crate::asd_registry::first_exact(&key, DECISIONS, decision_key)
 }
 
 fn find_ct1d(p: &ParamsConvTranspose1D) -> Option<&'static ExactDecision> {
-    DECISIONS.iter().find(|d| {
-        d.family == "conv_transpose"
-            && d.dim == 1
-            && d.batch == p.b_size
-            && d.c_in == p.c_in
-            && d.c_out == p.c_out
-            && d.s0 == p.l_in
-            && d.kernel == p.k_size
-            && d.stride == p.stride
-            && d.dilation == p.dilation
-            && d.padding == p.padding
-            && d.output_padding == p.output_padding
-            && d.groups == p.groups
-    })
+    let key = crate::asd_registry::OperationKey::conv_transpose1d(
+        [p.b_size, p.c_in, p.l_in], [p.c_in, p.c_out.checked_div(p.groups)?, p.k_size],
+        p.padding, p.output_padding, p.stride, p.dilation, p.groups,
+    );
+    crate::asd_registry::first_exact(&key, DECISIONS, decision_key)
 }
 
 fn find_ct2d(p: &ParamsConvTranspose2D) -> Option<&'static ExactDecision> {
-    DECISIONS.iter().find(|d| {
-        d.family == "conv_transpose"
-            && d.dim == 2
-            && d.batch == p.b_size
-            && d.c_in == p.c_in
-            && d.c_out == p.c_out
-            && d.s0 == p.i_h
-            && d.s1 == p.i_w
-            && d.kernel == p.k_h
-            && p.k_h == p.k_w
-            && d.stride == p.stride
-            && d.dilation == p.dilation
-            && d.padding == p.padding
-            && d.output_padding == p.output_padding
-            && d.groups == p.groups
-    })
+    let key = crate::asd_registry::OperationKey::conv_transpose2d(
+        [p.b_size, p.c_in, p.i_h, p.i_w],
+        [p.c_in, p.c_out.checked_div(p.groups)?, p.k_h, p.k_w],
+        p.padding, p.output_padding, p.stride, p.dilation, p.groups,
+    );
+    crate::asd_registry::first_exact(&key, DECISIONS, decision_key)
 }
 
 fn launch_exact(
@@ -307,7 +294,7 @@ fn launch_exact(
     };
     if trace_enabled() {
         eprintln!(
-            "[candle sm61 exact-grouped] geometry={} candidate={} entry={} scope=device submitted_backend=raw_exact",
+            "[candle sm61 exact-grouped] geometry={} candidate={} entry={} status=CANDIDATE_CROSS_DEVICE_NOT_PROMOTED scope=sm61_opt_in submitted_backend=raw_exact",
             decision.geometry_id, decision.candidate_id, decision.entry,
         );
     }
@@ -321,7 +308,7 @@ pub(super) fn try_launch_conv1d(
     kernel_l: &Layout,
     p: &ParamsConv1D,
 ) -> Result<Option<CudaStorage>> {
-    if !enabled() || !exact_call_eligible(input, input_l, kernel, kernel_l) {
+    if !enabled(input) || !exact_call_eligible(input, input_l, kernel, kernel_l) {
         return Ok(None);
     }
     let Some(d) = find_conv1d(p) else {
@@ -337,7 +324,7 @@ pub(super) fn try_launch_ct1d(
     kernel_l: &Layout,
     p: &ParamsConvTranspose1D,
 ) -> Result<Option<CudaStorage>> {
-    if !enabled() || !exact_call_eligible(input, input_l, kernel, kernel_l) {
+    if !enabled(input) || !exact_call_eligible(input, input_l, kernel, kernel_l) {
         return Ok(None);
     }
     let Some(d) = find_ct1d(p) else {
@@ -353,7 +340,7 @@ pub(super) fn try_launch_ct2d(
     kernel_l: &Layout,
     p: &ParamsConvTranspose2D,
 ) -> Result<Option<CudaStorage>> {
-    if !enabled() || !exact_call_eligible(input, input_l, kernel, kernel_l) {
+    if !enabled(input) || !exact_call_eligible(input, input_l, kernel, kernel_l) {
         return Ok(None);
     }
     let Some(d) = find_ct2d(p) else {
