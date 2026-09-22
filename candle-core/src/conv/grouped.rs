@@ -1,3 +1,22 @@
+// Validation-only controls for native grouped Conv1D dispatch. Neither a GPU
+// UUID nor a broad performance assumption participates in backend selection.
+fn grouped_conv1d_flag(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
+fn grouped_conv1d_trace(backend: &str, p: &ParamsConv1D) {
+    if grouped_conv1d_flag("CANDLE_GROUPED_CONV1D_TRACE") {
+        eprintln!(
+            "[candle grouped-conv1d] submitted_backend={} launch_submission=success batch={} c_in={} c_out={} length={} kernel={} padding={} stride={} dilation={} groups={}",
+            backend, p.b_size, p.c_in, p.c_out, p.l_in, p.k_size,
+            p.padding, p.stride, p.dilation, p.groups,
+        );
+    }
+}
+
 use crate::backend::{BackendDevice, BackendStorage};
 use crate::conv::{ParamsConv1D, ParamsConv2D, ParamsConvTranspose1D, ParamsConvTranspose2D};
 use crate::{CpuStorage, CudaStorage, CustomOp2, Layout, MetalStorage, Result, Shape, Tensor};
@@ -206,13 +225,46 @@ impl CustomOp2 for GroupedConv1D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        // The validated raw kernel is exact-domain and explicitly opt-in.
+        // A miss must not prevent the general native grouped cuDNN path.
         #[cfg(feature = "cuda")]
         if let Some(out) =
             super::sm61_exact_grouped::try_launch_conv1d(input, input_l, kernel, kernel_l, &self.0)?
         {
+            grouped_conv1d_trace("raw_exact", &self.0);
             return Ok((out, Shape::from(self.0.out_dims())));
         }
+
+        let require_cudnn = grouped_conv1d_flag("CANDLE_GROUPED_CONV1D_REQUIRE_CUDNN");
+        let disable_cudnn = grouped_conv1d_flag("CANDLE_GROUPED_CONV1D_DISABLE_CUDNN");
+        if require_cudnn && disable_cudnn {
+            crate::bail!("grouped Conv1D cannot require and disable cuDNN simultaneously")
+        }
+
+        #[cfg(feature = "cudnn")]
+        if !disable_cudnn {
+            if kernel_l.is_contiguous() {
+                match crate::cudnn::launch_grouped_conv1d(
+                    input, input_l, kernel, kernel_l, &self.0, self.0.groups,
+                ) {
+                    Ok(out) => {
+                        grouped_conv1d_trace("cudnn", &self.0);
+                        return Ok((out, Shape::from(self.0.out_dims())));
+                    }
+                    Err(err) if require_cudnn => return Err(err),
+                    Err(_) => {}
+                }
+            } else if require_cudnn {
+                crate::bail!("native grouped Conv1D cuDNN requires a contiguous kernel")
+            }
+        }
+        #[cfg(not(feature = "cudnn"))]
+        if require_cudnn {
+            crate::bail!("native grouped Conv1D requires the candle-core cudnn feature")
+        }
+
         let out = grouped_conv1d_fallback(input, input_l, kernel, kernel_l, &self.0)?;
+        grouped_conv1d_trace("grouped_fallback", &self.0);
         Ok((out, Shape::from(self.0.out_dims())))
     }
 

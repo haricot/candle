@@ -273,6 +273,36 @@ pub(crate) fn launch_conv1d<
     params: &crate::conv::ParamsConv1D,
     dev: &crate::cuda_backend::CudaDevice,
 ) -> crate::Result<()> {
+    launch_conv1d_with_groups::<T, Y>(src, src_l, filter, dst, params, dev, 1)
+}
+
+fn launch_conv1d_with_groups<
+    T: DeviceRepr + WithDType + ValidAsZeroBits + cudarc::cudnn::CudnnDataType,
+    Y: cudarc::cudnn::CudnnDataType,
+>(
+    src: &CudaView<T>,
+    src_l: &crate::Layout,
+    filter: &CudaView<T>,
+    dst: &mut CudaSlice<T>,
+    params: &crate::conv::ParamsConv1D,
+    dev: &crate::cuda_backend::CudaDevice,
+    groups: usize,
+) -> crate::Result<()> {
+    if groups == 0 || groups != params.groups || params.c_in % groups != 0
+        || params.c_out % groups != 0
+    {
+        crate::bail!("invalid native grouped Conv1D channel or group configuration")
+    }
+    if groups > i32::MAX as usize {
+        crate::bail!("native grouped Conv1D groups exceed i32::MAX")
+    }
+    for value in [params.b_size, params.c_in, params.c_out, params.l_in,
+                  params.k_size, params.padding, params.stride, params.dilation,
+                  params.l_out()] {
+        if value > i32::MAX as usize {
+            crate::bail!("native grouped Conv1D descriptor dimension exceeds i32::MAX")
+        }
+    }
     use crate::conv::CudnnFwdAlgo as CandleAlgo;
     use cudarc::cudnn::sys::cudnnConvolutionFwdAlgo_t as A;
 
@@ -287,12 +317,15 @@ pub(crate) fn launch_conv1d<
         }
         c
     })?;
-    let conv = cudnn.create_conv2d::<Y>(
+    let mut conv = cudnn.create_conv2d::<Y>(
         /* pad */ [params.padding as i32, 0],
         /* stride */ [params.stride as i32, 1],
         /* dilation */ [params.dilation as i32, 1],
         cudarc::cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
     )?;
+    if groups > 1 {
+        conv.set_group_count(groups as i32)?;
+    }
     // https://docs.nvidia.com/deeplearning/cudnn/backend/latest/api/cudnn-ops-library.html#cudnnsettensornddescriptor
     // > Tensors are restricted to having at least 4 dimensions, and at most CUDNN_DIM_MAX
     // > dimensions (defined in cudnn.h). When working with lower dimensional data, it is
@@ -318,7 +351,7 @@ pub(crate) fn launch_conv1d<
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
         [
             params.c_out as i32,
-            params.c_in as i32,
+            (params.c_in / groups) as i32,
             params.k_size as i32,
             1,
         ],
@@ -361,4 +394,78 @@ pub(crate) fn launch_conv1d<
         )?;
     }
     Ok(())
+}
+
+// Native grouped Conv1D, matching the existing grouped Conv2D cuDNN path.
+// Use cuDNN's 4D representation [N,C,L,1] and filter [Cout,Cin/groups,K,1].
+pub(crate) fn launch_grouped_conv1d(
+    input: &crate::cuda_backend::CudaStorage,
+    input_l: &crate::Layout,
+    kernel: &crate::cuda_backend::CudaStorage,
+    kernel_l: &crate::Layout,
+    params: &crate::conv::ParamsConv1D,
+    groups: usize,
+) -> crate::Result<crate::cuda_backend::CudaStorage> {
+    use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S};
+
+    if !kernel_l.is_contiguous() {
+        crate::bail!("native grouped cuDNN conv1d requires a contiguous kernel")
+    }
+    if convolution_is_disabled(input.device.id()) {
+        crate::bail!("cuDNN convolution is disabled for this CUDA device")
+    }
+    if input.device.id() != kernel.device.id() {
+        crate::bail!("native grouped cuDNN conv1d requires input and kernel on the same device")
+    }
+    let device = input.device.clone();
+    let dst_el = params.c_out * params.l_out() * params.b_size;
+    let slice = match (&input.slice, &kernel.slice) {
+        (S::U8(inp), S::U8(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<u8>(dst_el)? };
+            launch_conv1d_with_groups::<u8, u8>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::U8(out)
+        }
+        (S::BF16(inp), S::BF16(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<half::bf16>(dst_el)? };
+            launch_conv1d_with_groups::<half::bf16, f32>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::BF16(out)
+        }
+        (S::F16(inp), S::F16(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<half::f16>(dst_el)? };
+            launch_conv1d_with_groups::<half::f16, half::f16>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::F16(out)
+        }
+        (S::F32(inp), S::F32(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<f32>(dst_el)? };
+            launch_conv1d_with_groups::<f32, f32>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::F32(out)
+        }
+        (S::F64(inp), S::F64(k)) => {
+            let inp = &inp.slice(input_l.start_offset()..);
+            let k = &k.slice(kernel_l.start_offset()..);
+            let mut out = unsafe { device.alloc::<f64>(dst_el)? };
+            launch_conv1d_with_groups::<f64, f64>(
+                inp, input_l, k, &mut out, params, &device, groups,
+            )?;
+            S::F64(out)
+        }
+        _ => crate::bail!("unsupported or mismatched dtype in native grouped cuDNN conv1d"),
+    };
+    Ok(CudaStorage { slice, device })
 }
