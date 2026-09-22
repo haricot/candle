@@ -225,20 +225,22 @@ impl CustomOp2 for GroupedConv1D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
-        // The validated raw kernel is exact-domain and explicitly opt-in.
-        // A miss must not prevent the general native grouped cuDNN path.
-        #[cfg(feature = "cuda")]
-        if let Some(out) =
-            super::sm61_exact_grouped::try_launch_conv1d(input, input_l, kernel, kernel_l, &self.0)?
-        {
-            grouped_conv1d_trace("raw_exact", &self.0);
-            return Ok((out, Shape::from(self.0.out_dims())));
-        }
-
+        // Backend constraints take precedence over the exact ASD opt-in.
         let require_cudnn = grouped_conv1d_flag("CANDLE_GROUPED_CONV1D_REQUIRE_CUDNN");
         let disable_cudnn = grouped_conv1d_flag("CANDLE_GROUPED_CONV1D_DISABLE_CUDNN");
         if require_cudnn && disable_cudnn {
             crate::bail!("grouped Conv1D cannot require and disable cuDNN simultaneously")
+        }
+
+        // An explicit cuDNN requirement prohibits raw_exact, including exact hits.
+        #[cfg(feature = "cuda")]
+        if !require_cudnn {
+            if let Some(out) = super::sm61_exact_grouped::try_launch_conv1d(
+                input, input_l, kernel, kernel_l, &self.0,
+            )? {
+                grouped_conv1d_trace("raw_exact", &self.0);
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
         }
 
         #[cfg(feature = "cudnn")]

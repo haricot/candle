@@ -40,6 +40,26 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        // Strict cuDNN is an execution constraint, not merely a fallback policy.
+        // Check it before exact ASD or a dispatcher-selected raw route.
+        let require_cudnn =
+            std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some();
+        if require_cudnn {
+            #[cfg(feature = "cudnn")]
+            {
+                if !kernel_l.is_contiguous() {
+                    crate::bail!("strict grouped ConvTranspose1D cuDNN requires contiguous kernel")
+                }
+                let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
+                    input, input_l, kernel, kernel_l, &self.0,
+                )?;
+                eprintln!("CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict=1 dim=1d");
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            #[cfg(not(feature = "cudnn"))]
+            crate::bail!("strict grouped ConvTranspose1D requires cuDNN feature")
+        }
+
         #[cfg(feature = "cuda")]
         if let Some(out) =
             super::sm61_exact_grouped::try_launch_ct1d(input, input_l, kernel, kernel_l, &self.0)?
@@ -162,6 +182,26 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         kernel: &CudaStorage,
         kernel_l: &Layout,
     ) -> Result<(CudaStorage, Shape)> {
+        // Strict cuDNN is an execution constraint, not merely a fallback policy.
+        // Check it before exact ASD or a dispatcher-selected raw route.
+        let require_cudnn =
+            std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some();
+        if require_cudnn {
+            #[cfg(feature = "cudnn")]
+            {
+                if !kernel_l.is_contiguous() {
+                    crate::bail!("strict grouped ConvTranspose2D cuDNN requires contiguous kernel")
+                }
+                let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
+                    input, input_l, kernel, kernel_l, &self.0,
+                )?;
+                eprintln!("CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict=1 dim=2d");
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            #[cfg(not(feature = "cudnn"))]
+            crate::bail!("strict grouped ConvTranspose2D requires cuDNN feature")
+        }
+
         #[cfg(feature = "cuda")]
         if let Some(out) =
             super::sm61_exact_grouped::try_launch_ct2d(input, input_l, kernel, kernel_l, &self.0)?

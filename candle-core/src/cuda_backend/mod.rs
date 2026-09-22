@@ -1968,12 +1968,29 @@ impl BackendStorage for CudaStorage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConv1D,
     ) -> Result<Self> {
+        // The ASD CudnnDirect route must not be reported as cuDNN if a
+        // generic CUDA fallback actually ran. Ordinary Conv1D retains fallback.
+        let strict_direct = params.cudnn_fwd_algo == Some(crate::conv::CudnnFwdAlgo::Direct);
         if !kernel_l.is_contiguous() {
+            if strict_direct {
+                crate::bail!("explicit cuDNN Direct Conv1D needs a contiguous kernel")
+            }
             return self.conv1d_cuda(inp_l, kernel, kernel_l, params);
         }
         let device = self.device().clone();
         if crate::cudnn::convolution_is_disabled(device.id()) {
+            if strict_direct {
+                crate::bail!("explicit cuDNN Direct Conv1D is disabled for this device")
+            }
             return self.conv1d_cuda(inp_l, kernel, kernel_l, params);
+        }
+        // Deterministic negative validation hook, scoped to explicit Direct only.
+        // It cannot make an unvalidated backend look successful.
+        if strict_direct && matches!(
+            std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE").ok().as_deref(),
+            Some("1")
+        ) {
+            crate::bail!("ASD validation: cuDNN Direct deliberately unavailable")
         }
         let l_out = params.l_out();
         let dst_el = params.c_out * l_out * params.b_size;
@@ -2047,6 +2064,7 @@ impl BackendStorage for CudaStorage {
             Ok(slice)
         })() {
             Ok(slice) => slice,
+            Err(err) if strict_direct => return Err(err),
             Err(err) => match cudnn_conv_fallback(&err) {
                 Some(fallback) => {
                     if fallback == CudnnConvFallback::ExecutionFailed

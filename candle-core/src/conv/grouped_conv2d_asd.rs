@@ -69,6 +69,38 @@ fn exact_call(
     }
 }
 
+// NVIDIA's GPU- UUID contains 16 hex octets, optionally separated by dashes.
+// This parser intentionally does not consult environment variables or ordinals.
+fn parse_policy_gpu_uuid(value: &str) -> Option<[u8; 16]> {
+    let hex = value.strip_prefix("GPU-").unwrap_or(value);
+    let compact: String = hex.chars().filter(|c| *c != '-').collect();
+    if compact.len() != 32 || !compact.is_ascii() {
+        return None;
+    }
+    let mut out = [0u8; 16];
+    for (index, slot) in out.iter_mut().enumerate() {
+        *slot = u8::from_str_radix(&compact[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod device_scope_tests {
+    use super::parse_policy_gpu_uuid;
+
+    #[test]
+    fn uuid_accepts_gpu_prefix_and_dashes() {
+        let expected: Vec<u8> = (0..16).collect();
+        assert_eq!(parse_policy_gpu_uuid("GPU-00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap().to_vec(), expected);
+    }
+    #[test]
+    fn uuid_rejects_missing_or_incomplete_identity() {
+        assert!(parse_policy_gpu_uuid("").is_none());
+        assert!(parse_policy_gpu_uuid("GPU-00010203").is_none());
+        assert!(parse_policy_gpu_uuid("GPU-00010203-0405-0607-0809-0a0b0c0d0e0z").is_none());
+    }
+}
+
 fn launch_f32(
     input: &CudaSlice<f32>,
     kernel: &CudaSlice<f32>,
@@ -139,6 +171,31 @@ pub(super) fn try_launch_exact(
     }
     if input.device.id() != kernel.device.id() {
         crate::bail!("exact ASD DW5x5 requires input and kernel on one CUDA device")
+    }
+    // A compiled policy and a declared UUID do not authenticate the CUDA device
+    // on which this process is currently executing. Fail closed before launch.
+    let stream = input.device.cuda_stream();
+    let context = stream.context();
+    let (major, minor) = context.compute_capability()
+        .map_err(|err| crate::Error::msg(format!(
+        "ASD V2: unable to read CUDA compute capability: {err:?}"
+    )))?;
+    if major * 10 + minor != candle_kernels::CUDA_BUILD_COMPUTE_CAP as i32 {
+        crate::bail!("ASD V2 DW5x5 runtime GPU SM does not match build target")
+    }
+    if let Some(expected) = candle_kernels::asd_exact_conv2d::TARGET_GPU_UUID {
+        let expected_bytes = parse_policy_gpu_uuid(expected)
+            .ok_or_else(|| crate::Error::Msg("invalid embedded ASD V2 device UUID".into()))?;
+	let actual_bytes = context.uuid()
+	    .map_err(|err| crate::Error::msg(format!(
+		"ASD V2: unable to read CUDA device UUID: {err:?}"
+	    )))?
+	    .bytes;
+        if !actual_bytes.iter().zip(expected_bytes.iter())
+            .all(|(actual, expected)| *actual as u8 == *expected)
+        {
+            crate::bail!("ASD V2 device-scoped GPU UUID mismatch at runtime")
+        }
     }
     if trace_enabled() {
         eprintln!(

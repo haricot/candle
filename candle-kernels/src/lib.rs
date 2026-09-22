@@ -49,6 +49,12 @@ pub mod asd_exact_conv2d {
     pub const POLICY_EMBEDDED: bool = false;
 
     #[cfg(candle_asd_exact_v2)]
+    pub const TARGET_GPU_UUID: Option<&str> = super::asd_exact::TARGET_GPU_UUID;
+
+    #[cfg(not(candle_asd_exact_v2))]
+    pub const TARGET_GPU_UUID: Option<&str> = None;
+
+    #[cfg(candle_asd_exact_v2)]
     pub const VALIDATION_BUILD: bool = super::asd_exact::VALIDATION_BUILD;
 
     #[cfg(not(candle_asd_exact_v2))]
