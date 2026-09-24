@@ -109,13 +109,16 @@ fn exact_call(
     input_start_offset: usize,
     weight_contiguous: bool,
     weight_start_offset: usize,
-) -> candle_kernels::asd_exact_conv2d::ExactConv2dCall {
-    candle_kernels::asd_exact_conv2d::ExactConv2dCall {
+) -> candle_kernels::asd_exact::ExactOperationCall {
+        op: candle_kernels::asd_exact::ExactOperation::Conv2d,
+        dim: 2,
+    candle_kernels::asd_exact::ExactOperationCall {
         batch: 1,
         c_in: case.c,
         c_out: case.c,
         spatial0: case.h,
         spatial1: case.w,
+        weight_rank: 4,
         weight0: case.c,
         weight1: 1,
         weight2: 5,
@@ -124,6 +127,7 @@ fn exact_call(
         kernel: 5,
         stride: 1,
         padding: 2,
+        output_padding: 0,
         dilation: 1,
         dtype: "f32",
         input_contiguous,
@@ -133,8 +137,26 @@ fn exact_call(
     }
 }
 
-fn lookup(case: Case) -> Option<candle_kernels::asd_exact_conv2d::ExactAsdMatch> {
-    candle_kernels::asd_exact_conv2d::lookup(exact_call(case, true, 0, true, 0))
+fn lookup(case: Case) -> Option<candle_kernels::asd_exact::ExactAsdMatch> {
+    match candle_kernels::asd_exact::lookup(
+        exact_call(case, true, 0, true, 0),
+        candle_kernels::asd_exact::TARGET_GPU_UUID,
+    )? {
+        candle_kernels::asd_exact::ExactMatch::Proven(matched) => Some(matched),
+        candle_kernels::asd_exact::ExactMatch::Unproven(_) => None,
+    }
+}
+
+fn policy_speedup_x(matched: &candle_kernels::asd_exact::ExactAsdMatch) -> Result<f64> {
+    matched.min_integrated_speedup_x.ok_or_else(|| {
+        candle_core::Error::Msg(
+            format!(
+                "promoted DW5x5 decision {} is missing min_integrated_speedup_x",
+                matched.decision_id
+            )
+            .into(),
+        )
+    })
 }
 
 impl CustomOp2 for RawExactDw5x5 {
@@ -182,7 +204,7 @@ impl CustomOp2 for RawExactDw5x5 {
         let Some(matched) = lookup(case) else {
             candle_core::bail!("raw exact custom op called for an ASD V2 domain miss")
         };
-        if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
+        if !candle_kernels::asd_exact::VALIDATION_BUILD {
             candle_core::bail!("ASD V2 candidate requires validation build")
         }
         if matched.selected_backend != "raw_cuda" || dims[0] != 1 || wdims != [case.c, 1, 5, 5] {
@@ -413,7 +435,7 @@ fn main() -> Result<()> {
     if max_drift_pct < 0.0 || !min_speedup_x.is_finite() || min_speedup_x <= 1.0 {
         candle_core::bail!("invalid validation thresholds")
     }
-    if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
+    if !candle_kernels::asd_exact::VALIDATION_BUILD {
         candle_core::bail!(
             "grouped_conv2d_asd_validate_timed requires an ASD V2 candidate build with CANDLE_ASD_VALIDATION=1"
         )
@@ -457,7 +479,7 @@ fn main() -> Result<()> {
             matched.policy_id,
             matched.decision_id,
             matched.state,
-            matched.min_integrated_speedup_x,
+            policy_speedup_x(&matched)?,
         );
 
         println!("=== BACKEND IDENTITY PROBE ===");

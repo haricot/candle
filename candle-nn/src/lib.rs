@@ -15,7 +15,6 @@
 //! - [candle-transformers](https://docs.rs/candle-transformers/). Candle implementation of many published transformer models.
 //!
 
-pub mod asd_conv1d;
 pub mod activation;
 pub mod attention;
 pub mod batch_norm;

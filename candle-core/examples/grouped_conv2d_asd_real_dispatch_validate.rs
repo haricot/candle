@@ -124,13 +124,16 @@ fn tensors(case: Case, device: &Device) -> Result<(Tensor, Tensor)> {
     Ok((x, kernel))
 }
 
-fn exact_call(case: Case) -> candle_kernels::asd_exact_conv2d::ExactConv2dCall {
-    candle_kernels::asd_exact_conv2d::ExactConv2dCall {
+fn exact_call(case: Case) -> candle_kernels::asd_exact::ExactOperationCall {
+        op: candle_kernels::asd_exact::ExactOperation::Conv2d,
+        dim: 2,
+    candle_kernels::asd_exact::ExactOperationCall {
         batch: 1,
         c_in: case.c,
         c_out: case.c,
         spatial0: case.h,
         spatial1: case.w,
+        weight_rank: 4,
         weight0: case.c,
         weight1: 1,
         weight2: 5,
@@ -139,6 +142,7 @@ fn exact_call(case: Case) -> candle_kernels::asd_exact_conv2d::ExactConv2dCall {
         kernel: 5,
         stride: 1,
         padding: 2,
+        output_padding: 0,
         dilation: 1,
         dtype: "f32",
         input_contiguous: true,
@@ -148,8 +152,26 @@ fn exact_call(case: Case) -> candle_kernels::asd_exact_conv2d::ExactConv2dCall {
     }
 }
 
-fn lookup(case: Case) -> Option<candle_kernels::asd_exact_conv2d::ExactAsdMatch> {
-    candle_kernels::asd_exact_conv2d::lookup(exact_call(case))
+fn lookup(case: Case) -> Option<candle_kernels::asd_exact::ExactAsdMatch> {
+    match candle_kernels::asd_exact::lookup(
+        exact_call(case),
+        candle_kernels::asd_exact::TARGET_GPU_UUID,
+    )? {
+        candle_kernels::asd_exact::ExactMatch::Proven(matched) => Some(matched),
+        candle_kernels::asd_exact::ExactMatch::Unproven(_) => None,
+    }
+}
+
+fn policy_speedup_x(matched: &candle_kernels::asd_exact::ExactAsdMatch) -> Result<f64> {
+    matched.min_integrated_speedup_x.ok_or_else(|| {
+        candle_core::Error::Msg(
+            format!(
+                "promoted DW5x5 decision {} is missing min_integrated_speedup_x",
+                matched.decision_id
+            )
+            .into(),
+        )
+    })
 }
 
 fn dispatch_once(
@@ -302,7 +324,7 @@ fn main() -> Result<()> {
     if max_drift_pct < 0.0 || !min_speedup_x.is_finite() || min_speedup_x <= 1.0 {
         candle_core::bail!("invalid validation thresholds")
     }
-    if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
+    if !candle_kernels::asd_exact::VALIDATION_BUILD {
         candle_core::bail!(
             "real GroupedConv2D validation requires CANDLE_ASD_VALIDATION=1 at build time"
         )
@@ -375,7 +397,7 @@ fn main() -> Result<()> {
             matched.policy_id,
             matched.decision_id,
             matched.state,
-            matched.min_integrated_speedup_x,
+            policy_speedup_x(&matched)?,
         );
 
         println!("=== REAL BACKEND IDENTITY PROBE ===");
@@ -483,7 +505,7 @@ fn main() -> Result<()> {
         let speedup_x = current_us / asd_us;
         let latency_reduction_pct = (1.0 - asd_us / current_us) * 100.0;
         let drift_pass = current_drift_pct <= max_drift_pct && asd_drift_pct <= max_drift_pct;
-        let required_speedup_x = min_speedup_x.max(matched.min_integrated_speedup_x);
+        let required_speedup_x = min_speedup_x.max(policy_speedup_x(&matched)?);
         let performance_pass = speedup_x >= required_speedup_x;
         let p90_non_regression = asd_p90 <= current_p90;
         let pass = parity && drift_pass && performance_pass && p90_non_regression;

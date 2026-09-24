@@ -54,9 +54,6 @@ impl Conv1d {
 
 impl crate::Module for Conv1d {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        if let Some(result) = crate::asd_conv1d::maybe_forward(self, x) {
-            return result;
-        }
         let x = x.conv1d_with_algo(
             &self.weight,
             self.config.padding,
