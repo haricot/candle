@@ -247,7 +247,12 @@ impl CustomOp2 for GroupedConv1D {
         if !disable_cudnn {
             if kernel_l.is_contiguous() {
                 match crate::cudnn::launch_grouped_conv1d(
-                    input, input_l, kernel, kernel_l, &self.0, self.0.groups,
+                    input,
+                    input_l,
+                    kernel,
+                    kernel_l,
+                    &self.0,
+                    self.0.groups,
                 ) {
                     Ok(out) => {
                         grouped_conv1d_trace("cudnn", &self.0);

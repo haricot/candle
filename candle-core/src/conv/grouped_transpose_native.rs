@@ -43,12 +43,14 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         // Strict cuDNN is an execution constraint, not merely a fallback policy.
         // Check it before exact ASD or a dispatcher-selected raw route.
         #[cfg(feature = "cuda")]
-        let require_cudnn =
-            super::grouped_transpose_dispatch::explicit_cudnn_required()?;
+        let require_cudnn = super::grouped_transpose_dispatch::explicit_cudnn_required()?;
         #[cfg(not(feature = "cuda"))]
-        let require_cudnn =
-            std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
-            || std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok().as_deref() == Some("cudnn");
+        let require_cudnn = std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
+            .is_some()
+            || std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH")
+                .ok()
+                .as_deref()
+                == Some("cudnn");
         if require_cudnn {
             #[cfg(feature = "cudnn")]
             {
@@ -58,8 +60,11 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
                 let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
                     input, input_l, kernel, kernel_l, &self.0,
                 )?;
-                eprintln!("CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=1d",
-                    std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() as u8);
+                eprintln!(
+                    "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=1d",
+                    std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
+                        as u8
+                );
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
             #[cfg(not(feature = "cudnn"))]
@@ -79,7 +84,8 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
 
         #[cfg(feature = "cuda")]
         let decision = super::grouped_transpose_dispatch::decision_1d(
-            input, &self.0,
+            input,
+            &self.0,
             input_l,
             kernel_l,
             input.dtype(),
@@ -112,8 +118,14 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
                 decision.trace_submission("raw");
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
-            Err(err) if std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok().as_deref()
-                == Some("raw") => return Err(err),
+            Err(err)
+                if std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH")
+                    .ok()
+                    .as_deref()
+                    == Some("raw") =>
+            {
+                return Err(err)
+            }
             #[cfg(feature = "cuda")]
             Err(err) if decision.is_exact_asd() => return Err(err),
             Err(err)
@@ -197,12 +209,14 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
         // Strict cuDNN is an execution constraint, not merely a fallback policy.
         // Check it before exact ASD or a dispatcher-selected raw route.
         #[cfg(feature = "cuda")]
-        let require_cudnn =
-            super::grouped_transpose_dispatch::explicit_cudnn_required()?;
+        let require_cudnn = super::grouped_transpose_dispatch::explicit_cudnn_required()?;
         #[cfg(not(feature = "cuda"))]
-        let require_cudnn =
-            std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
-            || std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok().as_deref() == Some("cudnn");
+        let require_cudnn = std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT")
+            .is_some()
+            || std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH")
+                .ok()
+                .as_deref()
+                == Some("cudnn");
         if require_cudnn {
             #[cfg(feature = "cudnn")]
             {
@@ -212,8 +226,11 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
                 let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
                     input, input_l, kernel, kernel_l, &self.0,
                 )?;
-                eprintln!("CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=2d",
-                    std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some() as u8);
+                eprintln!(
+                    "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=2d",
+                    std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
+                        as u8
+                );
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
             #[cfg(not(feature = "cudnn"))]
@@ -266,8 +283,14 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
                 decision.trace_submission("raw");
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
-            Err(err) if std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok().as_deref()
-                == Some("raw") => return Err(err),
+            Err(err)
+                if std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH")
+                    .ok()
+                    .as_deref()
+                    == Some("raw") =>
+            {
+                return Err(err)
+            }
             #[cfg(feature = "cuda")]
             Err(err) if decision.is_exact_asd() => return Err(err),
             Err(err)

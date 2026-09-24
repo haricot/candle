@@ -1986,10 +1986,14 @@ impl BackendStorage for CudaStorage {
         }
         // Deterministic negative validation hook, scoped to explicit Direct only.
         // It cannot make an unvalidated backend look successful.
-        if strict_direct && matches!(
-            std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE").ok().as_deref(),
-            Some("1")
-        ) {
+        if strict_direct
+            && matches!(
+                std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE")
+                    .ok()
+                    .as_deref(),
+                Some("1")
+            )
+        {
             crate::bail!("ASD validation: cuDNN Direct deliberately unavailable")
         }
         let l_out = params.l_out();

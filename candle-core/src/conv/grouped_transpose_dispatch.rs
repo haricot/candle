@@ -28,9 +28,7 @@ fn check_backend_requests(
     let cudnn = cudnn_strict || requested == Some("cudnn");
     let raw = force_raw || raw_strict || requested == Some("raw");
     if cudnn && raw {
-        crate::bail!(
-            "grouped ConvTranspose conflicting explicit CUDA and cuDNN backend requests"
-        )
+        crate::bail!("grouped ConvTranspose conflicting explicit CUDA and cuDNN backend requests")
     }
     Ok(cudnn)
 }
@@ -54,8 +52,10 @@ pub(super) fn automatic_exact_eligible() -> bool {
     auto_request(
         request.as_deref(),
         std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some(),
-        matches!(std::env::var("CANDLE_ASD_EXACT_DISABLE").ok().as_deref(),
-            Some("1") | Some("true") | Some("yes") | Some("on")),
+        matches!(
+            std::env::var("CANDLE_ASD_EXACT_DISABLE").ok().as_deref(),
+            Some("1") | Some("true") | Some("yes") | Some("on")
+        ),
     )
 }
 
@@ -265,7 +265,7 @@ fn resolve_grouped_transpose_dispatch(
                 asd_policy_id: None,
                 asd_decision_id: None,
                 asd_state: None,
-            asd_impl: None,
+                asd_impl: None,
             }
         }
     }
@@ -418,16 +418,38 @@ pub(super) fn decision_1d(
     {
         let stream = input.device.cuda_stream();
         let context = stream.context();
-        if context.compute_capability().ok() != Some((6, 1)) { None }
-        else { context.uuid().ok().and_then(|u| {
-            let hex = u.bytes.iter().map(|b| format!("{:02x}", *b as u8)).collect::<String>();
-            if hex.len() == 32 {
-                Some(format!("GPU-{}-{}-{}-{}-{}",
-                    &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32]))
-            } else { None }
-        }) }
-    } else { None };
-    resolve_runtime(GroupedTransposeDim::D1, p.groups, call, actual_uuid.as_deref())
+        if context.compute_capability().ok() != Some((6, 1)) {
+            None
+        } else {
+            context.uuid().ok().and_then(|u| {
+                let hex = u
+                    .bytes
+                    .iter()
+                    .map(|b| format!("{:02x}", *b as u8))
+                    .collect::<String>();
+                if hex.len() == 32 {
+                    Some(format!(
+                        "GPU-{}-{}-{}-{}-{}",
+                        &hex[..8],
+                        &hex[8..12],
+                        &hex[12..16],
+                        &hex[16..20],
+                        &hex[20..32]
+                    ))
+                } else {
+                    None
+                }
+            })
+        }
+    } else {
+        None
+    };
+    resolve_runtime(
+        GroupedTransposeDim::D1,
+        p.groups,
+        call,
+        actual_uuid.as_deref(),
+    )
 }
 
 pub(super) fn decision_2d(
@@ -501,8 +523,14 @@ mod tests {
             assert!(check_backend_requests(Some("cudnn"), false, true, false).is_err());
             assert!(check_backend_requests(Some("raw"), true, false, false).is_err());
             assert!(check_backend_requests(Some("cudnn"), false, false, true).is_err());
-            assert_eq!(check_backend_requests(Some("cudnn"), false, false, false).unwrap(), true);
-            assert_eq!(check_backend_requests(Some("auto"), false, false, false).unwrap(), false);
+            assert_eq!(
+                check_backend_requests(Some("cudnn"), false, false, false).unwrap(),
+                true
+            );
+            assert_eq!(
+                check_backend_requests(Some("auto"), false, false, false).unwrap(),
+                false
+            );
         }
     }
 

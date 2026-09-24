@@ -157,10 +157,12 @@ fn lookup(
     device: &candle_core::cuda_backend::CudaDevice,
 ) -> Result<Option<candle_kernels::asd_exact::ExactAsdMatch>> {
     let actual_uuid = attested_policy_uuid(device)?;
-    Ok(match candle_kernels::asd_exact::lookup(exact_call(case), actual_uuid) {
-        Some(candle_kernels::asd_exact::ExactMatch::Proven(matched)) => Some(matched),
-        Some(candle_kernels::asd_exact::ExactMatch::Unproven(_)) | None => None,
-    })
+    Ok(
+        match candle_kernels::asd_exact::lookup(exact_call(case), actual_uuid) {
+            Some(candle_kernels::asd_exact::ExactMatch::Proven(matched)) => Some(matched),
+            Some(candle_kernels::asd_exact::ExactMatch::Unproven(_)) | None => None,
+        },
+    )
 }
 
 fn parse_policy_gpu_uuid(value: &str) -> Option<[u8; 16]> {

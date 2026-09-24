@@ -288,7 +288,9 @@ fn launch_conv1d_with_groups<
     dev: &crate::cuda_backend::CudaDevice,
     groups: usize,
 ) -> crate::Result<()> {
-    if groups == 0 || groups != params.groups || params.c_in % groups != 0
+    if groups == 0
+        || groups != params.groups
+        || params.c_in % groups != 0
         || params.c_out % groups != 0
     {
         crate::bail!("invalid native grouped Conv1D channel or group configuration")
@@ -296,9 +298,17 @@ fn launch_conv1d_with_groups<
     if groups > i32::MAX as usize {
         crate::bail!("native grouped Conv1D groups exceed i32::MAX")
     }
-    for value in [params.b_size, params.c_in, params.c_out, params.l_in,
-                  params.k_size, params.padding, params.stride, params.dilation,
-                  params.l_out()] {
+    for value in [
+        params.b_size,
+        params.c_in,
+        params.c_out,
+        params.l_in,
+        params.k_size,
+        params.padding,
+        params.stride,
+        params.dilation,
+        params.l_out(),
+    ] {
         if value > i32::MAX as usize {
             crate::bail!("native grouped Conv1D descriptor dimension exceeds i32::MAX")
         }

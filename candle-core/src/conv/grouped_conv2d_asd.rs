@@ -32,8 +32,7 @@ pub(super) fn exact_dispatch_enabled() -> bool {
 
 #[cfg(feature = "cudnn")]
 fn real_dispatch_validation_enabled() -> bool {
-    candle_kernels::asd_exact::VALIDATION_BUILD
-        && env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION")
+    candle_kernels::asd_exact::VALIDATION_BUILD && env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION")
 }
 
 #[cfg(feature = "cudnn")]
@@ -171,11 +170,11 @@ pub(super) fn try_launch_exact(
     // the single V2 lookup. Environment UUIDs never authorize runtime dispatch.
     let stream = input.device.cuda_stream();
     let context = stream.context();
-    let (major, minor) = context
-        .compute_capability()
-        .map_err(|err| crate::Error::msg(format!(
+    let (major, minor) = context.compute_capability().map_err(|err| {
+        crate::Error::msg(format!(
             "ASD V2: unable to read CUDA compute capability: {err:?}"
-        )))?;
+        ))
+    })?;
     if major * 10 + minor != candle_kernels::CUDA_BUILD_COMPUTE_CAP as i32 {
         crate::bail!("ASD V2 DW5x5 runtime GPU SM does not match build target")
     }
@@ -187,9 +186,9 @@ pub(super) fn try_launch_exact(
         .ok_or_else(|| crate::Error::Msg("invalid embedded ASD V2 device UUID".into()))?;
     let actual_bytes = context
         .uuid()
-        .map_err(|err| crate::Error::msg(format!(
-            "ASD V2: unable to read CUDA device UUID: {err:?}"
-        )))?
+        .map_err(|err| {
+            crate::Error::msg(format!("ASD V2: unable to read CUDA device UUID: {err:?}"))
+        })?
         .bytes;
     if !actual_bytes
         .iter()
