@@ -17,6 +17,48 @@ impl GroupedTransposeDim {
     }
 }
 
+// Resolve explicit requirements before any specialized SM61 launch.
+// A contradictory request is an error, never an undocumented preference.
+fn check_backend_requests(
+    requested: Option<&str>,
+    cudnn_strict: bool,
+    force_raw: bool,
+    raw_strict: bool,
+) -> crate::Result<bool> {
+    let cudnn = cudnn_strict || requested == Some("cudnn");
+    let raw = force_raw || raw_strict || requested == Some("raw");
+    if cudnn && raw {
+        crate::bail!(
+            "grouped ConvTranspose conflicting explicit CUDA and cuDNN backend requests"
+        )
+    }
+    Ok(cudnn)
+}
+
+pub(super) fn explicit_cudnn_required() -> crate::Result<bool> {
+    let requested = std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok();
+    check_backend_requests(
+        requested.as_deref(),
+        std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some(),
+        std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some(),
+        std::env::var_os("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some(),
+    )
+}
+
+fn auto_request(requested: Option<&str>, force_raw: bool, asd_disabled: bool) -> bool {
+    matches!(requested, None | Some("auto")) && !force_raw && !asd_disabled
+}
+
+pub(super) fn automatic_exact_eligible() -> bool {
+    let request = std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok();
+    auto_request(
+        request.as_deref(),
+        std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some(),
+        matches!(std::env::var("CANDLE_ASD_EXACT_DISABLE").ok().as_deref(),
+            Some("1") | Some("true") | Some("yes") | Some("on")),
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct GroupedTransposeCudaRule {
     raw_min_groups_1d: Option<usize>,
@@ -24,7 +66,7 @@ struct GroupedTransposeCudaRule {
 }
 
 const fn dispatch_rule_for_sm(_sm: u32) -> GroupedTransposeCudaRule {
-    // Generalized thresholds remain intentionally unset. ASD v1 exact-domain
+    // Generalized thresholds remain intentionally unset. V2 exact-domain
     // decisions are matched before this legacy rule and never imply groups>=N.
     GroupedTransposeCudaRule {
         raw_min_groups_1d: None,
@@ -115,9 +157,11 @@ pub(super) struct GroupedTransposeDispatchDecision {
     asd_policy_id: Option<&'static str>,
     asd_decision_id: Option<&'static str>,
     asd_state: Option<&'static str>,
+    asd_impl: Option<&'static str>,
 }
 
 impl GroupedTransposeDispatchDecision {
+    #[allow(dead_code)]
     pub(super) fn prefers_raw(self) -> bool {
         self.selected == GroupedTransposeDispatchPath::Raw
     }
@@ -131,11 +175,12 @@ impl GroupedTransposeDispatchDecision {
             return;
         }
         eprintln!(
-            "[candle grouped-conv-transpose] submitted_backend={} launch_submission=success asd_policy={} asd_decision={} asd_state={}",
+            "[candle grouped-conv-transpose] submitted_backend={} launch_submission=success asd_policy={} asd_decision={} asd_state={} asd_impl={}",
             backend,
             self.asd_policy_id.unwrap_or("none"),
             self.asd_decision_id.unwrap_or("none"),
             self.asd_state.unwrap_or("none"),
+            self.asd_impl.unwrap_or("none"),
         );
     }
 }
@@ -158,6 +203,7 @@ fn resolve_grouped_transpose_dispatch(
             asd_policy_id: None,
             asd_decision_id: None,
             asd_state: None,
+            asd_impl: None,
         };
     }
 
@@ -169,6 +215,7 @@ fn resolve_grouped_transpose_dispatch(
             asd_policy_id: None,
             asd_decision_id: None,
             asd_state: None,
+            asd_impl: None,
         },
         GroupedTransposeDispatchRequest::Cudnn => GroupedTransposeDispatchDecision {
             requested,
@@ -177,12 +224,13 @@ fn resolve_grouped_transpose_dispatch(
             asd_policy_id: None,
             asd_decision_id: None,
             asd_state: None,
+            asd_impl: None,
         },
         GroupedTransposeDispatchRequest::Auto | GroupedTransposeDispatchRequest::Invalid => {
             if let Some(asd) = exact_asd {
                 let selected = match asd.selected_backend {
                     "raw_cuda" => GroupedTransposeDispatchPath::Raw,
-                    // ASD-v1-fix2 build adapter currently rejects any other backend.
+                    // The current V2 profile admits raw_cuda for proven grouped-transpose decisions.
                     _ => GroupedTransposeDispatchPath::Cudnn,
                 };
                 return GroupedTransposeDispatchDecision {
@@ -192,6 +240,7 @@ fn resolve_grouped_transpose_dispatch(
                     asd_policy_id: Some(asd.policy_id),
                     asd_decision_id: Some(asd.decision_id),
                     asd_state: Some(asd.state),
+                    asd_impl: Some(asd.implementation_id),
                 };
             }
 
@@ -216,6 +265,7 @@ fn resolve_grouped_transpose_dispatch(
                 asd_policy_id: None,
                 asd_decision_id: None,
                 asd_state: None,
+            asd_impl: None,
             }
         }
     }
@@ -277,9 +327,13 @@ struct ExactCallArgs<'a> {
     dtype: DType,
 }
 
-fn exact_call(args: ExactCallArgs<'_>) -> candle_kernels::asd_exact::ExactConvTransposeCall {
+fn exact_call(args: ExactCallArgs<'_>) -> candle_kernels::asd_exact::ExactOperationCall {
     let weight = args.kernel_l.dims();
-    candle_kernels::asd_exact::ExactConvTransposeCall {
+    candle_kernels::asd_exact::ExactOperationCall {
+        op: match args.dim {
+            GroupedTransposeDim::D1 => candle_kernels::asd_exact::ExactOperation::ConvTranspose1d,
+            GroupedTransposeDim::D2 => candle_kernels::asd_exact::ExactOperation::ConvTranspose2d,
+        },
         dim: match args.dim {
             GroupedTransposeDim::D1 => 1,
             GroupedTransposeDim::D2 => 2,
@@ -311,12 +365,16 @@ fn exact_call(args: ExactCallArgs<'_>) -> candle_kernels::asd_exact::ExactConvTr
 fn resolve_runtime(
     dim: GroupedTransposeDim,
     groups: usize,
-    exact_call: candle_kernels::asd_exact::ExactConvTransposeCall,
+    exact_call: candle_kernels::asd_exact::ExactOperationCall,
+    actual_uuid: Option<&str>,
 ) -> GroupedTransposeDispatchDecision {
     let force_kernel = std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some();
     let requested = std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH").ok();
     let sm = candle_kernels::CUDA_BUILD_COMPUTE_CAP;
-    let exact_asd = candle_kernels::asd_exact::lookup(exact_call);
+    let exact_asd = match candle_kernels::asd_exact::lookup(exact_call, actual_uuid) {
+        Some(candle_kernels::asd_exact::ExactMatch::Proven(m)) => Some(m),
+        _ => None,
+    };
     let decision = resolve_grouped_transpose_dispatch(
         dim,
         groups,
@@ -330,6 +388,7 @@ fn resolve_runtime(
 }
 
 pub(super) fn decision_1d(
+    input: &crate::cuda_backend::CudaStorage,
     p: &ParamsConvTranspose1D,
     input_l: &Layout,
     kernel_l: &Layout,
@@ -352,7 +411,23 @@ pub(super) fn decision_1d(
         kernel_l,
         dtype,
     });
-    resolve_runtime(GroupedTransposeDim::D1, p.groups, call)
+    // UUID comes from the real CUDA context, never CANDLE_ASD_TARGET_GPU_UUID.
+    // No device read in ordinary non-ASD operation. An unreadable UUID fails closed.
+    let actual_uuid = if candle_kernels::asd_exact::POLICY_ID.is_some()
+        && std::env::var("CANDLE_ASD_V2_CT1D_ENABLE").ok().as_deref() == Some("1")
+    {
+        let stream = input.device.cuda_stream();
+        let context = stream.context();
+        if context.compute_capability().ok() != Some((6, 1)) { None }
+        else { context.uuid().ok().and_then(|u| {
+            let hex = u.bytes.iter().map(|b| format!("{:02x}", *b as u8)).collect::<String>();
+            if hex.len() == 32 {
+                Some(format!("GPU-{}-{}-{}-{}-{}",
+                    &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32]))
+            } else { None }
+        }) }
+    } else { None };
+    resolve_runtime(GroupedTransposeDim::D1, p.groups, call, actual_uuid.as_deref())
 }
 
 pub(super) fn decision_2d(
@@ -378,7 +453,7 @@ pub(super) fn decision_2d(
         kernel_l,
         dtype,
     });
-    resolve_runtime(GroupedTransposeDim::D2, p.groups, call)
+    resolve_runtime(GroupedTransposeDim::D2, p.groups, call, None)
 }
 
 #[cfg(test)]
@@ -421,21 +496,25 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_force_kernel_override_wins_over_cudnn() {
-        let decision = resolve_grouped_transpose_dispatch(
-            GroupedTransposeDim::D1,
-            2,
-            61,
-            true,
-            Some("cudnn"),
-            None,
-        );
-        assert_eq!(decision.requested, GroupedTransposeDispatchRequest::Cudnn);
-        assert!(decision.prefers_raw());
-        assert_eq!(
-            decision.reason,
-            GroupedTransposeDispatchReason::ForceKernelOverride
-        );
+    fn explicit_cudnn_conflicts_with_force_raw_in_both_dimensions() {
+        for _dim in [GroupedTransposeDim::D1, GroupedTransposeDim::D2] {
+            assert!(check_backend_requests(Some("cudnn"), false, true, false).is_err());
+            assert!(check_backend_requests(Some("raw"), true, false, false).is_err());
+            assert!(check_backend_requests(Some("cudnn"), false, false, true).is_err());
+            assert_eq!(check_backend_requests(Some("cudnn"), false, false, false).unwrap(), true);
+            assert_eq!(check_backend_requests(Some("auto"), false, false, false).unwrap(), false);
+        }
+    }
+
+    #[test]
+    fn only_auto_may_select_an_exact_asd_kernel() {
+        assert!(auto_request(None, false, false));
+        assert!(auto_request(Some("auto"), false, false));
+        for req in [Some("cudnn"), Some("raw"), Some("invalid")] {
+            assert!(!auto_request(req, false, false));
+        }
+        assert!(!auto_request(Some("auto"), true, false));
+        assert!(!auto_request(Some("auto"), false, true));
     }
 
     #[test]
@@ -457,7 +536,8 @@ mod tests {
             state: "tuner_candidate",
             selected_backend: "raw_cuda",
             evidence_sha256: "test",
-            min_integrated_speedup_x: 1.10,
+            implementation_id: "candle.grouped-transpose.raw.v1",
+            min_integrated_speedup_x: Some(1.10),
         };
         let decision = resolve_grouped_transpose_dispatch(
             GroupedTransposeDim::D1,

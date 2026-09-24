@@ -1,4 +1,3 @@
-mod asd_exact_build_adapter;
 mod asd_exact_build_adapter_v2;
 
 use cudaforge::{detect_compute_cap, KernelBuilder, Result};
@@ -7,7 +6,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=asd_exact_build_adapter.rs");
+    println!("cargo::rerun-if-changed=asd_exact_v2_dispatch_template.rs");
     println!("cargo::rerun-if-changed=asd_exact_build_adapter_v2.rs");
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
@@ -23,7 +22,6 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed=CANDLE_ASD_TARGET_GPU_UUID");
     println!("cargo::rerun-if-env-changed=CANDLE_ASD_EXACT_DISABLE");
     println!("cargo::rerun-if-env-changed=CANDLE_ASD_EXACT_TRACE");
-    println!("cargo:rustc-check-cfg=cfg(candle_asd_exact_v2)");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
     let legacy_bf16 = compute_cap < 80 && env::var_os("CARGO_FEATURE_CUDA_LEGACY_BF16").is_some();
@@ -58,18 +56,9 @@ fn main() -> Result<()> {
         );
     }
 
-    let exact_v2 = env::var_os("CANDLE_ASD_EXACT_POLICY")
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|text| text.lines().next().map(str::to_owned))
-        .is_some_and(|header| header == asd_exact_build_adapter_v2::HEADER);
-    if exact_v2 {
-        println!("cargo:rustc-cfg=candle_asd_exact_v2");
-        asd_exact_build_adapter_v2::materialize_for_candle_build(asd_build_sm)
-            .unwrap_or_else(|err| panic!("failed to materialize ASD exact V2 policy: {err}"));
-    } else {
-        asd_exact_build_adapter::materialize_for_candle_build(asd_build_sm)
-            .unwrap_or_else(|err| panic!("failed to materialize ASD exact policy: {err}"));
-    }
+    // Stage 2D: the V2 reader is unconditional; its fallback represents no policy.
+    asd_exact_build_adapter_v2::materialize_for_candle_build(asd_build_sm)
+        .unwrap_or_else(|err| panic!("failed to materialize V2-only ASD policy: {err}"));
 
     let ptx_path = out_dir.join("ptx.rs");
     let mut ptx_builder = KernelBuilder::new()

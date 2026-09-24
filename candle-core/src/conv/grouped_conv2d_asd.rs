@@ -21,20 +21,22 @@ fn exact_disabled() -> bool {
 }
 
 pub(super) fn exact_dispatch_enabled() -> bool {
-    if !candle_kernels::asd_exact_conv2d::POLICY_EMBEDDED {
+    if candle_kernels::asd_exact::POLICY_ID.is_none() {
         return false;
     }
-    if candle_kernels::asd_exact_conv2d::VALIDATION_BUILD {
+    if candle_kernels::asd_exact::VALIDATION_BUILD {
         return env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION");
     }
     true
 }
 
-pub(super) fn real_dispatch_validation_enabled() -> bool {
-    candle_kernels::asd_exact_conv2d::VALIDATION_BUILD
+#[cfg(feature = "cudnn")]
+fn real_dispatch_validation_enabled() -> bool {
+    candle_kernels::asd_exact::VALIDATION_BUILD
         && env_truthy("CANDLE_ASD_REAL_DISPATCH_VALIDATION")
 }
 
+#[cfg(feature = "cudnn")]
 pub(super) fn require_cudnn_submission() -> bool {
     real_dispatch_validation_enabled() && env_truthy("CANDLE_ASD_REAL_DISPATCH_REQUIRE_CUDNN")
 }
@@ -44,14 +46,17 @@ fn exact_call(
     input_l: &Layout,
     kernel_l: &Layout,
     p: &ParamsConv2D,
-) -> candle_kernels::asd_exact_conv2d::ExactConv2dCall {
+) -> candle_kernels::asd_exact::ExactOperationCall {
     let w = kernel_l.dims();
-    candle_kernels::asd_exact_conv2d::ExactConv2dCall {
+    candle_kernels::asd_exact::ExactOperationCall {
+        op: candle_kernels::asd_exact::ExactOperation::Conv2d,
+        dim: 2,
         batch: p.b_size,
         c_in: p.c_in,
         c_out: p.c_out,
         spatial0: p.i_h,
         spatial1: p.i_w,
+        weight_rank: w.len(),
         weight0: w.first().copied().unwrap_or(0),
         weight1: w.get(1).copied().unwrap_or(0),
         weight2: w.get(2).copied().unwrap_or(0),
@@ -60,6 +65,7 @@ fn exact_call(
         kernel: p.k_h,
         stride: p.stride,
         padding: p.padding,
+        output_padding: 0,
         dilation: p.dilation,
         dtype: input.dtype().as_str(),
         input_contiguous: input_l.is_contiguous(),
@@ -70,7 +76,6 @@ fn exact_call(
 }
 
 // NVIDIA's GPU- UUID contains 16 hex octets, optionally separated by dashes.
-// This parser intentionally does not consult environment variables or ordinals.
 fn parse_policy_gpu_uuid(value: &str) -> Option<[u8; 16]> {
     let hex = value.strip_prefix("GPU-").unwrap_or(value);
     let compact: String = hex.chars().filter(|c| *c != '-').collect();
@@ -91,8 +96,14 @@ mod device_scope_tests {
     #[test]
     fn uuid_accepts_gpu_prefix_and_dashes() {
         let expected: Vec<u8> = (0..16).collect();
-        assert_eq!(parse_policy_gpu_uuid("GPU-00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap().to_vec(), expected);
+        assert_eq!(
+            parse_policy_gpu_uuid("GPU-00010203-0405-0607-0809-0a0b0c0d0e0f")
+                .unwrap()
+                .to_vec(),
+            expected
+        );
     }
+
     #[test]
     fn uuid_rejects_missing_or_incomplete_identity() {
         assert!(parse_policy_gpu_uuid("").is_none());
@@ -152,64 +163,72 @@ pub(super) fn try_launch_exact(
     kernel_l: &Layout,
     p: &ParamsConv2D,
 ) -> Result<Option<CudaStorage>> {
-    let call = exact_call(input, input_l, kernel_l, p);
-    let Some(matched) = candle_kernels::asd_exact_conv2d::lookup(call) else {
-        return Ok(None);
-    };
-    if !candle_kernels::asd_exact_conv2d::VALIDATION_BUILD && matched.state != "promoted" {
-        crate::bail!(
-            "exact Conv2D ASD decision {} has state={} outside validation build",
-            matched.decision_id,
-            matched.state
-        )
-    }
-    if matched.selected_backend != "raw_cuda" {
-        crate::bail!(
-            "unsupported exact Conv2D ASD selected backend {}",
-            matched.selected_backend
-        )
-    }
     if input.device.id() != kernel.device.id() {
         crate::bail!("exact ASD DW5x5 requires input and kernel on one CUDA device")
     }
-    // A compiled policy and a declared UUID do not authenticate the CUDA device
-    // on which this process is currently executing. Fail closed before launch.
+
+    // Authenticate the real CUDA context before passing the device identity to
+    // the single V2 lookup. Environment UUIDs never authorize runtime dispatch.
     let stream = input.device.cuda_stream();
     let context = stream.context();
-    let (major, minor) = context.compute_capability()
+    let (major, minor) = context
+        .compute_capability()
         .map_err(|err| crate::Error::msg(format!(
-        "ASD V2: unable to read CUDA compute capability: {err:?}"
-    )))?;
+            "ASD V2: unable to read CUDA compute capability: {err:?}"
+        )))?;
     if major * 10 + minor != candle_kernels::CUDA_BUILD_COMPUTE_CAP as i32 {
         crate::bail!("ASD V2 DW5x5 runtime GPU SM does not match build target")
     }
-    if let Some(expected) = candle_kernels::asd_exact_conv2d::TARGET_GPU_UUID {
-        let expected_bytes = parse_policy_gpu_uuid(expected)
-            .ok_or_else(|| crate::Error::Msg("invalid embedded ASD V2 device UUID".into()))?;
-	let actual_bytes = context.uuid()
-	    .map_err(|err| crate::Error::msg(format!(
-		"ASD V2: unable to read CUDA device UUID: {err:?}"
-	    )))?
-	    .bytes;
-        if !actual_bytes.iter().zip(expected_bytes.iter())
-            .all(|(actual, expected)| *actual as u8 == *expected)
-        {
-            crate::bail!("ASD V2 device-scoped GPU UUID mismatch at runtime")
-        }
+
+    let Some(expected) = candle_kernels::asd_exact::TARGET_GPU_UUID else {
+        return Ok(None);
+    };
+    let expected_bytes = parse_policy_gpu_uuid(expected)
+        .ok_or_else(|| crate::Error::Msg("invalid embedded ASD V2 device UUID".into()))?;
+    let actual_bytes = context
+        .uuid()
+        .map_err(|err| crate::Error::msg(format!(
+            "ASD V2: unable to read CUDA device UUID: {err:?}"
+        )))?
+        .bytes;
+    if !actual_bytes
+        .iter()
+        .zip(expected_bytes.iter())
+        .all(|(actual, expected)| *actual as u8 == *expected)
+    {
+        crate::bail!("ASD V2 device-scoped GPU UUID mismatch at runtime")
     }
+
+    let call = exact_call(input, input_l, kernel_l, p);
+    let Some(candle_kernels::asd_exact::ExactMatch::Proven(matched)) =
+        candle_kernels::asd_exact::lookup(call, Some(expected))
+    else {
+        return Ok(None);
+    };
+
+    if matched.state != "promoted"
+        || matched.selected_backend != "raw_cuda"
+        || matched.implementation_id != "candle.depthwise-conv2d-5x5.raw.v1"
+        || matched.evidence_sha256
+            != "84f3dc50433e225b1f63c92a08355b7b04f0afeec49694e5e8d5e040cf092a9a"
+        || matched.min_integrated_speedup_x != Some(1.10)
+    {
+        crate::bail!("unexpected V2 production match returned to DW5x5 consumer")
+    }
+
     if trace_enabled() {
         eprintln!(
-            "[candle grouped-conv2d] requested=auto sm={} selected=raw reason=exact_asd asd_policy={} asd_decision={} asd_state={}",
+            "[candle grouped-conv2d] requested=auto sm={} selected=raw reason=exact_asd asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={} min_integrated_speedup_x={:.8}",
             candle_kernels::CUDA_BUILD_COMPUTE_CAP,
             matched.policy_id,
             matched.decision_id,
             matched.state,
+            matched.implementation_id,
+            matched.evidence_sha256,
+            matched.min_integrated_speedup_x.unwrap_or_default(),
         );
     }
 
-    // Exact V2 lookup already requires contiguous_zero_offset, so using the
-    // original slices preserves the launch ABI and avoids converting them to
-    // CudaView values.
     let dev = input.device.clone();
     let slice = match (&input.slice, &kernel.slice) {
         (S::F32(x), S::F32(k)) => S::F32(launch_f32(x, k, p, &dev)?),
@@ -217,10 +236,13 @@ pub(super) fn try_launch_exact(
     };
     if trace_enabled() {
         eprintln!(
-            "[candle grouped-conv2d] submitted_backend=raw launch_submission=success asd_policy={} asd_decision={} asd_state={}",
+            "[candle grouped-conv2d] submitted_backend=raw launch_submission=success asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={} min_integrated_speedup_x={:.8}",
             matched.policy_id,
             matched.decision_id,
             matched.state,
+            matched.implementation_id,
+            matched.evidence_sha256,
+            matched.min_integrated_speedup_x.unwrap_or_default(),
         );
     }
     Ok(Some(CudaStorage { slice, device: dev }))
@@ -234,7 +256,7 @@ pub(super) fn trace_current_selection() {
             "exact_miss"
         };
         eprintln!(
-            "[candle grouped-conv2d] requested=auto selected=current reason={} asd_policy=none asd_decision=none asd_state=none",
+            "[candle grouped-conv2d] requested=auto selected=current reason={} asd_policy=none asd_decision=none asd_state=none asd_impl=none",
             reason
         );
     }
@@ -243,7 +265,7 @@ pub(super) fn trace_current_selection() {
 pub(super) fn trace_current_submission(backend: &str) {
     if exact_dispatch_enabled() && trace_enabled() {
         eprintln!(
-            "[candle grouped-conv2d] submitted_backend={} launch_submission=success asd_policy=none asd_decision=none asd_state=none",
+            "[candle grouped-conv2d] submitted_backend={} launch_submission=success asd_policy=none asd_decision=none asd_state=none asd_impl=none",
             backend
         );
     }

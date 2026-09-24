@@ -55,7 +55,6 @@
 
 #[cfg(feature = "accelerate")]
 mod accelerate;
-pub mod asd_registry;
 pub mod backend;
 pub mod backprop;
 pub mod conv;
