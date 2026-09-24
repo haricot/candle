@@ -110,9 +110,9 @@ fn exact_call(
     weight_contiguous: bool,
     weight_start_offset: usize,
 ) -> candle_kernels::asd_exact::ExactOperationCall {
+    candle_kernels::asd_exact::ExactOperationCall {
         op: candle_kernels::asd_exact::ExactOperation::Conv2d,
         dim: 2,
-    candle_kernels::asd_exact::ExactOperationCall {
         batch: 1,
         c_in: case.c,
         c_out: case.c,
@@ -137,14 +137,61 @@ fn exact_call(
     }
 }
 
-fn lookup(case: Case) -> Option<candle_kernels::asd_exact::ExactAsdMatch> {
-    match candle_kernels::asd_exact::lookup(
-        exact_call(case, true, 0, true, 0),
-        candle_kernels::asd_exact::TARGET_GPU_UUID,
-    )? {
-        candle_kernels::asd_exact::ExactMatch::Proven(matched) => Some(matched),
-        candle_kernels::asd_exact::ExactMatch::Unproven(_) => None,
+fn lookup(
+    case: Case,
+    device: &candle_core::cuda_backend::CudaDevice,
+) -> Result<Option<candle_kernels::asd_exact::ExactAsdMatch>> {
+    let actual_uuid = attested_policy_uuid(device)?;
+    Ok(match candle_kernels::asd_exact::lookup(exact_call(case, true, 0, true, 0), actual_uuid) {
+        Some(candle_kernels::asd_exact::ExactMatch::Proven(matched)) => Some(matched),
+        Some(candle_kernels::asd_exact::ExactMatch::Unproven(_)) | None => None,
+    })
+}
+
+fn parse_policy_gpu_uuid(value: &str) -> Option<[u8; 16]> {
+    let hex = value.strip_prefix("GPU-").unwrap_or(value);
+    let compact: String = hex.chars().filter(|c| *c != '-').collect();
+    if compact.len() != 32 || !compact.is_ascii() {
+        return None;
     }
+    let mut out = [0u8; 16];
+    for (index, slot) in out.iter_mut().enumerate() {
+        *slot = u8::from_str_radix(&compact[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+fn attested_policy_uuid(
+    device: &candle_core::cuda_backend::CudaDevice,
+) -> Result<Option<&'static str>> {
+    let Some(expected) = candle_kernels::asd_exact::TARGET_GPU_UUID else {
+        return Ok(None);
+    };
+    let expected_bytes = parse_policy_gpu_uuid(expected)
+        .ok_or_else(|| candle_core::Error::Msg("invalid embedded ASD V2 device UUID".into()))?;
+    let context = device.cuda_stream().context();
+    let (major, minor) = context.compute_capability().map_err(|err| {
+        candle_core::Error::msg(format!(
+            "ASD V2: unable to read CUDA compute capability: {err:?}"
+        ))
+    })?;
+    if major * 10 + minor != candle_kernels::CUDA_BUILD_COMPUTE_CAP as i32 {
+        candle_core::bail!("ASD V2 runtime GPU SM does not match build target")
+    }
+    let actual_bytes = context
+        .uuid()
+        .map_err(|err| {
+            candle_core::Error::msg(format!("ASD V2: unable to read CUDA device UUID: {err:?}"))
+        })?
+        .bytes;
+    if !actual_bytes
+        .iter()
+        .zip(expected_bytes.iter())
+        .all(|(actual, expected)| *actual as u8 == *expected)
+    {
+        candle_core::bail!("ASD V2 device-scoped GPU UUID mismatch at runtime")
+    }
+    Ok(Some(expected))
 }
 
 fn policy_speedup_x(matched: &candle_kernels::asd_exact::ExactAsdMatch) -> Result<f64> {
@@ -201,7 +248,7 @@ impl CustomOp2 for RawExactDw5x5 {
             h: dims[2],
             w: dims[3],
         };
-        let Some(matched) = lookup(case) else {
+        let Some(matched) = lookup(case, input.device())? else {
             candle_core::bail!("raw exact custom op called for an ASD V2 domain miss")
         };
         if !candle_kernels::asd_exact::VALIDATION_BUILD {
@@ -248,7 +295,11 @@ fn current(x: &Tensor, kernel: &Tensor, groups: usize) -> Result<Tensor> {
 }
 
 fn candidate(case: Case, x: &Tensor, kernel: &Tensor, trace: bool) -> Result<Tensor> {
-    if let Some(matched) = lookup(case) {
+    let cuda_device = match x.device() {
+        Device::Cuda(device) => device,
+        _ => candle_core::bail!("ASD V2 validation candidate requires CUDA"),
+    };
+    if let Some(matched) = lookup(case, cuda_device)? {
         if trace {
             println!(
                 "SELECT mode=asd_candidate selected=raw reason=exact_asd policy_id={} decision_id={} state={}",
@@ -409,6 +460,10 @@ fn main() -> Result<()> {
     }
 
     let device = Device::new_cuda(0)?;
+    let cuda_device = match &device {
+        Device::Cuda(device) => device,
+        _ => candle_core::bail!("ASD V2 validation requires a CUDA device"),
+    };
     println!("=== ASD-V2 DW5X5 MULTI-POINT INTEGRATED CANDIDATE VALIDATION ===");
     println!("scope=validation_only");
     println!("production_dispatch_modified=false");
@@ -428,7 +483,7 @@ fn main() -> Result<()> {
     let mut all_pass = true;
     for case in CASES {
         let (x, kernel) = tensors(case, &device)?;
-        let matched = lookup(case).ok_or_else(|| {
+        let matched = lookup(case, cuda_device)?.ok_or_else(|| {
             candle_core::Error::Msg(
                 format!(
                     "missing exact ASD V2 decision for c={} h={} w={}",
@@ -581,7 +636,7 @@ fn main() -> Result<()> {
         w: 24,
     };
     let (x_miss, k_miss) = tensors(miss, &device)?;
-    let lookup_miss = lookup(miss).is_none();
+    let lookup_miss = lookup(miss, cuda_device)?.is_none();
     println!("DOMAIN_LOOKUP c=64 h=32 w=24 miss={lookup_miss}");
     let current_miss = run(Mode::Current, miss, &x_miss, &k_miss, false)?;
     let candidate_miss = run(Mode::AsdCandidate, miss, &x_miss, &k_miss, true)?;
