@@ -184,7 +184,8 @@ fn attested_policy_uuid(
     };
     let expected_bytes = parse_policy_gpu_uuid(expected)
         .ok_or_else(|| candle_core::Error::Msg("invalid embedded ASD V2 device UUID".into()))?;
-    let context = device.cuda_stream().context();
+    let stream = device.cuda_stream();
+    let context = stream.context();
     let (major, minor) = context.compute_capability().map_err(|err| {
         candle_core::Error::msg(format!(
             "ASD V2: unable to read CUDA compute capability: {err:?}"
