@@ -1,0 +1,302 @@
+# Candle Sync — V1: prepare only. GPU validation and promotion are deliberately separate.
+name: Candle Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to prepare against upstream (or all branches)
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - bf16_candle
+          - fp8_candle
+          - cudnn_fallback_candle
+          - moe_simt_f16_candle
+          - cuda_asd_runner
+      campaign:
+        description: Optional unique campaign ID (letters, numbers, hyphens, underscores)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candle-sync-prepare
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare candidate merges
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    outputs:
+      campaign: ${{ steps.prepare.outputs.campaign }}
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      has_candidates: ${{ steps.prepare.outputs.has_candidates }}
+    steps:
+      - name: Checkout orchestrator
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare from exact upstream and branch SHAs
+        id: prepare
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: ${{ inputs.branch }}
+          CAMPAIGN_INPUT: ${{ inputs.campaign }}
+        run: |
+          set -euo pipefail
+          umask 077
+          report="${RUNNER_TEMP}/candle-sync-report"
+          mkdir -p "${report}/logs" "${report}/conflicts"
+          results="${report}/branch-results.ndjson"
+          : > "${results}"
+
+          campaign="${CAMPAIGN_INPUT:-}"
+          if [[ -z "${campaign}" ]]; then
+            campaign="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          if [[ ! "${campaign}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$ ]]; then
+            echo "::error::Invalid campaign ID. Use 1–40 ASCII letters/numbers/-/_; begin with a letter or number."
+            exit 2
+          fi
+          echo "campaign=${campaign}" >> "${GITHUB_OUTPUT}"
+
+          case "${SYNC_BRANCH}" in
+            all)
+              branches=(bf16_candle fp8_candle cudnn_fallback_candle moe_simt_f16_candle cuda_asd_runner)
+              ;;
+            bf16_candle|fp8_candle|cudnn_fallback_candle|moe_simt_f16_candle|cuda_asd_runner)
+              branches=("${SYNC_BRANCH}")
+              ;;
+            *)
+              echo "::error::Unsupported branch selection"
+              exit 2
+              ;;
+          esac
+
+          # A fork main sync is intentionally unnecessary.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+          git remote add upstream https://github.com/huggingface/candle.git
+          git fetch --no-tags upstream +refs/heads/main:refs/remotes/upstream/main
+          upstream_sha="$(git rev-parse refs/remotes/upstream/main)"
+          echo "upstream_sha=${upstream_sha}" >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "# Candle Sync — preparation"
+            echo
+            echo "- Campaign: ${campaign}"
+            echo "- Upstream: huggingface/candle main @ ${upstream_sha}"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "| Branch | Preparation | Candidate |"
+            echo "| --- | --- | --- |"
+          } > "${report}/report.md"
+
+          # Every line is independently parseable JSON; no branch can block the
+          # preparation of another branch.
+          record() {
+            local branch="$1" source="$2" status="$3" candidate="$4" sha="$5" detail="$6"
+            jq -cn \
+              --arg branch "${branch}" --arg source_sha "${source}" \
+              --arg status "${status}" --arg candidate "${candidate}" \
+              --arg candidate_sha "${sha}" --arg detail "${detail}" \
+              --arg upstream_sha "${upstream_sha}" \
+              '{branch:$branch,
+                source_sha:(if $source_sha=="" then null else $source_sha end),
+                upstream_sha:$upstream_sha,
+                status:$status,
+                candidate:(if $candidate=="" then null else $candidate end),
+                candidate_sha:(if $candidate_sha=="" then null else $candidate_sha end),
+                detail:$detail}' >> "${results}"
+            if [[ -n "${sha}" ]]; then
+              echo "| ${branch} | ${status} | [${candidate}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${candidate}) |" >> "${report}/report.md"
+            else
+              echo "| ${branch} | ${status} | — |" >> "${report}/report.md"
+            fi
+          }
+
+          for branch in "${branches[@]}"; do
+            echo "::group::Prepare ${branch}"
+            candidate="sync/${campaign}/${branch}"
+            log="${report}/logs/${branch}.log"
+
+            if ! git fetch --no-tags origin \
+              "+refs/heads/${branch}:refs/remotes/origin/${branch}" >"${log}" 2>&1; then
+              record "${branch}" "" "MISSING_BRANCH" "" "" "Unable to fetch the source branch"
+              echo "::endgroup::"
+              continue
+            fi
+            source_sha="$(git rev-parse "refs/remotes/origin/${branch}")"
+
+            # Never overwrite a previously published candidate.
+            if git ls-remote --exit-code --heads origin "refs/heads/${candidate}" > /dev/null 2>&1; then
+              record "${branch}" "${source_sha}" "STALE" "" "" "Candidate ref already exists; use a new campaign ID"
+              echo "::endgroup::"
+              continue
+            fi
+
+            git switch --detach -f "${source_sha}" >>"${log}" 2>&1
+            if ! git merge --no-ff --no-edit "${upstream_sha}" >>"${log}" 2>&1; then
+              mkdir -p "${report}/conflicts/${branch}"
+              git ls-files -u > "${report}/conflicts/${branch}/index-stages.txt"
+              git diff --name-only --diff-filter=U > "${report}/conflicts/${branch}/files.txt"
+              if [[ -s "${report}/conflicts/${branch}/files.txt" ]]; then
+                while IFS= read -r -d '' path; do
+                  for stage in 1 2 3; do
+                    output="${report}/conflicts/${branch}/stage-${stage}/${path}"
+                    mkdir -p "$(dirname "${output}")"
+                    git show ":${stage}:${path}" > "${output}" 2>/dev/null || rm -f "${output}"
+                  done
+                done < <(git diff --name-only --diff-filter=U -z)
+                status="CONFLICT"
+              else
+                status="MERGE_FAILED"
+              fi
+              git merge --abort >>"${log}" 2>&1 || git reset --hard "${source_sha}" >>"${log}" 2>&1
+              record "${branch}" "${source_sha}" "${status}" "" "" "See logs and conflict artifacts"
+              echo "::endgroup::"
+              continue
+            fi
+
+            candidate_sha="$(git rev-parse HEAD)"
+            if [[ "${candidate_sha}" == "${source_sha}" ]]; then
+              record "${branch}" "${source_sha}" "UP_TO_DATE" "" "" "Source already contains the recorded upstream SHA"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # The push creates a new ref only; it never updates a public feature branch.
+            if git push origin "${candidate_sha}:refs/heads/${candidate}" >>"${log}" 2>&1; then
+              record "${branch}" "${source_sha}" "CHECKS_PENDING" "${candidate}" "${candidate_sha}" "Candidate published for independent read-only CI"
+            else
+              record "${branch}" "${source_sha}" "PUSH_FAILED" "" "" "See branch log"
+            fi
+            echo "::endgroup::"
+          done
+
+          jq -s \
+            --arg campaign "${campaign}" --arg upstream_sha "${upstream_sha}" \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{schema_version:1,campaign:$campaign,upstream_sha:$upstream_sha,
+              run_url:$run_url,branches:.}' "${results}" > "${report}/report.json"
+
+          matrix="$(jq -sc '[.[] | select(.candidate_sha != null) |
+            {branch:.branch,candidate:.candidate,sha:.candidate_sha}]' "${results}")"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          if [[ "${matrix}" == "[]" ]]; then
+            echo "has_candidates=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has_candidates=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+          {
+            cat "${report}/report.md"
+            echo
+            echo "Successful preparation does not mean GPU validation. No public feature branch was modified."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload preparation report and conflict evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candle-sync-preparation-${{ steps.prepare.outputs.campaign || github.run_id }}
+          path: ${{ runner.temp }}/candle-sync-report/
+          if-no-files-found: warn
+          retention-days: 21
+
+  checks:
+    name: CPU checks / ${{ matrix.branch }}
+    needs: prepare
+    if: needs.prepare.outputs.has_candidates == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      # Check out the immutable candidate SHA, not the mutable sync/ branch.
+      # No write token is persisted before running project build scripts.
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Format and CPU compilation checks
+        id: check
+        shell: bash
+        env:
+          CHECK_BRANCH: ${{ matrix.branch }}
+          CHECK_SHA: ${{ matrix.sha }}
+          CHECK_CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+        run: |
+          set -uo pipefail
+          report="${RUNNER_TEMP}/candle-sync-check"
+          mkdir -p "${report}"
+          cargo fmt --all -- --check > "${report}/fmt.log" 2>&1
+          fmt_rc=$?
+          cargo check -p candle-core --no-default-features --locked > "${report}/cpu-check.log" 2>&1
+          check_rc=$?
+          if [[ "${fmt_rc}" -eq 0 && "${check_rc}" -eq 0 ]]; then
+            status="GPU_PENDING"
+            echo "checks_passed=true" >> "${GITHUB_OUTPUT}"
+          else
+            status="CHECK_FAILED"
+            echo "checks_passed=false" >> "${GITHUB_OUTPUT}"
+          fi
+          jq -n \
+            --arg campaign "${CHECK_CAMPAIGN}" \
+            --arg branch "${CHECK_BRANCH}" \
+            --arg candidate_sha "${CHECK_SHA}" \
+            --arg status "${status}" \
+            --arg rustc "$(rustc --version)" \
+            --arg cargo "$(cargo --version)" \
+            --argjson fmt_rc "${fmt_rc}" \
+            --argjson cpu_check_rc "${check_rc}" \
+            '{campaign:$campaign,branch:$branch,candidate_sha:$candidate_sha,
+              status:$status,fmt_exit_code:$fmt_rc,
+              cpu_check_exit_code:$cpu_check_rc,
+              toolchain:{rustc:$rustc,cargo:$cargo}}' > "${report}/report.json"
+          {
+            echo "### ${CHECK_BRANCH}"
+            echo "Candidate SHA: ${CHECK_SHA}"
+            echo "Format exit code: ${fmt_rc}"
+            echo "CPU check exit code: ${check_rc}"
+            echo "Status: ${status}"
+            echo "CUDA sm61 has not been tested by this workflow."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload CPU check evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candle-sync-${{ needs.prepare.outputs.campaign }}-${{ matrix.branch }}-checks
+          path: ${{ runner.temp }}/candle-sync-check/
+          if-no-files-found: warn
+          retention-days: 21
+
+      - name: Enforce CPU checks
+        if: steps.check.outputs.checks_passed != 'true'
+        run: exit 1
