@@ -200,6 +200,10 @@ jobs:
           set -uo pipefail
           report="$RUNNER_TEMP/candle-candidate-cuda"
           mkdir -p "$report"
+          # Hosted CUDA containers run as root over a runner-owned workspace.
+          # The checkout action's host safe.directory setting does not cross
+          # the container HOME boundary; configure it before reading HEAD.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]] || exit 3
           cp "$RUNNER_TEMP/candidate-cpu-proof/Cargo.lock" Cargo.lock
           lock="$(sha256sum Cargo.lock | cut -d' ' -f1)"
