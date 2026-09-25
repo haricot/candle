@@ -481,7 +481,10 @@ fn mul_mat_via_q8_1(
     let dst = dev.alloc_zeros::<f32>(x_rows * y_cols)?;
     let cfg = if dtype == GgmlDType::Mxfp4 {
         if y_cols > u16::MAX as usize {
-            crate::bail!("MXFP4 SM61 prefill currently supports at most {} rows, got {y_cols}", u16::MAX)
+            crate::bail!(
+                "MXFP4 SM61 prefill currently supports at most {} rows, got {y_cols}",
+                u16::MAX
+            )
         }
         cudarc::driver::LaunchConfig {
             grid_dim: (x_rows as u32, y_cols as u32, 1),
@@ -1133,8 +1136,8 @@ mod test {
         // Two NVFP4 blocks, 16 E2M1 values each.
         // Each byte holds two consecutive E2M1 nibbles.
         let packed = vec![
-            0x10u8, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
-            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+            0x10u8, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+            0xcd, 0xef,
         ];
         // E4M3FN: 0x38 = 1.0, 0x40 = 2.0.
         let scales = vec![0x38u8, 0x40];
@@ -1161,8 +1164,8 @@ mod test {
 
         let got = dev.clone_dtoh(&out.as_view())?;
         let e2m1 = [
-            0.0f32, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
-            -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+            0.0f32, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0,
+            -6.0,
         ];
         let mut expected = Vec::with_capacity(32);
         for (block, scale) in [(0usize, 1.0f32), (1usize, 2.0f32)] {
@@ -1186,8 +1189,7 @@ mod test {
         batch: usize,
     ) -> Vec<f32> {
         const E2M1: [f32; 16] = [
-            0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
-            -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+            0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
         ];
         let blocks_per_row = k / 16;
         let packed_row_bytes = blocks_per_row * 8;
@@ -1197,11 +1199,10 @@ mod test {
             for row in 0..rows {
                 let mut acc = 0f32;
                 for block in 0..blocks_per_row {
-                    let scale = e4m3fn_to_f32_test(scales[row * blocks_per_row + block]) * global_scale;
-                    let p = &packed[
-                        row * packed_row_bytes + block * 8
-                            .. row * packed_row_bytes + block * 8 + 8
-                    ];
+                    let scale =
+                        e4m3fn_to_f32_test(scales[row * blocks_per_row + block]) * global_scale;
+                    let p = &packed[row * packed_row_bytes + block * 8
+                        ..row * packed_row_bytes + block * 8 + 8];
                     for i in 0..8 {
                         let byte = p[i];
                         let w0 = E2M1[(byte & 0x0f) as usize] * scale;
@@ -1222,13 +1223,21 @@ mod test {
         let exp = (x >> 3) & 0x0f;
         let mant = x & 0x07;
         let value = if exp == 0 {
-            if mant == 0 { 0.0 } else { mant as f32 * 2f32.powi(-9) }
+            if mant == 0 {
+                0.0
+            } else {
+                mant as f32 * 2f32.powi(-9)
+            }
         } else if exp == 0x0f && mant == 0x07 {
             f32::NAN
         } else {
             (1.0 + mant as f32 / 8.0) * 2f32.powi(exp as i32 - 7)
         };
-        if sign != 0 { -value } else { value }
+        if sign != 0 {
+            -value
+        } else {
+            value
+        }
     }
 
     fn f32_to_e4m3fn_nearest_test(x: f32) -> u8 {
@@ -1261,8 +1270,7 @@ mod test {
 
     fn nearest_e2m1_test(x: f32) -> u8 {
         const E2M1: [f32; 16] = [
-            0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
-            -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+            0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
         ];
         let mut best = 0usize;
         let mut best_err = f32::INFINITY;
@@ -1317,7 +1325,6 @@ mod test {
 
         (packed, scales, global_scale)
     }
-
 
     fn assert_nvfp4_close(expected: &[f32], got: &[f32], label: &str) {
         assert_eq!(expected.len(), got.len(), "{label}: length mismatch");
@@ -1390,7 +1397,6 @@ mod test {
         out
     }
 
-
     #[test]
     fn cuda_nvfp4_sm61_compute_parity() -> Result<()> {
         let dev = CudaDevice::new(0)?;
@@ -1419,15 +1425,8 @@ mod test {
             let activations = (0..batch * k)
                 .map(|i| ((i as f32) * 0.013).sin() * 0.7 + ((i as f32) * 0.003).cos() * 0.2)
                 .collect::<Vec<_>>();
-            let expected_f32 = nvfp4_test_reference(
-                &packed,
-                &scales,
-                global_scale,
-                rows,
-                k,
-                &activations,
-                batch,
-            );
+            let expected_f32 =
+                nvfp4_test_reference(&packed, &scales, global_scale, rows, k, &activations, batch);
 
             let activations_d = dev.clone_htod(&activations)?;
             let k_padded = pad(k, MATRIX_ROW_PADDING);
@@ -1439,8 +1438,7 @@ mod test {
             // Kernel parity must compare against the exact Q8_1 activations
             // consumed by CUDA, not against the original F32 activations.
             let q8_host = dev.clone_dtoh(&q8.as_view())?;
-            let activations_q8 =
-                dequantize_cuda_q8_1_reference(&q8_host, batch, k, k_padded);
+            let activations_q8 = dequantize_cuda_q8_1_reference(&q8_host, batch, k, k_padded);
             let expected_kernel = nvfp4_test_reference(
                 &packed,
                 &scales,
@@ -1466,13 +1464,7 @@ mod test {
             barg!(builder, global_scale);
             builder.arg(&q8);
             builder.arg(&out);
-            barg!(
-                builder,
-                k as i32,
-                rows as i32,
-                k_padded as i32,
-                rows as i32
-            );
+            barg!(builder, k as i32, rows as i32, k_padded as i32, rows as i32);
             unsafe { builder.launch(cfg) }.w()?;
             let got = dev.clone_dtoh(&out.as_view())?;
 
@@ -1486,7 +1478,11 @@ mod test {
                 "NVFP4_A8_E2E label=decode_batch_{batch} max_abs={:.6} mean_abs={:.6} cosine={:.8}",
                 e2e.0, e2e.1, e2e.2
             );
-            assert!(e2e.2 >= 0.999, "decode_batch_{batch}: Q8_1 end-to-end cosine={}", e2e.2);
+            assert!(
+                e2e.2 >= 0.999,
+                "decode_batch_{batch}: Q8_1 end-to-end cosine={}",
+                e2e.2
+            );
         }
 
         // Dynamic-batch prefill uses the same DP4A primitive.
@@ -1494,15 +1490,8 @@ mod test {
         let activations = (0..batch * k)
             .map(|i| ((i as f32) * 0.009).cos() * 0.65 - 0.05)
             .collect::<Vec<_>>();
-        let expected_f32 = nvfp4_test_reference(
-            &packed,
-            &scales,
-            global_scale,
-            rows,
-            k,
-            &activations,
-            batch,
-        );
+        let expected_f32 =
+            nvfp4_test_reference(&packed, &scales, global_scale, rows, k, &activations, batch);
         let activations_d = dev.clone_htod(&activations)?;
         let k_padded = pad(k, MATRIX_ROW_PADDING);
         let y_size_in_bytes =
@@ -1511,8 +1500,7 @@ mod test {
         quantize_q8_1(&activations_d.as_view(), &mut q8, k, batch, &dev)?;
 
         let q8_host = dev.clone_dtoh(&q8.as_view())?;
-        let activations_q8 =
-            dequantize_cuda_q8_1_reference(&q8_host, batch, k, k_padded);
+        let activations_q8 = dequantize_cuda_q8_1_reference(&q8_host, batch, k, k_padded);
         let expected_kernel = nvfp4_test_reference(
             &packed,
             &scales,
@@ -1552,7 +1540,11 @@ mod test {
             "NVFP4_A8_E2E label=prefill_batch_17 max_abs={:.6} mean_abs={:.6} cosine={:.8}",
             e2e.0, e2e.1, e2e.2
         );
-        assert!(e2e.2 >= 0.999, "prefill_batch_17: Q8_1 end-to-end cosine={}", e2e.2);
+        assert!(
+            e2e.2 >= 0.999,
+            "prefill_batch_17: Q8_1 end-to-end cosine={}",
+            e2e.2
+        );
 
         // Indexed MoE correctness with the same packed NVFP4 representation.
         let num_experts = 4usize;
@@ -1560,8 +1552,7 @@ mod test {
         let topk = 2usize;
         let moe_batch = 4usize;
         let moe_blocks_per_row = k / 16;
-        let mut moe_packed =
-            vec![0u8; num_experts * moe_rows * moe_blocks_per_row * 8];
+        let mut moe_packed = vec![0u8; num_experts * moe_rows * moe_blocks_per_row * 8];
         for (i, byte) in moe_packed.iter_mut().enumerate() {
             let lo = ((i * 3 + 1) % 16) as u8;
             let hi = ((i * 5 + 7) % 16) as u8;
@@ -1585,8 +1576,7 @@ mod test {
         let mut moe_q8 = dev.alloc_zeros::<u8>(moe_q8_size)?;
         quantize_q8_1(&moe_inputs_d.as_view(), &mut moe_q8, k, moe_batch, &dev)?;
         let moe_q8_host = dev.clone_dtoh(&moe_q8.as_view())?;
-        let moe_inputs_q8 =
-            dequantize_cuda_q8_1_reference(&moe_q8_host, moe_batch, k, k_padded);
+        let moe_inputs_q8 = dequantize_cuda_q8_1_reference(&moe_q8_host, moe_batch, k, k_padded);
 
         let packed_row_bytes = moe_blocks_per_row * 8;
         let mut expected_moe = vec![0f32; moe_batch * topk * moe_rows];
@@ -1596,14 +1586,10 @@ mod test {
                 let expert_packed_start = expert * moe_rows * packed_row_bytes;
                 let expert_scale_start = expert * moe_rows * moe_blocks_per_row;
                 let expert_expected = nvfp4_test_reference(
-                    &moe_packed[
-                        expert_packed_start
-                            .. expert_packed_start + moe_rows * packed_row_bytes
-                    ],
-                    &moe_scales[
-                        expert_scale_start
-                            .. expert_scale_start + moe_rows * moe_blocks_per_row
-                    ],
+                    &moe_packed
+                        [expert_packed_start..expert_packed_start + moe_rows * packed_row_bytes],
+                    &moe_scales
+                        [expert_scale_start..expert_scale_start + moe_rows * moe_blocks_per_row],
                     global_scale,
                     moe_rows,
                     k,
@@ -1645,8 +1631,6 @@ mod test {
         Ok(())
     }
 
-
-
     #[test]
     #[ignore = "release benchmark: NVFP4 4096x4096 on the same workload as mxfp4_sm61_benchmark_gate"]
     fn cuda_nvfp4_sm61_benchmark_4096() -> Result<()> {
@@ -1656,7 +1640,11 @@ mod test {
 
         println!(
             "NVFP4_BENCH_CONFIG profile={} n={n} k={k}",
-            if cfg!(debug_assertions) { "debug" } else { "release" }
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            }
         );
 
         let weights = (0..n * k)
@@ -1677,8 +1665,7 @@ mod test {
         let scales_d = dev.clone_htod(&scales)?;
         let activations_d = dev.clone_htod(&activations)?;
         let k_padded = pad(k, MATRIX_ROW_PADDING);
-        let q8_size =
-            k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
+        let q8_size = k_padded * GgmlDType::Q8_1.type_size() / GgmlDType::Q8_1.block_size();
 
         // Stage timings isolate the part that shared-A8 can actually
         // amortize from the NVFP4 weight/decode kernel itself.
@@ -1712,13 +1699,7 @@ mod test {
             barg!(builder, global_scale);
             builder.arg(&q8_stage);
             builder.arg(&kernel_stage_out);
-            barg!(
-                builder,
-                k as i32,
-                n as i32,
-                k_padded as i32,
-                n as i32
-            );
+            barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(kernel_stage_cfg) }.w()?;
         }
         stream.synchronize().w()?;
@@ -1730,19 +1711,11 @@ mod test {
             barg!(builder, global_scale);
             builder.arg(&q8_stage);
             builder.arg(&kernel_stage_out);
-            barg!(
-                builder,
-                k as i32,
-                n as i32,
-                k_padded as i32,
-                n as i32
-            );
+            barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(kernel_stage_cfg) }.w()?;
             stream.synchronize().w()?;
         }
-        let kernel_latency_us =
-            kernel_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
-
+        let kernel_latency_us = kernel_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
 
         // Diagnostic transform: predecode the E4M3 local scales once.
         // This is not the final storage format; it isolates software E4M3
@@ -1768,13 +1741,7 @@ mod test {
             builder.arg(&predecoded_scales_d);
             builder.arg(&q8_stage);
             builder.arg(&predecoded_out);
-            barg!(
-                builder,
-                k as i32,
-                n as i32,
-                k_padded as i32,
-                n as i32
-            );
+            barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(predecoded_cfg) }.w()?;
         }
         stream.synchronize().w()?;
@@ -1785,18 +1752,11 @@ mod test {
             builder.arg(&predecoded_scales_d);
             builder.arg(&q8_stage);
             builder.arg(&predecoded_out);
-            barg!(
-                builder,
-                k as i32,
-                n as i32,
-                k_padded as i32,
-                n as i32
-            );
+            barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(predecoded_cfg) }.w()?;
             stream.synchronize().w()?;
         }
-        let predecoded_kernel_us =
-            predecoded_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
+        let predecoded_kernel_us = predecoded_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
         let predecoded_got = dev.clone_dtoh(&predecoded_out.as_view())?;
 
         let run_once = || -> Result<Vec<f32>> {
@@ -1819,13 +1779,7 @@ mod test {
             barg!(builder, global_scale);
             builder.arg(&q8);
             builder.arg(&out);
-            barg!(
-                builder,
-                k as i32,
-                n as i32,
-                k_padded as i32,
-                n as i32
-            );
+            barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(cfg) }.w()?;
             dev.clone_dtoh(&out.as_view()).map_err(Into::into)
         };
@@ -1875,8 +1829,7 @@ mod test {
                 aos32[dst_off + 1] = scales[row * (k / 16) + block16 + 1];
 
                 let src_off = (row * (k / 16) + block16) * 8;
-                aos32[dst_off + 2..dst_off + 18]
-                    .copy_from_slice(&packed[src_off..src_off + 16]);
+                aos32[dst_off + 2..dst_off + 18].copy_from_slice(&packed[src_off..src_off + 16]);
             }
         }
         assert_eq!(aos32.len(), bytes - std::mem::size_of::<f32>());
@@ -1898,13 +1851,7 @@ mod test {
                 barg!(builder, global_scale);
                 builder.arg(&q8_stage);
                 builder.arg(&aos_out);
-                barg!(
-                    builder,
-                    k as i32,
-                    n as i32,
-                    k_padded as i32,
-                    n as i32
-                );
+                barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(aos_cfg) }.w()?;
             }
             stream.synchronize().w()?;
@@ -1917,13 +1864,7 @@ mod test {
                 barg!(builder, global_scale);
                 builder.arg(&q8_stage);
                 builder.arg(&aos_out);
-                barg!(
-                    builder,
-                    k as i32,
-                    n as i32,
-                    k_padded as i32,
-                    n as i32
-                );
+                barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(aos_cfg) }.w()?;
             }
             stream.synchronize().w()?;
@@ -1964,13 +1905,7 @@ mod test {
                 barg!(builder, global_scale);
                 builder.arg(&q8_stage);
                 builder.arg(&split_out);
-                barg!(
-                    builder,
-                    k as i32,
-                    n as i32,
-                    k_padded as i32,
-                    n as i32
-                );
+                barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(split_cfg) }.w()?;
             }
             stream.synchronize().w()?;
@@ -1984,18 +1919,11 @@ mod test {
                 barg!(builder, global_scale);
                 builder.arg(&q8_stage);
                 builder.arg(&split_out);
-                barg!(
-                    builder,
-                    k as i32,
-                    n as i32,
-                    k_padded as i32,
-                    n as i32
-                );
+                barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(split_cfg) }.w()?;
             }
             stream.synchronize().w()?;
-            let split_us =
-                split_start.elapsed().as_secs_f64() * 1e6 / split_launches as f64;
+            let split_us = split_start.elapsed().as_secs_f64() * 1e6 / split_launches as f64;
             let split_got = dev.clone_dtoh(&split_out.as_view())?;
             let split_metrics = nvfp4_metrics(&kernel_reference, &split_got);
 
@@ -2031,13 +1959,7 @@ mod test {
                 barg!(builder, global_scale);
                 builder.arg(&q8_stage);
                 builder.arg(&sweep_out);
-                barg!(
-                    builder,
-                    k as i32,
-                    n as i32,
-                    k_padded as i32,
-                    n as i32
-                );
+                barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(sweep_cfg) }.w()?;
             }
             stream.synchronize().w()?;
@@ -2050,13 +1972,7 @@ mod test {
                 barg!(builder, global_scale);
                 builder.arg(&q8_stage);
                 builder.arg(&sweep_out);
-                barg!(
-                    builder,
-                    k as i32,
-                    n as i32,
-                    k_padded as i32,
-                    n as i32
-                );
+                barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(sweep_cfg) }.w()?;
                 stream.synchronize().w()?;
             }
@@ -2109,15 +2025,11 @@ mod test {
         );
         println!(
             "NVFP4_KERNEL_PARITY max_abs={:.6} mean_abs={:.6} cosine={:.8}",
-            kernel_metrics.0,
-            kernel_metrics.1,
-            kernel_metrics.2
+            kernel_metrics.0, kernel_metrics.1, kernel_metrics.2
         );
         println!(
             "NVFP4_A8_QUALITY max_abs={:.6} mean_abs={:.6} cosine={:.8}",
-            a8_metrics.0,
-            a8_metrics.1,
-            a8_metrics.2
+            a8_metrics.0, a8_metrics.1, a8_metrics.2
         );
         println!(
             "NVFP4_BENCH_RESULT bytes={bytes} bits_per_weight={bits_per_weight:.4} latency_us={latency_us:.3} effective_gbps={:.3} e2e_max_abs={:.6} e2e_mean_abs={:.6} e2e_cosine={:.8}",
@@ -2128,8 +2040,16 @@ mod test {
         );
 
         assert!(bits_per_weight > 4.49 && bits_per_weight < 4.51);
-        assert!(kernel_metrics.2 >= 0.99999, "NVFP4 kernel cosine={}", kernel_metrics.2);
-        assert!(kernel_metrics.1 < 0.02, "NVFP4 kernel mean_abs={}", kernel_metrics.1);
+        assert!(
+            kernel_metrics.2 >= 0.99999,
+            "NVFP4 kernel cosine={}",
+            kernel_metrics.2
+        );
+        assert!(
+            kernel_metrics.1 < 0.02,
+            "NVFP4 kernel mean_abs={}",
+            kernel_metrics.1
+        );
         assert!(a8_metrics.2 >= 0.999, "NVFP4 A8 cosine={}", a8_metrics.2);
         assert!(e2e_metrics.2.is_finite());
 

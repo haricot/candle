@@ -18,8 +18,7 @@ use std::time::Instant;
 
 const NVFP4_BLOCK: usize = 16;
 const E2M1_VALUES: [f32; 16] = [
-    0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
-    -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+    0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
 ];
 
 #[derive(Clone, Debug)]
@@ -48,7 +47,11 @@ fn e4m3fn_to_f32(x: u8) -> f32 {
         fraction * 2f32.powi(exp as i32 - 7)
     };
 
-    if sign != 0 { -value } else { value }
+    if sign != 0 {
+        -value
+    } else {
+        value
+    }
 }
 
 fn f32_to_e4m3fn_nearest(x: f32) -> u8 {
@@ -147,14 +150,10 @@ fn nvfp4_decode(q: &Nvfp4Reference) -> Vec<f32> {
     let mut out = vec![0f32; q.len];
     for block_idx in 0..q.scales_e4m3.len() {
         let scale = e4m3fn_to_f32(q.scales_e4m3[block_idx]) * q.global_scale;
-        let packed = &q.packed[
-            block_idx * (NVFP4_BLOCK / 2)..(block_idx + 1) * (NVFP4_BLOCK / 2)
-        ];
+        let packed = &q.packed[block_idx * (NVFP4_BLOCK / 2)..(block_idx + 1) * (NVFP4_BLOCK / 2)];
         for (i, &byte) in packed.iter().enumerate() {
-            out[block_idx * NVFP4_BLOCK + 2 * i] =
-                E2M1_VALUES[(byte & 0x0f) as usize] * scale;
-            out[block_idx * NVFP4_BLOCK + 2 * i + 1] =
-                E2M1_VALUES[(byte >> 4) as usize] * scale;
+            out[block_idx * NVFP4_BLOCK + 2 * i] = E2M1_VALUES[(byte & 0x0f) as usize] * scale;
+            out[block_idx * NVFP4_BLOCK + 2 * i + 1] = E2M1_VALUES[(byte >> 4) as usize] * scale;
         }
     }
     out
@@ -165,9 +164,7 @@ fn nvfp4_decode(q: &Nvfp4Reference) -> Vec<f32> {
 // [0,1,2,3,4,6,8,12,0,-1,-2,-3,-4,-6,-8,-12].
 // Multiplying by 0.5 recovers E2M1.
 fn xinfer_lut_decode_byte(byte: u8) -> (i8, i8) {
-    const LUT: [i8; 16] = [
-        0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12,
-    ];
+    const LUT: [i8; 16] = [0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12];
     (LUT[(byte & 0x0f) as usize], LUT[(byte >> 4) as usize])
 }
 
@@ -210,7 +207,11 @@ fn nvfp4_e4m3_reference_values() {
         (0xb8, -1.0),
     ];
     for (raw, expected) in cases {
-        assert_eq!(e4m3fn_to_f32(raw), expected, "E4M3FN decode mismatch for {raw:#04x}");
+        assert_eq!(
+            e4m3fn_to_f32(raw),
+            expected,
+            "E4M3FN decode mismatch for {raw:#04x}"
+        );
     }
 }
 
@@ -312,7 +313,6 @@ fn compare_mxfp4_nvfp4_reference_decode_perf() -> Result<()> {
     Ok(())
 }
 
-
 #[test]
 #[ignore = "large release-only quality gate matching the MXFP4 SM61 benchmark workload"]
 fn compare_mxfp4_nvfp4_matmul_quality_same_workload() -> Result<()> {
@@ -321,7 +321,11 @@ fn compare_mxfp4_nvfp4_matmul_quality_same_workload() -> Result<()> {
 
     println!(
         "FP4_SAME_WORKLOAD_CONFIG profile={} n={n} k={k}",
-        if cfg!(debug_assertions) { "debug" } else { "release" }
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
     );
 
     let weights = (0..n * k)
@@ -333,10 +337,7 @@ fn compare_mxfp4_nvfp4_matmul_quality_same_workload() -> Result<()> {
 
     let w_cpu = Tensor::from_vec(weights.clone(), (n, k), &cpu)?;
     let x_cpu = Tensor::from_vec(x, (1, k), &cpu)?;
-    let reference = x_cpu
-        .matmul(&w_cpu.t()?)?
-        .flatten_all()?
-        .to_vec1::<f32>()?;
+    let reference = x_cpu.matmul(&w_cpu.t()?)?.flatten_all()?.to_vec1::<f32>()?;
 
     let mx = QTensor::quantize(&w_cpu, GgmlDType::Mxfp4)?;
     let mx_dec = mx.dequantize(&cpu)?;
