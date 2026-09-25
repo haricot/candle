@@ -193,6 +193,39 @@ impl Conv2d {
         self.bias.as_ref()
     }
 
+    /// Conv2d followed by SiLU, with promoted exact CUDA fusions.
+    ///
+    /// C3 first recognizes only the four validated F32 depthwise-5x5 signatures
+    /// and fuses producer + bias + SiLU. All other cases preserve the C2 production
+    /// path below. `CANDLE_CUDA_DW5X5_BIAS_SILU_DISABLE=1` restores pre-C3 behavior.
+    pub fn forward_silu(&self, x: &Tensor) -> Result<Tensor> {
+        if let Some(bias) = self.bias.as_ref() {
+            let cfg = &self.config;
+            if cfg.padding == 2 && cfg.stride == 1 && cfg.dilation == 1 {
+                let (out_c, in_per_group, kh, kw) = self.weight.dims4()?;
+                let (_, in_c, _, _) = x.dims4()?;
+                if cfg.groups == in_c && out_c == in_c && in_per_group == 1 && kh == 5 && kw == 5 {
+                    if let Some(y) = crate::ops::dw5x5_bias_silu_exact(x, &self.weight, bias)? {
+                        return Ok(y);
+                    }
+                }
+            }
+        }
+
+        let x = x.conv2d_with_algo(
+            &self.weight,
+            self.config.padding,
+            self.config.stride,
+            self.config.dilation,
+            self.config.groups,
+            self.config.cudnn_fwd_algo,
+        )?;
+        match &self.bias {
+            None => x.silu(),
+            Some(bias) => crate::ops::conv2d_bias_silu(&x, bias),
+        }
+    }
+
     pub fn absorb_bn(&self, bn: &BatchNorm) -> Result<Self> {
         if let Some((w_bn, b_bn)) = bn.weight_and_bias() {
             let std_ = w_bn.div(&((bn.running_var() + bn.eps())?.sqrt()?))?;

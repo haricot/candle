@@ -20,6 +20,8 @@ mod ptx {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Id {
     Affine,
+    AsdDw5x5,
+    AsdFusions,
     Binary,
     Cast,
     Conv,
@@ -33,8 +35,10 @@ pub enum Id {
     Unary,
 }
 
-pub const ALL_IDS: [Id; 12] = [
+pub const ALL_IDS: [Id; 14] = [
     Id::Affine,
+    Id::AsdDw5x5,
+    Id::AsdFusions,
     Id::Binary,
     Id::Cast,
     Id::Conv,
@@ -84,6 +88,8 @@ macro_rules! mdl {
 }
 
 mdl!(AFFINE, Affine);
+mdl!(ASD_DW5X5, AsdDw5x5);
+mdl!(ASD_FUSIONS, AsdFusions);
 mdl!(BINARY, Binary);
 mdl!(CAST, Cast);
 mdl!(CONV, Conv);

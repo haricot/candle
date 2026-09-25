@@ -3,6 +3,8 @@
 use crate::{op::BackpropOp, op::Op, Error, Result, Tensor};
 
 mod grouped;
+#[cfg(feature = "cuda")]
+mod grouped_conv2d_asd;
 mod grouped_transpose_cpu;
 #[cfg(feature = "cuda")]
 mod grouped_transpose_cuda;
