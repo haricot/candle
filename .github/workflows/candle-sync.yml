@@ -224,16 +224,7 @@ jobs:
           failures=0
           # Explicit workflow_dispatch works for GITHUB_TOKEN-created candidates,
           # unlike on:push. Do not start CI for conflicted branches.
-          while IFS=
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: candle-sync-preparation-${{ steps.prepare.outputs.campaign || github.run_id }}
-          path: ${{ runner.temp }}/candle-sync-report/
-          if-no-files-found: warn
-          retention-days: 21
-
-\t' read -r branch candidate sha upstream_sha; do
+          while read -r branch candidate sha upstream_sha; do
             [[ -n "$sha" ]] || continue
             if gh workflow run candle-candidate-ci.yml --ref mirror_orch \
               -f "branch=$branch" -f "campaign=$CAMPAIGN" \
