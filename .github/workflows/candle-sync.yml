@@ -255,10 +255,32 @@ jobs:
           set -uo pipefail
           report="${RUNNER_TEMP}/candle-sync-check"
           mkdir -p "${report}"
-          cargo fmt --all -- --check > "${report}/fmt.log" 2>&1
-          fmt_rc=$?
-          cargo check -p candle-core --no-default-features --locked > "${report}/cpu-check.log" 2>&1
-          check_rc=$?
+          # The upstream Candle library does not commit Cargo.lock. Only use
+          # --locked if a lockfile already exists, and preserve the resolved
+          # lockfile as evidence when this check generates one.
+          if cargo fmt --all -- --check > "${report}/fmt.log" 2>&1; then
+            fmt_rc=0
+          else
+            fmt_rc=$?
+          fi
+          if [[ -f Cargo.lock ]]; then
+            lockfile_mode="existing"
+            cargo_flags=(--locked)
+          else
+            lockfile_mode="generated"
+            cargo_flags=()
+          fi
+          if cargo check -p candle-core --no-default-features "${cargo_flags[@]}" > "${report}/cpu-check.log" 2>&1; then
+            check_rc=0
+          else
+            check_rc=$?
+          fi
+          if [[ -f Cargo.lock ]]; then
+            cp Cargo.lock "${report}/Cargo.lock"
+            lockfile_sha256="$(sha256sum Cargo.lock | cut -d' ' -f1)"
+          else
+            lockfile_sha256=""
+          fi
           if [[ "${fmt_rc}" -eq 0 && "${check_rc}" -eq 0 ]]; then
             status="GPU_PENDING"
             echo "checks_passed=true" >> "${GITHUB_OUTPUT}"
@@ -271,6 +293,8 @@ jobs:
             --arg branch "${CHECK_BRANCH}" \
             --arg candidate_sha "${CHECK_SHA}" \
             --arg status "${status}" \
+            --arg lockfile_mode "${lockfile_mode}" \
+            --arg lockfile_sha256 "${lockfile_sha256}" \
             --arg rustc "$(rustc --version)" \
             --arg cargo "$(cargo --version)" \
             --argjson fmt_rc "${fmt_rc}" \
@@ -278,12 +302,14 @@ jobs:
             '{campaign:$campaign,branch:$branch,candidate_sha:$candidate_sha,
               status:$status,fmt_exit_code:$fmt_rc,
               cpu_check_exit_code:$cpu_check_rc,
+              lockfile:{mode:$lockfile_mode,sha256:$lockfile_sha256},
               toolchain:{rustc:$rustc,cargo:$cargo}}' > "${report}/report.json"
           {
             echo "### ${CHECK_BRANCH}"
             echo "Candidate SHA: ${CHECK_SHA}"
             echo "Format exit code: ${fmt_rc}"
             echo "CPU check exit code: ${check_rc}"
+            echo "Cargo.lock: ${lockfile_mode} (sha256: ${lockfile_sha256:-not created})"
             echo "Status: ${status}"
             echo "CUDA sm61 has not been tested by this workflow."
           } >> "${GITHUB_STEP_SUMMARY}"
