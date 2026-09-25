@@ -143,8 +143,21 @@ jobs:
             '{branch:$branch,campaign:$campaign,candidate_sha:$sha,upstream_sha:$upstream,
               status:$status,lock_sha256:$lock,exit_codes:{fmt:$fmt,lock:$lock_rc,
               cpu:$cpu,grouped_cpu_tests:$tests,targeted_tests:$tests}}' > "$report/report.json"
-          echo "CPU: $status / $CHECK_BRANCH / $CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Cargo.lock SHA-256: $lock_sha" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "CPU: $status / $CHECK_BRANCH / $CANDIDATE_SHA"
+            echo "Exit codes: fmt=$fmt_rc, lock=$lock_rc, cpu=$check_rc, targeted_tests=$test_rc"
+            echo "Cargo.lock SHA-256: $lock_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$status" != CPU_PASSED ]]; then
+            echo "::error::Candidate CPU gate failed: fmt=$fmt_rc, lock=$lock_rc, cpu=$check_rc, targeted_tests=$test_rc"
+            for item in fmt lock cpu-check grouped-cpu-tests fp4-reference-tests; do
+              log="$report/$item.log"
+              [[ -s "$log" ]] || continue
+              echo "::group::$item.log (last 35 lines)"
+              tail -n 35 "$log"
+              echo "::endgroup::"
+            done
+          fi
           [[ "$status" == CPU_PASSED ]]
 
       - name: Upload CPU proof
