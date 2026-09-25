@@ -10,6 +10,8 @@ mod grouped_transpose_cuda;
 mod grouped_transpose_cudnn;
 #[cfg(feature = "cuda")]
 mod grouped_transpose_dispatch;
+#[cfg(feature = "metal")]
+mod grouped_transpose_metal;
 mod grouped_transpose_native;
 use grouped::{GroupedConv1D, GroupedConv2D};
 use grouped_transpose_native::{NativeGroupedConvTranspose1D, NativeGroupedConvTranspose2D};
