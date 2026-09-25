@@ -1,7 +1,7 @@
 # cuDNN fallback — one-time migration
 
 **Pin**: upstream `aebc405d2b4bf42808387e0ca597bf7dad9b565f`.
-**Shared sm61 baseline**: `db6bfa7d02e8ff8419e1ba2f7baabc739fc752bc`.
+**Shared sm61 baseline**: `db6bfa7d02e8ff8419e1ba2f7baabc739fc752bc` plus syntax-fix commit `23cd66e38694c54c2184a57ba9f2c25a7ba1c682`.
 **Original branch**: `cudnn_fallback_candle`, `0ccb2719d41a029e403be3b68c141ee168126ae6` (preserved).
 **Candidate**: `rebase/20260925-aebc405d/cudnn_fallback_candle-work`.
 
@@ -31,6 +31,10 @@ validation workflow. The consolidated `Candle Candidate CI` on the
 `mirror_orch` default branch now supplies SHA-pinned CPU and CUDA
 12.9 SM61 compilation checks, without running GPU kernels. Reintroducing
 the old workflow would cause overlapping maintenance and CI runs.
+
+The baseline syntax fix was merged as a second parent, so the candidate
+contains the updated common SM61 baseline without rewriting its three
+feature commits.
 
 ## Gates
 

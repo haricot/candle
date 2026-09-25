@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     let compute_cap = cudaforge::detect_compute_cap()
         .map(|arch| arch.base())
         .unwrap_or(80);
-    let mut moe_sources = vec!
+    let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
         "src/moe/moe_wmma.cu",
         "src/moe/moe_wmma_gguf.cu",
