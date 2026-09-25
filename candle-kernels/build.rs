@@ -54,6 +54,15 @@ fn main() -> Result<()> {
         moe_sources.push("src/moe/moe_align.cu");
     }
 
+    // Volta is the first architecture with WMMA. Those static modules
+    // have no executable SM61 implementation; a later SIMT MoE feature
+    // supplies an independent path when grouped MoE is required.
+    if compute_cap < 70 {
+        moe_sources.retain(|source| {
+            !matches!(*source, "src/moe/moe_wmma.cu" | "src/moe/moe_wmma_gguf.cu")
+        });
+    }
+
     let mut moe_builder = KernelBuilder::default()
         .source_files(moe_sources)
         .arg("--expt-relaxed-constexpr")
