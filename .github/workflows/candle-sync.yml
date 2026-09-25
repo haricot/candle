@@ -226,7 +226,7 @@ jobs:
           # unlike on:push. Do not start CI for conflicted branches.
           while read -r branch candidate sha upstream_sha; do
             [[ -n "$sha" ]] || continue
-            if gh workflow run candle-candidate-ci.yml --ref mirror_orch \
+            if gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" --ref mirror_orch \
               -f "branch=$branch" -f "campaign=$CAMPAIGN" \
               -f "candidate_ref=$candidate" -f "candidate_sha=$sha" \
               -f "upstream_sha=$upstream_sha" -f "validation=$VALIDATION_MODE" \
