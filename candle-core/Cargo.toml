@@ -74,3 +74,27 @@ required-features = ["cuda"]
 [[example]]
 name = "cutile"
 required-features = ["cutile"]
+
+[[example]]
+name = "grouped_conv_transpose_bench"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv_transpose_asd_validate"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv2d_asd_validate"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv2d_asd_validate_timed"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "grouped_conv2d_asd_real_dispatch_validate"
+required-features = ["cuda", "cudnn"]
+
+[[example]]
+name = "asd_conv2d_dw5x5_frontier"
+required-features = ["cuda", "cudnn"]

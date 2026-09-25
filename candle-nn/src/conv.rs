@@ -479,7 +479,12 @@ pub fn conv_transpose2d(
         up: bound,
     };
     let ws = vb.get_with_hints(
-        (in_channels, out_channels / cfg.groups, kernel_size, kernel_size),
+        (
+            in_channels,
+            out_channels / cfg.groups,
+            kernel_size,
+            kernel_size,
+        ),
         "weight",
         init,
     )?;
@@ -500,7 +505,12 @@ pub fn conv_transpose2d_no_bias(
         up: bound,
     };
     let ws = vb.get_with_hints(
-        (in_channels, out_channels / cfg.groups, kernel_size, kernel_size),
+        (
+            in_channels,
+            out_channels / cfg.groups,
+            kernel_size,
+            kernel_size,
+        ),
         "weight",
         init,
     )?;

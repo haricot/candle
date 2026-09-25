@@ -60,6 +60,8 @@ pub(super) fn launch1d(
         &output,
     )
     .map_err(crate::metal_backend::MetalError::from)?;
+    // The command guard borrows device; release it before moving device into storage.
+    drop(encoder);
     Ok(MetalStorage::new(output, device, dst_el, dtype))
 }
 
@@ -103,5 +105,7 @@ pub(super) fn launch2d(
         &output,
     )
     .map_err(crate::metal_backend::MetalError::from)?;
+    // The command guard borrows device; release it before moving device into storage.
+    drop(encoder);
     Ok(MetalStorage::new(output, device, dst_el, dtype))
 }

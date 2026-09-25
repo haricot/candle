@@ -1892,7 +1892,9 @@ impl BackendStorage for CudaStorage {
             crate::bail!("ASD cuDNN Direct Conv1D requires a contiguous kernel")
         }
         if strict_direct
-            && std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE").ok().as_deref()
+            && std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE")
+                .ok()
+                .as_deref()
                 == Some("1")
         {
             crate::bail!("ASD validation: cuDNN Direct deliberately unavailable")

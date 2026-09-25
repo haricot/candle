@@ -22,9 +22,26 @@ jobs:
           components: rustfmt
       - name: Check format
         run: cargo fmt --all -- --check
-      - name: Check candle-core without CUDA
-        run: cargo check -p candle-core --no-default-features
+      - name: Check core and neural-network layers without CUDA
+        run: cargo check -p candle-core -p candle-nn --no-default-features
       - name: Test grouped convolutions and transpose on CPU
         run: |
           cargo test -p candle-core --no-default-features \
             --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests
+
+      - name: Test candle-nn library on CPU
+        run: cargo test -p candle-nn --no-default-features --lib
+
+  metal-compile:
+    name: Metal smoke compile
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - name: Check grouped Metal targets
+        run: cargo check -p candle-core -p candle-nn --features metal
