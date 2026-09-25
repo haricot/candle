@@ -1886,6 +1886,17 @@ impl BackendStorage for CudaStorage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConv1D,
     ) -> Result<Self> {
+        // Explicit Direct is a validation reference, never a silent CUDA fallback.
+        let strict_direct = params.cudnn_fwd_algo == Some(crate::conv::CudnnFwdAlgo::Direct);
+        if strict_direct && !kernel_l.is_contiguous() {
+            crate::bail!("ASD cuDNN Direct Conv1D requires a contiguous kernel")
+        }
+        if strict_direct
+            && std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE").ok().as_deref()
+                == Some("1")
+        {
+            crate::bail!("ASD validation: cuDNN Direct deliberately unavailable")
+        }
         let device = self.device().clone();
         if !kernel_l.is_contiguous() {
             let slice = Conv1D(params).map(&self.slice, inp_l, &kernel.slice, kernel_l, &device)?;
