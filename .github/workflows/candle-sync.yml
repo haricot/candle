@@ -1,4 +1,4 @@
-# Candle Sync — V1: prepare only. GPU validation and promotion are deliberately separate.
+# Candle Sync — prepare and dispatch immutable candidate CI; GPU execution and promotion remain separate.
 name: Candle Sync
 
 on:
@@ -17,7 +17,15 @@ on:
           - cudnn_fallback_candle
           - moe_simt_f16_candle
           - asd_core
-          - cuda_asd_runner
+      validation:
+        description: How to validate prepared candidates
+        required: true
+        type: choice
+        default: cpu_cuda
+        options:
+          - cpu_cuda
+          - cpu
+          - prepare_only
       campaign:
         description: Optional unique campaign ID (letters, numbers, hyphens, underscores)
         required: false
@@ -38,10 +46,9 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
+      actions: write
     outputs:
       campaign: ${{ steps.prepare.outputs.campaign }}
-      matrix: ${{ steps.prepare.outputs.matrix }}
-      has_candidates: ${{ steps.prepare.outputs.has_candidates }}
     steps:
       - name: Checkout orchestrator
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -76,9 +83,9 @@ jobs:
 
           case "${SYNC_BRANCH}" in
             all)
-              branches=(bf16_candle fp8_candle fp4_candle cudnn_fallback_candle moe_simt_f16_candle asd_core cuda_asd_runner)
+              branches=(bf16_candle fp8_candle fp4_candle cudnn_fallback_candle moe_simt_f16_candle asd_core)
               ;;
-            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|asd_core|cuda_asd_runner)
+            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|asd_core)
               branches=("${SYNC_BRANCH}")
               ;;
             *)
@@ -195,20 +202,59 @@ jobs:
             '{schema_version:1,campaign:$campaign,upstream_sha:$upstream_sha,
               run_url:$run_url,branches:.}' "${results}" > "${report}/report.json"
 
-          matrix="$(jq -sc '[.[] | select(.candidate_sha != null) |
-            {branch:.branch,candidate:.candidate,sha:.candidate_sha}]' "${results}")"
-          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
-          if [[ "${matrix}" == "[]" ]]; then
-            echo "has_candidates=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "has_candidates=true" >> "${GITHUB_OUTPUT}"
-          fi
-
           {
             cat "${report}/report.md"
             echo
-            echo "Successful preparation does not mean GPU validation. No public feature branch was modified."
+            echo "Candidates are verified by Candle Candidate CI on exact commit SHAs."
+            echo "CUDA compilation is not GPU execution. No public feature branch was modified."
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Dispatch independent candidate CI on exact SHAs
+        if: inputs.validation != 'prepare_only'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAMPAIGN: ${{ steps.prepare.outputs.campaign }}
+          VALIDATION_MODE: ${{ inputs.validation }}
+        run: |
+          set -uo pipefail
+          report="$RUNNER_TEMP/candle-sync-report"
+          : > "$report/dispatch.ndjson"
+          : > "$report/dispatch.log"
+          failures=0
+          # Explicit workflow_dispatch works for GITHUB_TOKEN-created candidates,
+          # unlike on:push. Do not start CI for conflicted branches.
+          while IFS=
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candle-sync-preparation-${{ steps.prepare.outputs.campaign || github.run_id }}
+          path: ${{ runner.temp }}/candle-sync-report/
+          if-no-files-found: warn
+          retention-days: 21
+
+\t' read -r branch candidate sha upstream_sha; do
+            [[ -n "$sha" ]] || continue
+            if gh workflow run candle-candidate-ci.yml --ref mirror_orch \
+              -f "branch=$branch" -f "campaign=$CAMPAIGN" \
+              -f "candidate_ref=$candidate" -f "candidate_sha=$sha" \
+              -f "upstream_sha=$upstream_sha" -f "validation=$VALIDATION_MODE" \
+              >> "$report/dispatch.log" 2>&1; then
+              state=DISPATCHED
+            else
+              state=DISPATCH_FAILED
+              failures=$((failures+1))
+              echo "::error::Candidate CI dispatch failed for $branch ($sha)"
+            fi
+            jq -cn --arg branch "$branch" --arg candidate "$candidate" \
+              --arg sha "$sha" --arg state "$state" --arg validation "$VALIDATION_MODE" \
+              '{branch:$branch,candidate:$candidate,sha:$sha,status:$state,
+                validation:$validation}' >> "$report/dispatch.ndjson"
+            echo "$branch: $state ($sha)" >> "$GITHUB_STEP_SUMMARY"
+          done < <(jq -r '.branches[] | select(.candidate_sha != null) |
+            [.branch,.candidate,.candidate_sha,.upstream_sha] | @tsv' "$report/report.json")
+          echo "See Candle Candidate CI for the separate CPU/CUDA results." >> "$GITHUB_STEP_SUMMARY"
+          ((failures == 0))
 
       - name: Upload preparation report and conflict evidence
         if: always()
@@ -219,112 +265,3 @@ jobs:
           if-no-files-found: warn
           retention-days: 21
 
-  checks:
-    name: CPU checks / ${{ matrix.branch }}
-    needs: prepare
-    if: needs.prepare.outputs.has_candidates == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    steps:
-      # Check out the immutable candidate SHA, not the mutable sync/ branch.
-      # No write token is persisted before running project build scripts.
-      - name: Checkout exact candidate SHA
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ matrix.sha }}
-          persist-credentials: false
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
-        with:
-          toolchain: stable
-          components: rustfmt
-
-      - name: Format and CPU compilation checks
-        id: check
-        shell: bash
-        env:
-          CHECK_BRANCH: ${{ matrix.branch }}
-          CHECK_SHA: ${{ matrix.sha }}
-          CHECK_CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
-        run: |
-          set -uo pipefail
-          report="${RUNNER_TEMP}/candle-sync-check"
-          mkdir -p "${report}"
-          # The upstream Candle library does not commit Cargo.lock. Only use
-          # --locked if a lockfile already exists, and preserve the resolved
-          # lockfile as evidence when this check generates one.
-          if cargo fmt --all -- --check > "${report}/fmt.log" 2>&1; then
-            fmt_rc=0
-          else
-            fmt_rc=$?
-          fi
-          if [[ -f Cargo.lock ]]; then
-            lockfile_mode="existing"
-            cargo_flags=(--locked)
-          else
-            lockfile_mode="generated"
-            cargo_flags=()
-          fi
-          if cargo check -p candle-core --no-default-features "${cargo_flags[@]}" > "${report}/cpu-check.log" 2>&1; then
-            check_rc=0
-          else
-            check_rc=$?
-          fi
-          if [[ -f Cargo.lock ]]; then
-            cp Cargo.lock "${report}/Cargo.lock"
-            lockfile_sha256="$(sha256sum Cargo.lock | cut -d' ' -f1)"
-          else
-            lockfile_sha256=""
-          fi
-          if [[ "${fmt_rc}" -eq 0 && "${check_rc}" -eq 0 ]]; then
-            status="GPU_PENDING"
-            echo "checks_passed=true" >> "${GITHUB_OUTPUT}"
-          else
-            status="CHECK_FAILED"
-            echo "checks_passed=false" >> "${GITHUB_OUTPUT}"
-          fi
-          jq -n \
-            --arg campaign "${CHECK_CAMPAIGN}" \
-            --arg branch "${CHECK_BRANCH}" \
-            --arg candidate_sha "${CHECK_SHA}" \
-            --arg status "${status}" \
-            --arg lockfile_mode "${lockfile_mode}" \
-            --arg lockfile_sha256 "${lockfile_sha256}" \
-            --arg rustc "$(rustc --version)" \
-            --arg cargo "$(cargo --version)" \
-            --argjson fmt_rc "${fmt_rc}" \
-            --argjson cpu_check_rc "${check_rc}" \
-            '{campaign:$campaign,branch:$branch,candidate_sha:$candidate_sha,
-              status:$status,fmt_exit_code:$fmt_rc,
-              cpu_check_exit_code:$cpu_check_rc,
-              lockfile:{mode:$lockfile_mode,sha256:$lockfile_sha256},
-              toolchain:{rustc:$rustc,cargo:$cargo}}' > "${report}/report.json"
-          {
-            echo "### ${CHECK_BRANCH}"
-            echo "Candidate SHA: ${CHECK_SHA}"
-            echo "Format exit code: ${fmt_rc}"
-            echo "CPU check exit code: ${check_rc}"
-            echo "Cargo.lock: ${lockfile_mode} (sha256: ${lockfile_sha256:-not created})"
-            echo "Status: ${status}"
-            echo "CUDA sm61 has not been tested by this workflow."
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Upload CPU check evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: candle-sync-${{ needs.prepare.outputs.campaign }}-${{ matrix.branch }}-checks
-          path: ${{ runner.temp }}/candle-sync-check/
-          if-no-files-found: warn
-          retention-days: 21
-
-      - name: Enforce CPU checks
-        if: steps.check.outputs.checks_passed != 'true'
-        run: exit 1
