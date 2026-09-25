@@ -3,7 +3,7 @@
 - Original source: `fp4_candle` at `78c44dac3c2a12e70ba0b4e99d3d11f240800f14`.
 - Original common ancestor: `8e686231a49a6456b812dc4af1c8084dcb1c006b`.
 - Pinned upstream: `aebc405d2b4bf42808387e0ca597bf7dad9b565f`.
-- Shared Pascal-compatible baseline: `db6bfa7d02e8ff8419e1ba2f7baabc739fc752bc`.
+- Shared Pascal-compatible baseline: `23cd66e38694c54c2184a57ba9f2c25a7ba1c682` (original SM61 guards at `db6bfa7d`, plus `vec![` syntax repair).
 - The original `fp4_candle` branch has **not** been rewritten.
 
 ## Migration strategy
@@ -48,3 +48,11 @@ Run Candle Candidate CI on the **exact candidate commit SHA**:
 
 GPU parity, memory safety and performance remain pending until the
 integrated `cuda_asd_runner_v2` SHA is fixed.
+
+## RC2 formatting correction
+
+RC1 CPU compilation and all eight non-ignored FP4 reference tests passed;
+its format check failed on three FP4 Rust files and the shared baseline's
+`build.rs` syntax error. RC2 merges the corrected SM61 baseline and uses
+the GitHub Actions stable rustfmt toolchain on the three affected files.
+The one-time formatter workflow is absent from the final candidate tree.
