@@ -118,6 +118,11 @@ jobs:
                 --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
                 > "$report/grouped-cpu-tests.log" 2>&1 || test_rc=$?
             fi
+            if [[ "$CHECK_BRANCH" == fp4_candle && "$check_rc" -eq 0 ]]; then
+              cargo test -p candle-core --no-default-features --locked \
+                --test mxfp4_tests --test nvfp4_experiment \
+                > "$report/fp4-reference-tests.log" 2>&1 || test_rc=$?
+            fi
           fi
           lock_sha=""
           if [[ -f Cargo.lock ]]; then
@@ -137,7 +142,7 @@ jobs:
             --argjson cpu "$check_rc" --argjson tests "$test_rc" \
             '{branch:$branch,campaign:$campaign,candidate_sha:$sha,upstream_sha:$upstream,
               status:$status,lock_sha256:$lock,exit_codes:{fmt:$fmt,lock:$lock_rc,
-              cpu:$cpu,grouped_cpu_tests:$tests}}' > "$report/report.json"
+              cpu:$cpu,grouped_cpu_tests:$tests,targeted_tests:$tests}}' > "$report/report.json"
           echo "CPU: $status / $CHECK_BRANCH / $CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
           echo "Cargo.lock SHA-256: $lock_sha" >> "$GITHUB_STEP_SUMMARY"
           [[ "$status" == CPU_PASSED ]]
