@@ -1,0 +1,245 @@
+# Candle candidates are dispatched explicitly; GITHUB_TOKEN pushes do not trigger CI.
+name: Candle Candidate CI
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Immutable 40-character candidate commit SHA
+        required: true
+        type: string
+      candidate_ref:
+        description: Existing sync, rebase or integration branch ref
+        required: true
+        type: string
+      branch:
+        description: Functional branch
+        required: true
+        type: choice
+        options:
+          - bf16_candle
+          - fp8_candle
+          - fp4_candle
+          - cudnn_fallback_candle
+          - moe_simt_f16_candle
+          - asd_core
+          - cuda_asd_runner_v2
+      campaign:
+        description: Preparation campaign ID
+        required: true
+        type: string
+      upstream_sha:
+        description: Pinned upstream main SHA
+        required: true
+        type: string
+      validation:
+        description: CPU only or CPU and hosted SM61 CUDA compilation
+        type: choice
+        required: true
+        default: cpu_cuda
+        options:
+          - cpu
+          - cpu_cuda
+
+permissions:
+  contents: read
+concurrency:
+  group: candle-candidate-${{ inputs.candidate_ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu:
+    if: github.ref == 'refs/heads/mirror_orch'
+    name: CPU / ${{ inputs.branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
+    env:
+      CARGO_INCREMENTAL: "0"
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CANDIDATE_REF: ${{ inputs.candidate_ref }}
+      CHECK_BRANCH: ${{ inputs.branch }}
+      CHECK_CAMPAIGN: ${{ inputs.campaign }}
+      UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+    steps:
+      - name: Verify exact candidate ref and pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "$CHECK_CAMPAIGN" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
+          case "$CHECK_BRANCH" in
+            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|asd_core|cuda_asd_runner_v2) ;;
+            *) echo "::error::Unsupported branch"; exit 2 ;;
+          esac
+          [[ "$CANDIDATE_REF" =~ ^(sync|rebase|integration)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || {
+            echo "::error::Invalid candidate ref"; exit 2;
+          }
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "+refs/heads/${CANDIDATE_REF}:refs/remotes/origin/candidate-ci"
+          actual="$(git rev-parse refs/remotes/origin/candidate-ci)"
+          [[ "$actual" == "$CANDIDATE_SHA" ]] || {
+            echo "::error::Candidate ref changed; recorded $CANDIDATE_SHA, actual $actual"; exit 3;
+          }
+          git merge-base --is-ancestor "$UPSTREAM_SHA" "$CANDIDATE_SHA" || {
+            echo "::error::Pinned upstream is not an ancestor of the candidate"; exit 3;
+          }
+          git checkout --detach -q "$CANDIDATE_SHA"
+          echo "Candidate $CANDIDATE_REF @ $CANDIDATE_SHA, upstream $UPSTREAM_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Check format, compile CPU, and record exact Cargo.lock
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          report="$RUNNER_TEMP/candle-candidate-cpu"
+          mkdir -p "$report"
+          fmt_rc=0; lock_rc=0; check_rc=0; test_rc=0
+          cargo fmt --all -- --check > "$report/fmt.log" 2>&1 || fmt_rc=$?
+          if [[ ! -f Cargo.lock ]]; then
+            cargo generate-lockfile > "$report/lock.log" 2>&1 || lock_rc=$?
+          else
+            echo "Using candidate Cargo.lock" > "$report/lock.log"
+          fi
+          if ((lock_rc == 0)); then
+            cargo check -p candle-core -p candle-nn --no-default-features --locked \
+              > "$report/cpu-check.log" 2>&1 || check_rc=$?
+            if [[ "$CHECK_BRANCH" == asd_core && "$check_rc" -eq 0 ]]; then
+              cargo test -p candle-core --no-default-features --locked \
+                --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
+                > "$report/grouped-cpu-tests.log" 2>&1 || test_rc=$?
+            fi
+          fi
+          lock_sha=""
+          if [[ -f Cargo.lock ]]; then
+            cp Cargo.lock "$report/Cargo.lock"
+            lock_sha="$(sha256sum Cargo.lock | cut -d' ' -f1)"
+          fi
+          status=CPU_FAILED
+          if ((fmt_rc == 0 && lock_rc == 0 && check_rc == 0 && test_rc == 0)); then
+            status=CPU_PASSED
+            echo "lock_sha256=$lock_sha" >> "$GITHUB_OUTPUT"
+          fi
+          jq -n \
+            --arg branch "$CHECK_BRANCH" --arg campaign "$CHECK_CAMPAIGN" \
+            --arg sha "$CANDIDATE_SHA" --arg upstream "$UPSTREAM_SHA" \
+            --arg status "$status" --arg lock "$lock_sha" \
+            --argjson fmt "$fmt_rc" --argjson lock_rc "$lock_rc" \
+            --argjson cpu "$check_rc" --argjson tests "$test_rc" \
+            '{branch:$branch,campaign:$campaign,candidate_sha:$sha,upstream_sha:$upstream,
+              status:$status,lock_sha256:$lock,exit_codes:{fmt:$fmt,lock:$lock_rc,
+              cpu:$cpu,grouped_cpu_tests:$tests}}' > "$report/report.json"
+          echo "CPU: $status / $CHECK_BRANCH / $CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cargo.lock SHA-256: $lock_sha" >> "$GITHUB_STEP_SUMMARY"
+          [[ "$status" == CPU_PASSED ]]
+
+      - name: Upload CPU proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
+          path: ${{ runner.temp }}/candle-candidate-cpu/
+          if-no-files-found: warn
+          retention-days: 21
+
+  cuda_compile:
+    name: CUDA 12.9 SM61 compile / ${{ inputs.branch }}
+    needs: cpu
+    if: needs.cpu.result == 'success' && inputs.validation == 'cpu_cuda'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04@sha256:a2e1e2360c85298ac47ec2543b406ab1e8cec42e31ee47e4d32140ebc82e1067
+    permissions:
+      contents: read
+    env:
+      CUDA_COMPUTE_CAP: "61"
+      CARGO_INCREMENTAL: "0"
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CHECK_BRANCH: ${{ inputs.branch }}
+      CHECK_CAMPAIGN: ${{ inputs.campaign }}
+      LOCK_SHA256: ${{ needs.cpu.outputs.lock_sha256 }}
+    steps:
+      - name: Install CUDA build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config libssl-dev \
+            protobuf-compiler clang libclang-dev jq
+          nvcc --version
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
+          path: ${{ runner.temp }}/candidate-cpu-proof
+
+      - name: CUDA compilation without executing GPU kernels
+        shell: bash
+        run: |
+          set -uo pipefail
+          report="$RUNNER_TEMP/candle-candidate-cuda"
+          mkdir -p "$report"
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]] || exit 3
+          cp "$RUNNER_TEMP/candidate-cpu-proof/Cargo.lock" Cargo.lock
+          lock="$(sha256sum Cargo.lock | cut -d' ' -f1)"
+          [[ -n "$LOCK_SHA256" && "$lock" == "$LOCK_SHA256" ]] || {
+            echo "::error::CPU and CUDA lockfile differ"; exit 3;
+          }
+          case "$CHECK_BRANCH" in
+            bf16_candle) features="candle-core/cuda-legacy-bf16,candle-nn/cuda" ;;
+            fp8_candle) features="candle-core/cuda-legacy-fp8,candle-nn/cuda" ;;
+            fp4_candle|moe_simt_f16_candle) features="candle-core/cuda,candle-nn/cuda" ;;
+            cudnn_fallback_candle|asd_core|cuda_asd_runner_v2)
+              features="candle-core/cudnn,candle-nn/cudnn" ;;
+            *) echo "::error::Unknown branch"; exit 2 ;;
+          esac
+          {
+            nvcc --version
+            rustc --version
+            echo "target: sm_61"
+            echo "features: $features"
+          } > "$report/environment.txt"
+          build_rc=0
+          cargo check -p candle-core -p candle-nn --lib --tests \
+            --no-default-features --features "$features" --locked \
+            > "$report/cuda-check.log" 2>&1 || build_rc=$?
+          status=CUDA_COMPILE_PASSED
+          ((build_rc == 0)) || status=CUDA_COMPILE_FAILED
+          jq -n --arg branch "$CHECK_BRANCH" --arg campaign "$CHECK_CAMPAIGN" \
+            --arg sha "$CANDIDATE_SHA" --arg lock "$lock" --arg status "$status" \
+            --arg features "$features" --argjson rc "$build_rc" \
+            '{branch:$branch,campaign:$campaign,candidate_sha:$sha,lock_sha256:$lock,
+              status:$status,cuda_version:"12.9.1",target:"sm_61",
+              features:$features,exit_code:$rc,gpu_executed:false}' > "$report/report.json"
+          echo "CUDA: $status / $CHECK_BRANCH / $CANDIDATE_SHA (GPU not executed)" >> "$GITHUB_STEP_SUMMARY"
+          [[ "$status" == CUDA_COMPILE_PASSED ]]
+
+      - name: Upload CUDA compilation proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cuda
+          path: ${{ runner.temp }}/candle-candidate-cuda/
+          if-no-files-found: warn
+          retention-days: 21
