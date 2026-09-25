@@ -53,6 +53,42 @@ fn cudnn_conv_fallback(err: &crate::Error) -> Option<CudnnConvFallback> {
     }
 }
 
+#[cfg(all(test, feature = "cudnn"))]
+mod cudnn_fallback_classifier_tests {
+    use super::{cudnn_conv_fallback, CudnnConvFallback};
+    use cudarc::cudnn::{sys::cudnnStatus_t, CudnnError};
+
+    fn classify(status: cudnnStatus_t) -> Option<CudnnConvFallback> {
+        let err = crate::Error::Cuda(Box::new(CudnnError(status))).bt();
+        cudnn_conv_fallback(&err)
+    }
+
+    #[test]
+    fn unsupported_statuses_are_recoverable() {
+        assert_eq!(
+            classify(cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED),
+            Some(CudnnConvFallback::Unsupported)
+        );
+        assert_eq!(
+            classify(cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH),
+            Some(CudnnConvFallback::Unsupported)
+        );
+    }
+
+    #[test]
+    fn execution_failure_requires_pre_volta_policy() {
+        assert_eq!(
+            classify(cudnnStatus_t::CUDNN_STATUS_EXECUTION_FAILED),
+            Some(CudnnConvFallback::ExecutionFailed)
+        );
+    }
+
+    #[test]
+    fn unrelated_statuses_are_not_silently_swallowed() {
+        assert_eq!(classify(cudnnStatus_t::CUDNN_STATUS_BAD_PARAM), None);
+    }
+}
+
 type ParamCache = HashMap<(DeviceId, Vec<usize>), Arc<CudaSlice<usize>>>;
 
 static CUDA_PARAM_CACHE: OnceLock<Mutex<ParamCache>> = OnceLock::new();
