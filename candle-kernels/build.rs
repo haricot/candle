@@ -24,7 +24,10 @@ fn main() -> Result<()> {
 
     bindings.write(&ptx_path)?;
 
-    let mut moe_sources = vec![
+    let compute_cap = cudaforge::detect_compute_cap()
+        .map(|arch| arch.base())
+        .unwrap_or(80);
+    let mut moe_sources = vec!
         "src/moe/moe_gguf.cu",
         "src/moe/moe_wmma.cu",
         "src/moe/moe_wmma_gguf.cu",
@@ -45,6 +48,15 @@ fn main() -> Result<()> {
         moe_sources.push("src/moe/moe_align.cu");
     }
 
+    // Volta is the first architecture with WMMA. Those static modules
+    // have no executable SM61 implementation; a later SIMT MoE feature
+    // supplies an independent path when grouped MoE is required.
+    if compute_cap < 70 {
+        moe_sources.retain(|source| {
+            !matches!(*source, "src/moe/moe_wmma.cu" | "src/moe/moe_wmma_gguf.cu")
+        });
+    }
+
     let mut moe_builder = KernelBuilder::default()
         .source_files(moe_sources)
         .arg("--expt-relaxed-constexpr")
@@ -53,9 +65,6 @@ fn main() -> Result<()> {
 
     // Disable bf16 WMMA kernels on GPUs older than sm_80 (Ampere).
     // bf16 WMMA fragments require compute capability >= 8.0.
-    let compute_cap = cudaforge::detect_compute_cap()
-        .map(|arch| arch.base())
-        .unwrap_or(80);
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }
