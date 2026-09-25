@@ -13,6 +13,7 @@ on:
           - all
           - bf16_candle
           - fp8_candle
+          - fp4_candle
           - cudnn_fallback_candle
           - moe_simt_f16_candle
           - cuda_asd_runner
@@ -74,9 +75,9 @@ jobs:
 
           case "${SYNC_BRANCH}" in
             all)
-              branches=(bf16_candle fp8_candle cudnn_fallback_candle moe_simt_f16_candle cuda_asd_runner)
+              branches=(bf16_candle fp8_candle fp4_candle cudnn_fallback_candle moe_simt_f16_candle cuda_asd_runner)
               ;;
-            bf16_candle|fp8_candle|cudnn_fallback_candle|moe_simt_f16_candle|cuda_asd_runner)
+            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|cuda_asd_runner)
               branches=("${SYNC_BRANCH}")
               ;;
             *)
