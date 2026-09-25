@@ -1,6 +1,6 @@
 # One-time retry of hosted CUDA checks after fixing runner-owned checkout trust.
 # The earlier FP8 rebase and format-only candidate remain immutable.
-name: FP8 candidate CI retry
+name: FP8 SM61 baseline verification
 on:
   push:
     branches: [mirror_orch]
@@ -18,10 +18,10 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      CANDIDATE_SHA: b7aaf4509fdc1c4e5f79cad14e0fb3460d401148
-      CANDIDATE_REF: rebase/20260925-aebc405d/fp8_candle-fmt1
+      CANDIDATE_SHA: 2e195c698e9117ad8c798c1fac1a3701aede4760
+      CANDIDATE_REF: rebase/20260925-aebc405d/fp8_candle-sm61fix1
       UPSTREAM_SHA: aebc405d2b4bf42808387e0ca597bf7dad9b565f
-      CAMPAIGN: fp8-rebase-20260925-aebc405d-cuda-retry1
+      CAMPAIGN: fp8-rebase-20260925-aebc405d-sm61fix1
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
