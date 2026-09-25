@@ -1,7 +1,6 @@
-# Follow-up to the successful eight-commit FP8 replay: rustfmt-only candidate.
-# This one-time workflow creates a NEW immutable ref; the first candidate and
-# public fp8_candle branch are never overwritten.
-name: FP8 format follow-up
+# One-time retry of hosted CUDA checks after fixing runner-owned checkout trust.
+# The earlier FP8 rebase and format-only candidate remain immutable.
+name: FP8 candidate CI retry
 on:
   push:
     branches: [mirror_orch]
@@ -9,83 +8,38 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: fp8-format-follow-up-20260925
-  cancel-in-progress: false
 jobs:
-  format:
+  dispatch:
     if: github.ref == 'refs/heads/mirror_orch'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      ORIGINAL_SHA: ace4744ac46b2750b9ef55df3c98a2f765f0a57d
-      PREVIOUS_REF: rebase/20260925-aebc405d/fp8_candle
-      NEW_REF: rebase/20260925-aebc405d/fp8_candle-fmt1
+      CANDIDATE_SHA: b7aaf4509fdc1c4e5f79cad14e0fb3460d401148
+      CANDIDATE_REF: rebase/20260925-aebc405d/fp8_candle-fmt1
       UPSTREAM_SHA: aebc405d2b4bf42808387e0ca597bf7dad9b565f
-      CAMPAIGN: fp8-rebase-20260925-aebc405d-fmt1
+      CAMPAIGN: fp8-rebase-20260925-aebc405d-cuda-retry1
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
-        with:
-          toolchain: "1.98.1"
-          components: rustfmt
-      - name: Format FP8 tests and publish independent candidate
+      - name: Verify unchanged candidate and retry CPU plus CUDA
         shell: bash
         run: |
           set -euo pipefail
-          umask 077
-          report="$RUNNER_TEMP/fp8-fmt1"
-          mkdir -p "$report"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch --no-tags origin "+refs/heads/$PREVIOUS_REF:refs/remotes/origin/fp8-previous"
-          [[ "$(git rev-parse refs/remotes/origin/fp8-previous)" == "$ORIGINAL_SHA" ]] || {
-            echo "::error::Earlier immutable FP8 candidate moved"; exit 3;
+          git fetch --no-tags origin "+refs/heads/$CANDIDATE_REF:refs/remotes/origin/fp8-retry"
+          actual="$(git rev-parse refs/remotes/origin/fp8-retry)"
+          [[ "$actual" == "$CANDIDATE_SHA" ]] || {
+            echo "::error::Candidate changed; refusing CI retry"; exit 3;
           }
-          if git ls-remote --exit-code --heads origin "refs/heads/$NEW_REF" >/dev/null 2>&1; then
-            echo "::error::Follow-up candidate already exists"; exit 3;
-          fi
-          git switch --create "$NEW_REF" "$ORIGINAL_SHA"
-          git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
-          cargo fmt --all
-          git diff --check
-          git diff --name-only > "$report/changed-files.txt"
-          if [[ "$(cat "$report/changed-files.txt")" != "candle-core/tests/fp8_legacy_tests.rs" ]]; then
-            echo "::error::Unexpected rustfmt changes; no candidate will be published"
-            exit 3
-          fi
-          git diff > "$report/rustfmt.patch"
-          git add -- candle-core/tests/fp8_legacy_tests.rs
-          git commit -m "style(cuda): rustfmt FP8 legacy tests after upstream rebase"
-          sha="$(git rev-parse HEAD)"
-          printf 'previous=%s\nupstream=%s\ncandidate=%s\n' \
-            "$ORIGINAL_SHA" "$UPSTREAM_SHA" "$sha" > "$report/provenance.txt"
-          git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" \
-            "HEAD:refs/heads/$NEW_REF"
-          echo "New candidate: $NEW_REF at $sha" >> "$GITHUB_STEP_SUMMARY"
-          echo "Eight rebased commits preserved; one new format-only commit." >> "$GITHUB_STEP_SUMMARY"
-          if gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" \
-            --ref mirror_orch -f "branch=fp8_candle" -f "campaign=$CAMPAIGN" \
-            -f "candidate_ref=$NEW_REF" -f "candidate_sha=$sha" \
-            -f "upstream_sha=$UPSTREAM_SHA" -f "validation=cpu_cuda" \
-            > "$report/dispatch.log" 2>&1; then
-            echo "CPU and hosted CUDA SM61 compilation dispatched" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::error::Candidate published but CI dispatch failed"
-            exit 4
-          fi
-      - name: Upload formatting patch and provenance
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: fp8-format-follow-up-20260925
-          path: ${{ runner.temp }}/fp8-fmt1/
-          if-no-files-found: warn
-          retention-days: 21
+          git merge-base --is-ancestor "$UPSTREAM_SHA" "$CANDIDATE_SHA"
+          gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" \
+            --ref mirror_orch -f branch=fp8_candle -f campaign="$CAMPAIGN" \
+            -f candidate_ref="$CANDIDATE_REF" -f candidate_sha="$CANDIDATE_SHA" \
+            -f upstream_sha="$UPSTREAM_SHA" -f validation=cpu_cuda
+          echo "Retried CPU and CUDA checks on unchanged FP8 candidate $CANDIDATE_SHA" \
+            >> "$GITHUB_STEP_SUMMARY"
