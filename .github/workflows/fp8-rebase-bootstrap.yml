@@ -1,0 +1,153 @@
+name: FP8 one-time rebase
+on:
+  push:
+    branches: [mirror_orch]
+    paths: [.github/workflows/fp8-rebase-bootstrap.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fp8-rebase-aebc405d
+  cancel-in-progress: false
+jobs:
+  replay:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 6807503e136cc53e4fb70f74ed913a4c5a696a26
+      BASE_SHA: 81f247a8985e0b5b6c7c7c5b35c07dc685e005e9
+      UPSTREAM_SHA: aebc405d2b4bf42808387e0ca597bf7dad9b565f
+      CANDIDATE_REF: rebase/20260925-aebc405d/fp8_candle
+      CAMPAIGN: fp8-rebase-20260925-aebc405d
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Replay 8 original FP8 commits with scoped manifest resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          report="$RUNNER_TEMP/fp8-rebase"
+          mkdir -p "$report/conflicts"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/huggingface/candle.git
+          git fetch --no-tags origin '+refs/heads/fp8_candle:refs/remotes/origin/fp8_candle'
+          git fetch --no-tags upstream '+refs/heads/main:refs/remotes/upstream/main'
+          [[ "$(git rev-parse refs/remotes/origin/fp8_candle)" == "$SOURCE_SHA" ]] || exit 3
+          git cat-file -e "$UPSTREAM_SHA^{commit}"
+          [[ "$(git merge-base "$SOURCE_SHA" "$UPSTREAM_SHA")" == "$BASE_SHA" ]] || exit 3
+          if git ls-remote --exit-code --heads origin "refs/heads/$CANDIDATE_REF" >/dev/null 2>&1; then
+            echo "::error::Candidate ref already exists; refusing overwrite"
+            exit 3
+          fi
+          git switch -c "$CANDIDATE_REF" "$SOURCE_SHA"
+          completed=false
+          if GIT_EDITOR=true git rebase --onto "$UPSTREAM_SHA" "$BASE_SHA" >"$report/rebase.log" 2>&1; then
+            completed=true
+          else
+            head="$(git rev-parse -q --verify REBASE_HEAD || true)"
+            git diff --name-only --diff-filter=U > "$report/initial-conflicts.txt"
+            if [[ "$head" == aa2d7b6d5e09279959e5b37f39f2023ed88f98fc ]] &&
+                [[ -s "$report/initial-conflicts.txt" ]] &&
+                ! grep -Ev '^(candle-core/Cargo.toml|candle-kernels/Cargo.toml|candle-kernels/build.rs)$' \
+                  "$report/initial-conflicts.txt" >/dev/null; then
+              python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          paths = subprocess.check_output(
+              ["git", "diff", "--name-only", "--diff-filter=U"], text=True
+          ).splitlines()
+          for path in paths:
+              data = subprocess.check_output(["git", "show", ":2:" + path], text=True)
+              if path == "candle-core/Cargo.toml":
+                  anchor = 'cuda = ["cudarc", "dep:candle-kernels"]\n'
+                  assert data.count(anchor) == 1 and "cuda-legacy-fp8 =" not in data
+                  data = data.replace(anchor, anchor +
+                      'cuda-legacy-fp8 = ["cuda", "candle-kernels/cuda-legacy-fp8"]\n')
+              elif path == "candle-kernels/Cargo.toml":
+                  anchor = "[features]\ncutile = []\n"
+                  assert data.count(anchor) == 1 and "cuda-legacy-fp8 =" not in data
+                  data = data.replace(anchor, anchor + "cuda-legacy-fp8 = []\n")
+              elif path == "candle-kernels/build.rs":
+                  anchor = '    println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");\n'
+                  old_cap = ('    let compute_cap = cudaforge::detect_compute_cap()\n'
+                             '        .map(|arch| arch.base())\n'
+                             '        .unwrap_or(80);\n')
+                  assert data.count(anchor) == 1 and data.count(old_cap) == 1
+                  data = data.replace(old_cap, "")
+                  data = data.replace(anchor, anchor +
+                      '    println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");\n' +
+                      old_cap +
+                      '    let legacy_fp8 = env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP8").is_some();\n')
+                  first = "    let bindings = KernelBuilder::new()\n"
+                  last = '        .arg("-O3")\n        .build_ptx()?;\n'
+                  assert data.count(first) == 1 and data.count(last) == 1
+                  data = data.replace(first, "    let mut builder = KernelBuilder::new()\n", 1)
+                  data = data.replace(last,
+                      '        .arg("-O3");\n'
+                      '    if legacy_fp8 && compute_cap < 80 {\n'
+                      '        builder = builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");\n'
+                      '    }\n'
+                      '    let bindings = builder.build_ptx()?;\n', 1)
+              else:
+                  raise RuntimeError("Unexpected conflict: " + path)
+              Path(path).write_text(data)
+              subprocess.check_call(["git", "add", "--", path])
+          PY
+              if GIT_EDITOR=true git rebase --continue >>"$report/rebase.log" 2>&1; then
+                completed=true
+              fi
+            fi
+          fi
+          if [[ "$completed" != true ]]; then
+            echo "::error::Rebase stopped for review; no candidate published"
+            git status --short > "$report/status.txt"
+            git diff --name-only --diff-filter=U > "$report/unresolved.txt"
+            git ls-files -u > "$report/index-stages.txt"
+            while IFS= read -r file; do
+              [[ -n "$file" ]] || continue
+              for stage in 1 2 3; do
+                output="$report/conflicts/stage-$stage/$file"
+                mkdir -p "$(dirname "$output")"
+                git show ":$stage:$file" > "$output" 2>/dev/null || rm -f "$output"
+              done
+            done < "$report/unresolved.txt"
+            git rebase --abort || true
+            exit 1
+          fi
+          git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
+          sha="$(git rev-parse HEAD)"
+          git range-diff "$BASE_SHA..$SOURCE_SHA" "$UPSTREAM_SHA..$sha" >"$report/range-diff.txt" || true
+          git diff --stat "$UPSTREAM_SHA" HEAD >"$report/diff-stat.txt"
+          printf 'source=%s\nbase=%s\nupstream=%s\ncandidate=%s\n' \
+            "$SOURCE_SHA" "$BASE_SHA" "$UPSTREAM_SHA" "$sha" >"$report/provenance.txt"
+          git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" \
+            "HEAD:refs/heads/$CANDIDATE_REF" >>"$report/rebase.log" 2>&1
+          echo "FP8 candidate: $CANDIDATE_REF at $sha" >>"$GITHUB_STEP_SUMMARY"
+          echo "Original fp8_candle was not modified." >>"$GITHUB_STEP_SUMMARY"
+          if gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" \
+              --ref mirror_orch -f "branch=fp8_candle" -f "campaign=$CAMPAIGN" \
+              -f "candidate_ref=$CANDIDATE_REF" -f "candidate_sha=$sha" \
+              -f "upstream_sha=$UPSTREAM_SHA" -f "validation=cpu_cuda" \
+              >"$report/dispatch.log" 2>&1; then
+            echo "CPU and CUDA candidate checks dispatched" >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Candidate published, but CI dispatch failed; see artifact"
+            exit 4
+          fi
+      - name: Upload rebase logs and conflict evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fp8-rebase-20260925-aebc405d
+          path: ${{ runner.temp }}/fp8-rebase/
+          if-no-files-found: warn
+          retention-days: 30
