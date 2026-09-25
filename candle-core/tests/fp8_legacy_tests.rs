@@ -38,12 +38,7 @@ fn legacy_fp8_unary_ops_cuda() -> Result<()> {
     assert_close(&recip, &[2.0, 1.0, 0.5, 0.25], 0.0, "recip");
 
     let sqrt = input.sqrt()?.to_dtype(DType::F32)?.to_vec1::<f32>()?;
-    assert_close(
-        &sqrt,
-        &[0.70710677, 1.0, 1.4142135, 2.0],
-        0.13,
-        "sqrt",
-    );
+    assert_close(&sqrt, &[0.70710677, 1.0, 1.4142135, 2.0], 0.13, "sqrt");
 
     let exp = input.exp()?.to_dtype(DType::F32)?.to_vec1::<f32>()?;
     assert_close(
@@ -58,10 +53,8 @@ fn legacy_fp8_unary_ops_cuda() -> Result<()> {
 #[test]
 fn legacy_fp8_binary_ops_cuda() -> Result<()> {
     let device = Device::new_cuda(0)?;
-    let lhs =
-        Tensor::new(&[-2.0f32, -1.0, 2.0, 4.0], &device)?.to_dtype(DType::F8E4M3)?;
-    let rhs =
-        Tensor::new(&[0.5f32, -0.5, 0.5, 2.0], &device)?.to_dtype(DType::F8E4M3)?;
+    let lhs = Tensor::new(&[-2.0f32, -1.0, 2.0, 4.0], &device)?.to_dtype(DType::F8E4M3)?;
+    let rhs = Tensor::new(&[0.5f32, -0.5, 0.5, 2.0], &device)?.to_dtype(DType::F8E4M3)?;
 
     let add = lhs
         .broadcast_add(&rhs)?
@@ -92,7 +85,9 @@ fn legacy_fp8_binary_ops_cuda() -> Result<()> {
 #[test]
 fn legacy_fp8_reduces_after_widening_cuda() -> Result<()> {
     let device = Device::new_cuda(0)?;
-    let input = (0..32).map(|value| value as f32 * 0.125).collect::<Vec<_>>();
+    let input = (0..32)
+        .map(|value| value as f32 * 0.125)
+        .collect::<Vec<_>>();
     let widened = Tensor::from_vec(input, 32, &device)?
         .to_dtype(DType::F8E4M3)?
         .to_dtype(DType::F32)?;
