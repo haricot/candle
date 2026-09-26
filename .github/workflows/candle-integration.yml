@@ -21,6 +21,7 @@ jobs:
     permissions:
       contents: write
       issues: write
+      pull-requests: write
     outputs:
       sha: ${{ steps.combine.outputs.sha }}
       campaign: ${{ steps.combine.outputs.campaign }}
@@ -412,11 +413,22 @@ jobs:
           } > "${msg}"
           old="$(gh api "repos/${GITHUB_REPOSITORY}/issues/11/comments?per_page=100" --paginate \
             --jq '.[] | select(.body | startswith("<!-- candle-sm61-sixway-single-pr-status -->")) | .id' | tail -n1)"
+          # GitHub CLI 'gh pr comment' uses GraphQL addComment and can be
+          # refused to the Actions token even when REST issues comments work.
+          # Prefer the REST endpoint. Failed posting is nonfatal: the exact
+          # conflict artifact and job summary still preserve the evidence.
           if [[ "${old}" =~ ^[0-9]+$ ]]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${old}" \
-              --raw-field "body=$(cat "${msg}")" >/dev/null
+            if ! gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${old}" \
+              --raw-field "body=$(cat "${msg}")" >/dev/null; then
+              echo "::warning::Cannot update PR #11 comment with the runner token"
+              cat "${msg}" >> "${GITHUB_STEP_SUMMARY}"
+            fi
           else
-            gh pr comment 11 --repo "${GITHUB_REPOSITORY}" --body-file "${msg}"
+            if ! gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/11/comments" \
+              --raw-field "body=$(cat "${msg}")" >/dev/null; then
+              echo "::warning::Cannot create PR #11 comment with the runner token"
+              cat "${msg}" >> "${GITHUB_STEP_SUMMARY}"
+            fi
           fi
       - name: Preserve integration manifest and conflicts
         if: always()
