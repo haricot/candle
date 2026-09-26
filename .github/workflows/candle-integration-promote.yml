@@ -1,0 +1,214 @@
+name: Candle Integration Promote
+# Promotion follows ONE successfully completed all-six physical GPU workflow.
+on:
+  workflow_run:
+    workflows: ["Candle Integration GPU"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      gpu_run_id:
+        description: Completed successful Candle Integration GPU workflow run ID
+        required: true
+        type: string
+      update_feature_branches:
+        description: Point PR-free functional branches to the exact integrated GPU-tested SHA
+        required: true
+        type: boolean
+        default: true
+      cleanup_after_promotion:
+        description: Dispatch one guarded cleanup of eligible temporary references
+        required: true
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: candle-one-integrated-promotion
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/mirror_orch' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+      actions: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify one all-six GPU proof; promote final branch and PR-free functional refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          GPU_RUN: ${{ github.event.workflow_run.id || inputs.gpu_run_id }}
+          MANUAL_FEATURES: ${{ inputs.update_feature_branches }}
+          MANUAL_CLEANUP: ${{ inputs.cleanup_after_promotion }}
+        run: |
+          set -euo pipefail
+          [[ "${GPU_RUN}" =~ ^[0-9]{6,20}$ ]] || exit 2
+          report="${RUNNER_TEMP}/candle-integrated-promotion"
+          mkdir -p "${report}/gpu" "${report}/cpu" "${report}/cuda"
+          umask 077
+          gpu_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN}")"
+          jq -e '.name=="Candle Integration GPU" and .conclusion=="success"
+            and .head_branch=="mirror_orch" and .event=="workflow_dispatch"' \
+            <<< "${gpu_run}" >/dev/null || {
+            echo "::error::A completed successful physical integration GPU run is required"; exit 3;
+          }
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN}/jobs?per_page=100")"
+          jq -e '
+            any(.jobs[]; .name=="preflight" and .conclusion=="success") and
+            any(.jobs[]; .name=="gpu" and .conclusion=="success")
+          ' <<< "${jobs}" >/dev/null || exit 3
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN}/artifacts?per_page=100" \
+            --jq '[.artifacts[]|select(.expired==false and
+              (.name|startswith("candle-integrated-gpu-")))|.name] |
+              if length==1 then .[0] else empty end')"
+          [[ -n "${artifact}" ]] || {
+            echo "::error::Exactly one unexpired integration GPU artifact required"; exit 3;
+          }
+          gh run download "${GPU_RUN}" --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact}" --dir "${report}/gpu"
+          test -s "${report}/gpu/report.json"
+          campaign="$(jq -r .campaign "${report}/gpu/report.json")"
+          sha="$(jq -r .candidate_sha "${report}/gpu/report.json")"
+          ci="$(jq -r .ci_run_id "${report}/gpu/report.json")"
+          lock="$(jq -r .lock_sha256 "${report}/gpu/report.json")"
+          manifest="$(jq -r .manifest_sha256 "${report}/gpu/report.json")"
+          [[ "${sha}" =~ ^[0-9a-f]{40}$ &&
+             "${ci}" =~ ^[0-9]{6,20}$ &&
+             "${campaign}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ &&
+             "${manifest}" =~ ^[0-9a-f]{64}$ ]] || exit 3
+          jq -e --arg sha "${sha}" --argjson ci "${ci}" --arg c "${campaign}" '
+            .schema_version==1 and .branch=="cuda_asd_runner_v2"
+            and .candidate_sha==$sha and .ci_run_id==$ci and .campaign==$c
+            and .upstream_sha=="aebc405d2b4bf42808387e0ca597bf7dad9b565f"
+            and .gpu_compute_cap=="6.1" and .gpu_executed==true
+            and .suite_coverage=="all_six" and .status=="GPU_PASSED"
+            and ([.sources[].feature]|sort)==
+              (["bf16_candle","fp8_candle","fp4_candle",
+                "cudnn_fallback_candle","moe_simt_f16_candle","asd_core"]|sort)
+          ' "${report}/gpu/report.json" >/dev/null || exit 3
+          if [[ "${EVENT}" == workflow_run ]]; then
+            jq -e '.auto_promote==true' "${report}/gpu/report.json" >/dev/null || {
+              echo "GPU succeeded but auto-promotion was disabled; no refs modified" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            }
+            update_features=true
+            clean=true
+          else
+            update_features="${MANUAL_FEATURES}"
+            clean="${MANUAL_CLEANUP}"
+          fi
+
+          for file in bf16 fp8 fp4 conv-native conv-cudnn cudnn-quarantine moe \
+                      asd-core asd-transpose asd-conv2d; do
+            test -s "${report}/gpu/logs/${file}.log" || {
+              echo "::error::Full six-feature GPU proof lacks ${file}.log"; exit 3;
+            }
+          done
+          ci_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ci}")"
+          jq -e '.name=="Candle Candidate CI" and .conclusion=="success"
+            and .head_branch=="mirror_orch"' <<< "${ci_run}" >/dev/null || exit 3
+          gh run download "${ci}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candidate-${campaign}-cuda_asd_runner_v2-cpu" --dir "${report}/cpu"
+          gh run download "${ci}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candidate-${campaign}-cuda_asd_runner_v2-cuda" --dir "${report}/cuda"
+          jq -e --arg sha "${sha}" --arg c "${campaign}" --arg lock "${lock}" '
+            .branch=="cuda_asd_runner_v2" and .candidate_sha==$sha and .campaign==$c
+            and .lock_sha256==$lock and .status=="CPU_PASSED"
+          ' "${report}/cpu/report.json" >/dev/null
+          jq -e --arg sha "${sha}" --arg c "${campaign}" --arg lock "${lock}" '
+            .branch=="cuda_asd_runner_v2" and .candidate_sha==$sha and .campaign==$c
+            and .lock_sha256==$lock and .status=="CUDA_COMPILE_PASSED"
+            and .target=="sm_61"
+          ' "${report}/cuda/report.json" >/dev/null
+          [[ "$(sha256sum "${report}/cpu/Cargo.lock" | cut -d' ' -f1)" == "${lock}" ]] || exit 3
+
+          gh auth setup-git
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin \
+            +refs/heads/integration/cuda_asd_runner_v2-candidate:refs/remotes/origin/integration-promote
+          [[ "$(git rev-parse refs/remotes/origin/integration-promote)" == "${sha}" ]] || {
+            echo "::error::Integration ref moved after GPU run; promotion blocked"; exit 3;
+          }
+          git switch --detach -q "${sha}"
+          [[ "$(sha256sum candle-integration/sources.json | cut -d' ' -f1)" == "${manifest}" ]] || exit 3
+          cmp -s "${report}/gpu/sources.json" candle-integration/sources.json || exit 3
+          while read -r feature source; do
+            git merge-base --is-ancestor "${source}" HEAD || {
+              echo "::error::Integrated SHA lacks pinned source ${feature}"; exit 3;
+            }
+          done < <(jq -r '.sources[]|[.feature,.source_sha]|@tsv' candle-integration/sources.json)
+
+          : > "${report}/promoted.ndjson"
+          promote_ref() {
+            local target="$1" old tag proof owner prs
+            old="$(git ls-remote --heads origin "refs/heads/${target}" | cut -f1)"
+            if [[ "${target}" != cuda_asd_runner_v2 ]]; then
+              owner="${GITHUB_REPOSITORY%%/*}"
+              prs="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/pulls" \
+                -f state=open -f "head=${owner}:${target}" --jq length)"
+              if (( prs > 0 )); then
+                echo "Skipping ${target}: ${prs} open PR(s)" >> "${GITHUB_STEP_SUMMARY}"
+                jq -cn --arg branch "${target}" --arg status SKIPPED_OPEN_PR \
+                  '{branch:$branch,status:$status}' >> "${report}/promoted.ndjson"
+                return 0
+              fi
+            fi
+            if [[ -n "${old}" && "${old}" != "${sha}" ]]; then
+              git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/promotion-old"
+              [[ "$(git rev-parse refs/remotes/origin/promotion-old)" == "${old}" ]] || exit 3
+              tag="archive/pre-integration/${target}/${old:0:12}-${GPU_RUN}"
+              git tag -a "${tag}" "${old}" \
+                -m "Previous branch ${target} before GPU-validated integrated ${sha}"
+              git push origin "refs/tags/${tag}"
+              git push --force-with-lease="refs/heads/${target}:${old}" \
+                origin "${sha}:refs/heads/${target}"
+            elif [[ -z "${old}" ]]; then
+              git push origin "${sha}:refs/heads/${target}"
+            fi
+            [[ "$(git ls-remote --heads origin "refs/heads/${target}" | cut -f1)" == "${sha}" ]] || exit 3
+            proof="promoted/${target}/${sha:0:12}-${GPU_RUN}"
+            if ! git ls-remote --exit-code --tags origin "refs/tags/${proof}" >/dev/null; then
+              git tag -a "${proof}" "${sha}" \
+                -m "Physical SM61 all-six GPU run ${GPU_RUN}; Candidate CI ${ci}; campaign ${campaign}; manifest ${manifest}"
+              git push origin "refs/tags/${proof}"
+            fi
+            jq -cn --arg branch "${target}" --arg sha "${sha}" --arg old "${old}" \
+              --arg status PROMOTED '{branch:$branch,sha:$sha,old_sha:$old,status:$status}' \
+              >> "${report}/promoted.ndjson"
+            echo "Promoted ${target} to exact GPU-tested ${sha}" >> "${GITHUB_STEP_SUMMARY}"
+          }
+          promote_ref cuda_asd_runner_v2
+          if [[ "${update_features}" == true ]]; then
+            while read -r feature; do
+              promote_ref "${feature}"
+            done < <(jq -r '.sources[].feature' candle-integration/sources.json)
+          fi
+          jq -s --arg sha "${sha}" --argjson gpu_run "${GPU_RUN}" \
+            --argjson ci_run "${ci}" --arg lock "${lock}" --arg manifest "${manifest}" \
+            '{schema_version:1,integrated_sha:$sha,gpu_run_id:$gpu_run,
+              ci_run_id:$ci_run,lock_sha256:$lock,manifest_sha256:$manifest,
+              outcomes:.}' "${report}/promoted.ndjson" > "${report}/promotion.json"
+
+          if [[ "${clean}" == true && "${update_features}" == true ]]; then
+            # One cleanup execution; BF16 and other PR-blocked refs stay intact.
+            gh workflow run candle-cleanup.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+              -f scope=all -f skip_unpromoted=true -f dry_run=false \
+              -f archive_orphans=true -f confirmation=DELETE_TEMP_REFS
+            echo "Dispatched one promotion-tag-guarded cleanup of eligible temporary refs" \
+              >> "${GITHUB_STEP_SUMMARY}"
+          fi
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # Node24
+        with:
+          name: candle-integrated-promotion-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-integrated-promotion/
+          if-no-files-found: warn
+          retention-days: 90
