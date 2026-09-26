@@ -1,8 +1,10 @@
-use cudaforge::{KernelBuilder, Result};
+use cudaforge::{detect_compute_cap, KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
 
 const CUTILE_FEATURE: &str = "CARGO_FEATURE_CUTILE";
+const LEGACY_BF16_FEATURE: &str = "CARGO_FEATURE_CUDA_LEGACY_BF16";
+const LEGACY_FP8_FEATURE: &str = "CARGO_FEATURE_CUDA_LEGACY_FP8";
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
@@ -10,23 +12,34 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
+    println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
+    println!("cargo::rerun-if-env-changed={LEGACY_BF16_FEATURE}");
+    println!("cargo::rerun-if-env-changed={LEGACY_FP8_FEATURE}");
 
-    // Build for PTX
+    let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
+    let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
+    let legacy_fp8 = compute_cap < 89 && env::var_os(LEGACY_FP8_FEATURE).is_some();
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ptx_path = out_dir.join("ptx.rs");
-    let bindings = KernelBuilder::new()
-        .source_dir("src") // Scan src/ for .cu files
-        .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"]) // Exclude statically compiled kernels from ptx build
+    let mut ptx_builder = KernelBuilder::new()
+        .compute_cap(compute_cap)
+        .source_dir("src")
+        .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"])
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
-        .arg("-O3")
-        .build_ptx()?;
+        .arg("-O3");
 
+    if legacy_bf16 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+    if legacy_fp8 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
+    }
+
+    let bindings = ptx_builder.build_ptx()?;
     bindings.write(&ptx_path)?;
 
-    let compute_cap = cudaforge::detect_compute_cap()
-        .map(|arch| arch.base())
-        .unwrap_or(80);
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
         "src/moe/moe_wmma.cu",
@@ -48,23 +61,26 @@ fn main() -> Result<()> {
         moe_sources.push("src/moe/moe_align.cu");
     }
 
-    // Volta is the first architecture with WMMA. Those static modules
-    // have no executable SM61 implementation; a later SIMT MoE feature
-    // supplies an independent path when grouped MoE is required.
+    // Preserve the corrected shared baseline: Pascal cannot execute WMMA.
+    // SIMT grouped MoE is introduced by the separately pinned MoE source.
     if compute_cap < 70 {
         moe_sources.retain(|source| {
             !matches!(*source, "src/moe/moe_wmma.cu" | "src/moe/moe_wmma_gguf.cu")
         });
     }
 
-    let mut moe_builder = KernelBuilder::default()
+    let mut moe_builder = KernelBuilder::new()
+        .compute_cap(compute_cap)
         .source_files(moe_sources)
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");
 
-    // Disable bf16 WMMA kernels on GPUs older than sm_80 (Ampere).
-    // bf16 WMMA fragments require compute capability >= 8.0.
+    if legacy_bf16 {
+        moe_builder = moe_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+
+    // BF16 WMMA fragments require Ampere.
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }
