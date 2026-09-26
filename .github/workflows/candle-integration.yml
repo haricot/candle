@@ -23,6 +23,7 @@ jobs:
     outputs:
       sha: ${{ steps.combine.outputs.sha }}
       campaign: ${{ steps.combine.outputs.campaign }}
+      publish: ${{ steps.combine.outputs.publish }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0 Node24
         with:
@@ -148,8 +149,84 @@ jobs:
             exit 0
           fi
 
-          git switch --detach -f "${baseline}"
-          for item in "${sources[@]}"; do
+          # A single cumulative PR collects all novel conflicts. While it is
+          # open, replay the already proposed *prefix* and discover the next
+          # conflict without publishing or launching any CI candidate.
+          proposal_ref="integration/proposal-sm61-all-six"
+          review_ref="integration/review-stage-sm61"
+          review_pr="11"
+          preview_mode=false
+          reviewed_mode=false
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${review_pr}")"
+          jq -e --arg head "${proposal_ref}" --arg base "${review_ref}" '
+            .head.ref==$head and .head.repo.full_name==env.GITHUB_REPOSITORY
+            and .base.ref==$base
+          ' <<< "${pr}" > /dev/null || {
+            echo "::error::Cumulative review PR #${review_pr} no longer points to the pinned review refs"; exit 3;
+          }
+          if jq -e '.state=="open"' <<< "${pr}" >/dev/null; then
+            gate_sha="$(git ls-remote --heads origin "refs/heads/${review_ref}" | cut -f1)"
+            [[ "${gate_sha}" == "${baseline}" ]] || {
+              echo "::error::Review gate advanced while proposal remains open"; exit 3;
+            }
+            git fetch --no-tags origin "+refs/heads/${proposal_ref}:refs/remotes/origin/integration-proposal"
+            proposal_sha="$(git rev-parse refs/remotes/origin/integration-proposal)"
+            git merge-base --is-ancestor "${baseline}" "${proposal_sha}" || exit 3
+            git switch --detach -f "${proposal_sha}"
+            preview_mode=true
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+            echo "PREVIEW: extending single PR #${review_pr}; no candidate publication" >> "${GITHUB_STEP_SUMMARY}"
+          elif jq -e '.state=="closed" and .merged==true' <<< "${pr}" >/dev/null; then
+            git fetch --no-tags origin "+refs/heads/${review_ref}:refs/remotes/origin/integration-reviewed"
+            approved_sha="$(git rev-parse refs/remotes/origin/integration-reviewed)"
+            pr_merge="$(jq -r .merge_commit_sha <<< "${pr}")"
+            [[ "${pr_merge}" =~ ^[0-9a-f]{40}$ ]] || exit 3
+            git merge-base --is-ancestor "${pr_merge}" "${approved_sha}" || {
+              echo "::error::Review gate does not contain the merged PR"; exit 3;
+            }
+            git switch --detach -f "${approved_sha}"
+            test -s candle-integration/sources.json || {
+              echo "::error::Reviewed proposal lacks final six-source manifest"; exit 3;
+            }
+            cmp -s "${report}/sources.json" candle-integration/sources.json || exit 3
+            for item in "${sources[@]}"; do
+              IFS='|' read -r feature ref expected <<< "${item}"
+              git merge-base --is-ancestor "${expected}" HEAD || {
+                echo "::error::Merged review gate lacks ${feature} pinned source"; exit 3;
+              }
+            done
+            reviewed_mode=true
+            echo "publish=true" >> "${GITHUB_OUTPUT}"
+            echo "APPROVED: cumulative review PR merged; exact six-source gate ${approved_sha}" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "::error::Review PR must remain open or be merged into its review gate"; exit 3
+          fi
+
+          if [[ "${preview_mode}" == true ]]; then
+            prefix=true
+            first_unmerged=0
+            for item in "${sources[@]}"; do
+              IFS='|' read -r feature ref expected <<< "${item}"
+              if git merge-base --is-ancestor "${expected}" HEAD; then
+                [[ "${prefix}" == true ]] || {
+                  echo "::error::Proposal merges sources out of pinned order"; exit 3;
+                }
+                ((first_unmerged+=1))
+              else
+                prefix=false
+              fi
+            done
+            echo "Proposal already contains ${first_unmerged}/6 pinned merges" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+          if [[ "${reviewed_mode}" == false ]]; then
+            for item in "${sources[@]}"; do
+              IFS='|' read -r feature ref expected <<< "${item}"
+              if git merge-base --is-ancestor "${expected}" HEAD; then
+                echo "Reusing previously proposed ${feature} at ${expected}" >> "${GITHUB_STEP_SUMMARY}"
+                continue
+              fi
+
             IFS='|' read -r feature ref expected <<< "${item}"
             echo "::group::Merge ${feature} exact ${expected}"
             git fetch --no-tags origin "+refs/heads/${ref}:refs/remotes/origin/candle-integration-source"
@@ -202,7 +279,8 @@ jobs:
                 >> "${GITHUB_STEP_SUMMARY}"
             fi
             echo "::endgroup::"
-          done
+            done
+          fi
 
           mkdir -p candle-integration
           cp "${report}/sources.json" candle-integration/sources.json
@@ -222,6 +300,16 @@ jobs:
             git merge-base --is-ancestor "${sha}" HEAD || exit 3
           done < <(jq -r '.sources[] | [.feature,.source_sha] | @tsv' candle-integration/sources.json)
           sha="$(git rev-parse HEAD)"
+          if [[ "${preview_mode}" == true ]]; then
+            # Fast-forward the SAME draft PR, no new PR and no final ref.
+            # If a conflict remains, we exited above and the proposal stays
+            # untouched until a reviewed edit is added to this branch.
+            git push --force-with-lease="refs/heads/${proposal_ref}:${proposal_sha}" \
+              origin "${sha}:refs/heads/${proposal_ref}"
+            echo "Full proposal prepared at ${sha}; review PR #${review_pr} before approval" >> "${GITHUB_STEP_SUMMARY}"
+            echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           if [[ -n "${current}" ]]; then
             git push --force-with-lease="refs/heads/${target}:${baseline}" \
               origin "${sha}:refs/heads/${target}"
@@ -252,7 +340,7 @@ jobs:
 
   dispatch_cpu_cuda:
     needs: prepare
-    if: needs.prepare.result == 'success'
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: write
