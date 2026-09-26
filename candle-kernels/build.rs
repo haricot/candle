@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 const CUTILE_FEATURE: &str = "CARGO_FEATURE_CUTILE";
 const LEGACY_BF16_FEATURE: &str = "CARGO_FEATURE_CUDA_LEGACY_BF16";
+const LEGACY_FP8_FEATURE: &str = "CARGO_FEATURE_CUDA_LEGACY_FP8";
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
@@ -13,9 +14,11 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
     println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
     println!("cargo::rerun-if-env-changed={LEGACY_BF16_FEATURE}");
+    println!("cargo::rerun-if-env-changed={LEGACY_FP8_FEATURE}");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
     let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
+    let legacy_fp8 = compute_cap < 89 && env::var_os(LEGACY_FP8_FEATURE).is_some();
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ptx_path = out_dir.join("ptx.rs");
@@ -29,6 +32,9 @@ fn main() -> Result<()> {
 
     if legacy_bf16 {
         ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+    if legacy_fp8 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
     }
 
     let bindings = ptx_builder.build_ptx()?;
