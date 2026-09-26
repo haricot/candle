@@ -16,7 +16,26 @@ extern "C" {
         stream: *mut c_void,
     ) -> i32;
 
-    // for unquntized models
+    // Unquantized grouped MoE on pre-Volta (SIMT FP16 storage, FP32 accumulation).
+    pub fn moe_gemm_simt_f16(
+        input: *const c_void,
+        weights: *const c_void,
+        sorted_token_ids: *const i32,
+        expert_ids: *const i32,
+        topk_weights: *const f32,
+        output: *mut c_void,
+        expert_counts: *mut i32,
+        expert_offsets: *mut i32,
+        num_experts: i32,
+        topk: i32,
+        size_m: i32,
+        size_n: i32,
+        size_k: i32,
+        is_prefill: bool,
+        stream: i64,
+    );
+
+    // for unquantized models
     pub fn moe_gemm_wmma(
         input: *const c_void,         // device pointer [size_m, size_k]
         weights: *const c_void,       // device pointer [num_experts, size_n, size_k]
