@@ -142,7 +142,9 @@ fn main() -> Result<()> {
     if validation_requested && env::var_os("CANDLE_ASD_EXACT_POLICY").is_none() {
         panic!("CANDLE_ASD_VALIDATION requires CANDLE_ASD_EXACT_POLICY");
     }
-    asd_exact_build_adapter_v2::materialize_for_candle_build(compute_cap)
+    let asd_build_sm = u32::try_from(compute_cap)
+        .expect("CUDA compute capability must fit in u32");
+    asd_exact_build_adapter_v2::materialize_for_candle_build(asd_build_sm)
         .unwrap_or_else(|err| panic!("failed to materialize ASD V2 policy: {err}"));
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
