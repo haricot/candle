@@ -1,4 +1,4 @@
-name: Candle Integration
+name: Candle Integration (start here)
 # Exactly one combined CPU/CUDA validation candidate; no per-feature GPU campaigns.
 on:
   workflow_dispatch:
