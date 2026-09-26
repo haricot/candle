@@ -16,6 +16,11 @@ on:
           - cudnn_fallback_candle
           - moe_simt_f16_candle
           - asd_core
+      skip_unpromoted:
+        description: For aggregate GPU campaigns, skip features blocked by open PRs or missing promotion proof
+        type: boolean
+        required: true
+        default: false
       dry_run:
         description: Preview eligible deletions without changing any refs
         required: true
@@ -59,6 +64,7 @@ jobs:
           SCOPE: ${{ inputs.scope }}
           DRY_RUN: ${{ inputs.dry_run }}
           ARCHIVE_ORPHANS: ${{ inputs.archive_orphans }}
+          SKIP_UNPROMOTED: ${{ inputs.skip_unpromoted }}
           CONFIRM: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
@@ -86,9 +92,14 @@ jobs:
           # Full preflight: when scope=all, NONE are removed until ALL six
           # functional heads match a post-promotion tag published by Promote.
           declare -A promoted_heads=()
+          eligible_branches=()
           for branch in "${branches[@]}"; do
             promoted_sha="$(git ls-remote --heads origin "refs/heads/${branch}" | cut -f1)"
             [[ "${promoted_sha}" =~ ^[0-9a-f]{40}$ ]] || {
+              if [[ "${SKIP_UNPROMOTED}" == true ]]; then
+                echo "Skipping ${branch}: functional branch missing" >> "${report}/skipped-refs.txt"
+                continue
+              fi
               echo "::error::Functional branch missing: ${branch}"; exit 3
             }
             proof_match=false
@@ -100,10 +111,19 @@ jobs:
             done < <(git ls-remote --tags origin "refs/tags/promoted/${branch}/*")
             # Annotated promotion tags must be compared by their peeled commit SHA.
             if [[ "${proof_match}" != true ]]; then
+              if [[ "${SKIP_UNPROMOTED}" == true ]]; then
+                echo "Skipping ${branch}: current head has no matching promotion tag" >> "${report}/skipped-refs.txt"
+                continue
+              fi
               echo "::error::No post-promotion tag matches current ${branch} head"; exit 3
             fi
             promoted_heads["${branch}"]="${promoted_sha}"
+            eligible_branches+=("${branch}")
           done
+          branches=("${eligible_branches[@]}")
+          if (( ${#branches[@]} == 0 )); then
+            echo "::error::No promoted features qualify for temporary ref cleanup"; exit 3
+          fi
 
           record() {
             local name="${1}" sha="${2}" status="${3}" info="${4:-}"
