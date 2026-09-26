@@ -185,7 +185,7 @@ jobs:
             echo "::error::Backup tag already exists; inspect before promotion"; exit 3;
           } || :
           git tag -a "${backup}" "${EXPECTED_OLD}" \
-            -m "Pre-promotion backup $\nbranch=${TARGET}\nold=${EXPECTED_OLD}\nci_run=${CI_RUN_ID}"
+            -m "Pre-promotion backup: branch=${TARGET}; old=${EXPECTED_OLD}; ci_run=${CI_RUN_ID}"
           git push origin "refs/tags/${backup}"
           git push --force-with-lease="refs/heads/${TARGET}:${EXPECTED_OLD}" \
             origin "${CANDIDATE_SHA}:refs/heads/${TARGET}"
@@ -197,9 +197,9 @@ jobs:
           git tag -a "${proof}" "${CANDIDATE_SHA}" \
             -F "${report}/promotion.json"
           git push origin "refs/tags/${proof}"
-          echo "Promoted $@{TARGET} from $@{EXPECTED_OLD} to $@{CANDIDATE_SHA}" \
+          echo "Promoted ${TARGET} from ${EXPECTED_OLD} to ${CANDIDATE_SHA}" \
             >> "${GITHUB_STEP_SUMMARY}"
-          echo "Backup tag: $@{backup}; promotion tag: $@{proof}" \
+          echo "Backup tag: ${backup}; promotion tag: ${proof}" \
             >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Preserve promotion manifest
