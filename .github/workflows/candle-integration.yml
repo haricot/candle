@@ -1,6 +1,12 @@
 name: Candle Integration (start here)
 # Exactly one combined CPU/CUDA validation candidate; no per-feature GPU campaigns.
 on:
+  # Explicit one-shot kick from the orchestration branch, allowing the
+  # connected GitHub App to start a reviewed campaign without a dispatch API.
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/integration-run-request.json
   workflow_dispatch:
     inputs:
       campaign:
@@ -58,7 +64,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          CAMPAIGN: ${{ inputs.campaign }}
+          CAMPAIGN: ${{ inputs.campaign || 'integrated-sm61-v2' }}
+          INTEGRATION_EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           umask 077
@@ -66,6 +73,19 @@ jobs:
           mkdir -p "${report}/conflicts" "${report}/logs"
           [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
           echo "campaign=${CAMPAIGN}" >> "${GITHUB_OUTPUT}"
+          if [[ "${INTEGRATION_EVENT}" == push ]]; then
+            request=".github/integration-run-request.json"
+            test -s "${request}" || {
+              echo "::error::A push-triggered run requires its exact reviewed-gate request file"; exit 3;
+            }
+            reviewed="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/11" --jq .merge_commit_sha)"
+            jq -e --arg sha "${reviewed}" --arg campaign "${CAMPAIGN}" '
+              .schema_version==1 and .reviewed_gate_sha==$sha
+              and .campaign==$campaign and .approved_pr==11
+            ' "${request}" >/dev/null || {
+              echo "::error::One-shot review-gate SHA or campaign disagrees with approved PR"; exit 3;
+            }
+          fi
 
           target="integration/cuda_asd_runner_v2-candidate"
           source_cfg=".github/candle-integration-sources.json"
