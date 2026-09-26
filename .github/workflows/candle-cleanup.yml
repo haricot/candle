@@ -93,7 +93,7 @@ jobs:
             proof_match=false
             while IFS=$'\t' read -r sha name; do
               if [[ "${sha}" == "${promoted_sha}" &&
-                    "${name}" == refs/tags/promoted/"${branch}"/'/'* ]]; then
+                    "${name}" == refs/tags/promoted/"${branch}"/* ]]; then
                 proof_match=true
               fi
             done < <(git ls-remote --tags origin "refs/tags/promoted/${branch}/*")
