@@ -1,0 +1,97 @@
+name: Candle GPU Handoff
+# One completed, successful six-feature Candidate CI dispatches exactly one
+# combined physical GPU validation on its exact source SHA.
+on:
+  workflow_run:
+    workflows: ["Candle Candidate CI"]
+    types: [completed]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: candle-gpu-handoff-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'mirror_orch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Verify the exact integrated Candidate CI artifacts and dispatch one GPU campaign
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          run="$(gh api "repos/${repo}/actions/runs/${CI_RUN_ID}")"
+          jq -e '.name=="Candle Candidate CI" and .conclusion=="success"
+            and .event=="workflow_dispatch" and .head_branch=="mirror_orch"' \
+            <<< "${run}" >/dev/null
+          artifacts="$(gh api "repos/${repo}/actions/runs/${CI_RUN_ID}/artifacts?per_page=100")"
+          mapfile -t matches < <(
+            jq -r '.artifacts[]
+              | select(.expired==false)
+              | .name
+              | select(test("^candidate-[A-Za-z0-9_-]+-cuda_asd_runner_v2-cpu$"))' \
+              <<< "${artifacts}"
+          )
+          if (( ${#matches[@]} == 0 )); then
+            echo "This is not the integrated six-feature candidate; GPU handoff skipped." \
+              >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          (( ${#matches[@]} == 1 )) || {
+            echo "::error::Ambiguous integrated CPU proof artifacts"; exit 3;
+          }
+          cpu_name="${matches[0]}"
+          campaign="${cpu_name#candidate-}"
+          campaign="${campaign%-cuda_asd_runner_v2-cpu}"
+          [[ "${campaign}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 3
+          cuda_name="candidate-${campaign}-cuda_asd_runner_v2-cuda"
+          jq -e --arg n "${cuda_name}" '
+            [.artifacts[] | select(.expired==false and .name==$n)] | length==1
+          ' <<< "${artifacts}" >/dev/null || {
+            echo "::error::Matching CUDA proof artifact absent or ambiguous"; exit 3;
+          }
+          evidence="${RUNNER_TEMP}/integrated-handoff"
+          mkdir -p "${evidence}/cpu" "${evidence}/cuda"
+          gh run download "${CI_RUN_ID}" --repo "${repo}" \
+            --name "${cpu_name}" --dir "${evidence}/cpu"
+          gh run download "${CI_RUN_ID}" --repo "${repo}" \
+            --name "${cuda_name}" --dir "${evidence}/cuda"
+          cpu="${evidence}/cpu/report.json"
+          cuda="${evidence}/cuda/report.json"
+          test -s "${cpu}"
+          test -s "${cuda}"
+          sha="$(jq -r .candidate_sha "${cpu}")"
+          lock="$(jq -r .lock_sha256 "${cpu}")"
+          [[ "${sha}" =~ ^[0-9a-f]{40}$ && "${lock}" =~ ^[0-9a-f]{64}$ ]] || exit 3
+          jq -e --arg c "${campaign}" --arg sha "${sha}" --arg lock "${lock}" '
+            .branch=="cuda_asd_runner_v2" and .campaign==$c and
+            .candidate_sha==$sha and .lock_sha256==$lock and
+            .upstream_sha=="aebc405d2b4bf42808387e0ca597bf7dad9b565f" and
+            .status=="CPU_PASSED"
+          ' "${cpu}" >/dev/null
+          jq -e --arg c "${campaign}" --arg sha "${sha}" --arg lock "${lock}" '
+            .branch=="cuda_asd_runner_v2" and .campaign==$c and
+            .candidate_sha==$sha and .lock_sha256==$lock and
+            .status=="CUDA_COMPILE_PASSED" and .target=="sm_61" and
+            .gpu_executed==false
+          ' "${cuda}" >/dev/null
+          [[ "$(sha256sum "${evidence}/cpu/Cargo.lock" | cut -d' ' -f1)" == "${lock}" ]] || {
+            echo "::error::CPU proof lockfile hash is inconsistent"; exit 3;
+          }
+          actual="$(gh api "repos/${repo}/branches/integration/cuda_asd_runner_v2-candidate" --jq .commit.sha)"
+          [[ "${actual}" == "${sha}" ]] || {
+            echo "::error::Candidate branch moved after CPU/CUDA validation"; exit 3;
+          }
+          gh workflow run candle-integration-gpu.yml --repo "${repo}" --ref mirror_orch \
+            -f "candidate_sha=${sha}" -f "campaign=${campaign}" \
+            -f "ci_run_id=${CI_RUN_ID}" -f "auto_promote=true"
+          echo "Dispatched ONE combined physical SM61 GPU run for ${sha} from Candidate CI ${CI_RUN_ID}." \
+            >> "${GITHUB_STEP_SUMMARY}"
