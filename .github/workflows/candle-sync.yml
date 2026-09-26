@@ -17,6 +17,14 @@ on:
           - cudnn_fallback_candle
           - moe_simt_f16_candle
           - asd_core
+      source_ref:
+        description: Optional existing rebase/ or sync/ candidate; requires one selected branch
+        required: false
+        type: string
+      upstream_sha:
+        description: Optional pinned upstream SHA (empty uses latest upstream main)
+        required: false
+        type: string
       auto_fmt:
         description: Run rustfmt and commit formatting on temporary candidates before validation
         required: true
@@ -76,6 +84,8 @@ jobs:
           SYNC_BRANCH: ${{ inputs.branch }}
           CAMPAIGN_INPUT: ${{ inputs.campaign }}
           AUTO_FMT: ${{ inputs.auto_fmt }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          PINNED_UPSTREAM_INPUT: ${{ inputs.upstream_sha }}
         run: |
           set -euo pipefail
           umask 077
@@ -107,13 +117,32 @@ jobs:
               ;;
           esac
 
+          if [[ -n "${SOURCE_REF}" ]]; then
+            if [[ "${SYNC_BRANCH}" == "all" ||
+                  ! "${SOURCE_REF}" =~ ^(rebase|sync)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] ||
+               ! git check-ref-format --branch "${SOURCE_REF}" >/dev/null 2>&1; then
+              echo "::error::source_ref must be an existing rebase/ or sync/ branch with a single functional branch selected"
+              exit 2
+            fi
+          fi
+
           # A fork main sync is intentionally unnecessary.
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           gh auth setup-git
           git remote add upstream https://github.com/huggingface/candle.git
           git fetch --no-tags upstream +refs/heads/main:refs/remotes/upstream/main
-          upstream_sha="$(git rev-parse refs/remotes/upstream/main)"
+          upstream_tip="$(git rev-parse refs/remotes/upstream/main)"
+          upstream_sha="${upstream_tip}"
+          if [[ -n "${PINNED_UPSTREAM_INPUT}" ]]; then
+            if [[ ! "${PINNED_UPSTREAM_INPUT}" =~ ^[0-9a-f]{40}$ ]] ||
+               ! git cat-file -e "${PINNED_UPSTREAM_INPUT}^{commit}" ||
+               ! git merge-base --is-ancestor "${PINNED_UPSTREAM_INPUT}" "${upstream_tip}"; then
+              echo "::error::Pinned upstream SHA must be a full SHA reachable from upstream main"
+              exit 2
+            fi
+            upstream_sha="${PINNED_UPSTREAM_INPUT}"
+          fi
           echo "upstream_sha=${upstream_sha}" >> "${GITHUB_OUTPUT}"
 
           {
@@ -137,10 +166,11 @@ jobs:
               --arg status "${status}" --arg candidate "${candidate}" \
               --arg candidate_sha "${sha}" --arg detail "${detail}" \
               --arg upstream_sha "${upstream_sha}" --arg fmt_status "${fmt_status}" \
+              --arg source_ref "${source_ref:-$branch}" \
               '{branch:$branch,
                 source_sha:(if $source_sha=="" then null else $source_sha end),
                 upstream_sha:$upstream_sha,
-                status:$status,format_status:$fmt_status,
+                status:$status,format_status:$fmt_status,source_ref:$source_ref,
                 candidate:(if $candidate=="" then null else $candidate end),
                 candidate_sha:(if $candidate_sha=="" then null else $candidate_sha end),
                 detail:$detail}' >> "${results}"
@@ -155,14 +185,15 @@ jobs:
             echo "::group::Prepare ${branch}"
             candidate="sync/${campaign}/${branch}"
             log="${report}/logs/${branch}.log"
+            source_ref="${SOURCE_REF:-$branch}"
 
             if ! git fetch --no-tags origin \
-              "+refs/heads/${branch}:refs/remotes/origin/${branch}" >"${log}" 2>&1; then
+              "+refs/heads/${source_ref}:refs/remotes/origin/candle-selected-source" >"${log}" 2>&1; then
               record "${branch}" "" "MISSING_BRANCH" "" "" "Unable to fetch the source branch"
               echo "::endgroup::"
               continue
             fi
-            source_sha="$(git rev-parse "refs/remotes/origin/${branch}")"
+            source_sha="$(git rev-parse refs/remotes/origin/candle-selected-source)"
 
             # Never overwrite a previously published candidate.
             if git ls-remote --exit-code --heads origin "refs/heads/${candidate}" > /dev/null 2>&1; then
@@ -248,7 +279,7 @@ jobs:
             fi
 
             candidate_sha="$(git rev-parse HEAD)"
-            if [[ "${candidate_sha}" == "${source_sha}" ]]; then
+            if [[ "${candidate_sha}" == "${source_sha}" && -z "${SOURCE_REF}" ]]; then
               record "${branch}" "${source_sha}" "UP_TO_DATE" "" "" "Source already contains the recorded upstream SHA" "${fmt_status}"
               echo "::endgroup::"
               continue
