@@ -58,7 +58,8 @@ jobs:
           umask 077
           gpu_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN}")"
           jq -e '.name=="Candle Integration GPU" and .conclusion=="success"
-            and .head_branch=="mirror_orch" and .event=="workflow_dispatch"' \
+            and .head_branch=="mirror_orch"
+            and (.event=="workflow_dispatch" or .event=="push")' \
             <<< "${gpu_run}" >/dev/null || {
             echo "::error::A completed successful physical integration GPU run is required"; exit 3;
           }
@@ -99,6 +100,28 @@ jobs:
               (["bf16_candle","fp8_candle","fp4_candle",
                 "cudnn_fallback_candle","moe_simt_f16_candle","asd_core"]|sort)
           ' "${report}/gpu/report.json" >/dev/null || exit 3
+          # One-shot push requests must match the GPU-tested SHA, approved
+          # six-source gate and proof parameters. Do not allow a generic
+          # successful push job to authorize branch rewrites.
+          if jq -e '.event=="push"' <<< "${gpu_run}" >/dev/null; then
+            trigger_sha="$(jq -r .head_sha <<< "${gpu_run}")"
+            [[ "${trigger_sha}" =~ ^[0-9a-f]{40}$ ]] || exit 3
+            git fetch --no-tags -q origin "${trigger_sha}"
+            git show "${trigger_sha}:.github/integration-gpu-request.json" > "${report}/gpu-request.json" || {
+              echo "::error::Push-triggered GPU run lacks its immutable request"; exit 3;
+            }
+            approved="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/11" --jq .merge_commit_sha)"
+            auto_promote="$(jq -r .auto_promote "${report}/gpu/report.json")"
+            [[ "${approved}" =~ ^[0-9a-f]{40}$ ]] || exit 3
+            jq -e --arg approved "${approved}" --arg sha "${sha}" --arg c "${campaign}" \
+              --arg ci "${ci}" --argjson auto "${auto_promote}" '
+              .schema_version==1 and .approved_pr==11
+              and .reviewed_gate_sha==$approved and .candidate_sha==$sha
+              and .campaign==$c and .ci_run_id==$ci and .auto_promote==$auto
+            ' "${report}/gpu-request.json" >/dev/null || {
+              echo "::error::Push GPU request does not match reviewed gate and exact GPU artifacts"; exit 3;
+            }
+          fi
           if [[ "${EVENT}" == workflow_run ]]; then
             jq -e '.auto_promote==true' "${report}/gpu/report.json" >/dev/null || {
               echo "GPU succeeded but auto-promotion was disabled; no refs modified" >> "${GITHUB_STEP_SUMMARY}"
