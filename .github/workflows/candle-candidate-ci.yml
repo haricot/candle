@@ -257,6 +257,27 @@ jobs:
           cargo check -p candle-core -p candle-nn --lib --tests \
             --no-default-features --features "$features" --locked \
             > "$report/cuda-check.log" 2>&1 || build_rc=$?
+
+          if [[ "$CHECK_BRANCH" == moe_simt_f16_candle && "$build_rc" -eq 0 ]]; then
+            # cargo check cannot prove static-library linkability. For Pascal,
+            # the SIMT translation unit must define both the real SIMT entry
+            # and the WMMA compatibility ABI stub omitted with WMMA objects.
+            archive="$(find target/debug/build -path '*/out/libmoe.a' -type f | sort | head -n 1)"
+            if [[ -z "$archive" ]]; then
+              echo "ERROR: libmoe.a absent after CUDA compilation" > "$report/moe-symbols.log"
+              build_rc=1
+            elif ! nm -g --defined-only "$archive" > "$report/moe-symbols.log" 2>&1; then
+              build_rc=1
+            else
+              echo "archive=$archive" >> "$report/moe-symbols.log"
+              for symbol in moe_gemm_simt_f16 moe_gemm_wmma; do
+                if ! grep -Eq "[[:space:]](T|W)[[:space:]]${symbol}$" "$report/moe-symbols.log"; then
+                  echo "ERROR: missing SM61 MoE ABI symbol $symbol" >> "$report/moe-symbols.log"
+                  build_rc=1
+                fi
+              done
+            fi
+          fi
           status=CUDA_COMPILE_PASSED
           ((build_rc == 0)) || status=CUDA_COMPILE_FAILED
           jq -n --arg branch "$CHECK_BRANCH" --arg campaign "$CHECK_CAMPAIGN" \
