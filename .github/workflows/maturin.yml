@@ -62,10 +62,9 @@ jobs:
           python-version: '3.13'
           architecture: ${{ matrix.target }}
       - name: Install Protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b  # v3
+        uses: ./.github/actions/setup-protoc
         with:
           version: ${{ env.PROTOC_VERSION }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build wheels
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1
         with:
@@ -92,10 +91,9 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install Protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b  # v3
+        uses: ./.github/actions/setup-protoc
         with:
-            version: ${{ env.PROTOC_VERSION }}
-            repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ env.PROTOC_VERSION }}
       - name: Build wheels
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1
         with:
@@ -116,10 +114,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Install Protoc
-        uses: arduino/setup-protoc@a8b67ba40b37d35169e222f3bb352603327985b6  # v2
+        uses: ./.github/actions/setup-protoc
         with:
           version: ${{ env.PROTOC_VERSION }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build sdist
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1
         with:
