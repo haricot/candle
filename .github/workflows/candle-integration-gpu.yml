@@ -127,6 +127,7 @@ jobs:
       LOCK: ${{ needs.preflight.outputs.lock_sha256 }}
       MANIFEST: ${{ needs.preflight.outputs.manifest_sha256 }}
       AUTO_PROMOTE: ${{ inputs.auto_promote }}
+      EXPECTED_ASD_POLICY_SHA256: 912c8b0c88fc8b3e07a25a79f5b9f0d10eef1b8193271ee8fafb4db1f9e9615f
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
         with:
@@ -168,6 +169,50 @@ jobs:
           fi
           echo "LD_LIBRARY_PATH=${libs}:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
           "${root}/bin/nvcc" --version | grep -F 'release 12.9'
+      - name: Verify and provision machine-matched Stage2F promoted ASD policy
+        shell: bash
+        env:
+          POLICY_B64: ${{ secrets.CANDLE_ASD_STAGE2F_POLICY_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          policy="${RUNNER_TEMP}/stage2f-production.v2.asd"
+          if [[ -n "${POLICY_B64:-}" ]]; then
+            printf '%s' "${POLICY_B64}" | base64 --decode > "${policy}"
+          elif [[ -n "${CANDLE_ASD_EXACT_POLICY:-}" && -r "${CANDLE_ASD_EXACT_POLICY}" ]]; then
+            cp -- "${CANDLE_ASD_EXACT_POLICY}" "${policy}"
+          else
+            echo "::error::Supply the pinned Stage2F promoted .asd wire via repository secret CANDLE_ASD_STAGE2F_POLICY_B64, or provision CANDLE_ASD_EXACT_POLICY in the self-hosted runner environment. No machine-local path belongs in Git history."
+            exit 3
+          fi
+          test -s "${policy}"
+          actual_sha="$(sha256sum "${policy}" | cut -d' ' -f1)"
+          [[ "${actual_sha}" == "${EXPECTED_ASD_POLICY_SHA256}" ]] || {
+            echo "::error::Stage2F wire SHA-256 does not match the pinned production release"
+            exit 3
+          }
+          [[ "$(head -n1 "${policy}")" == 'ASD-EXACT-POLICY-V2' ]] || {
+            echo "::error::ASD wire must be Stage2F ASD-EXACT-POLICY-V2"; exit 3
+          }
+          promoted="$(awk -F'|' '$1=="decision" && $3=="promoted"{n++} END{print n+0}' "${policy}")"
+          total="$(awk -F'|' '$1=="decision"{n++} END{print n+0}' "${policy}")"
+          [[ "${promoted}" == 12 && "${total}" == 12 ]] || {
+            echo "::error::Stage2F production requires exactly 12 promoted decisions"; exit 3
+          }
+          actual_uuid="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n1 | tr -d '[:space:]\r')"
+          policy_uuid="$(sed -n 's/^target.gpu_uuid=//p' "${policy}")"
+          [[ "${actual_uuid}" == GPU-* && "${policy_uuid}" == "${actual_uuid}" ]] || {
+            echo "::error::Stage2F policy is not bound to this exact physical GPU"; exit 3
+          }
+          {
+            echo "CANDLE_ASD_EXACT_POLICY=${policy}"
+            echo 'CANDLE_ASD_VALIDATION=1'
+            echo "CANDLE_ASD_TARGET_GPU_UUID=${actual_uuid}"
+            echo "CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID=${actual_uuid}"
+            echo "ASD_POLICY_SHA256_VALIDATED=${actual_sha}"
+          } >> "${GITHUB_ENV}"
+          echo "Verified all 12 promoted Stage2F decisions, exact policy checksum and local GPU UUID" \
+            >> "${GITHUB_STEP_SUMMARY}"
       - name: Execute all six feature suites on one physical Pascal GPU
         shell: bash
         run: |
@@ -246,6 +291,7 @@ jobs:
           cp candle-integration/sources.json "${report}/sources.json"
           jq -n --arg sha "${SHA}" --arg c "${CAMPAIGN}" --argjson ci "${CI}" \
             --arg lock "${lock}" --arg manifest "${MANIFEST}" --arg cc "${capability}" \
+            --arg asd_policy "${ASD_POLICY_SHA256_VALIDATED}" \
             --argjson auto_promote "${AUTO_PROMOTE}" \
             --slurpfile sources "${report}/sources.json" '
             {schema_version:1,branch:"cuda_asd_runner_v2",
@@ -253,7 +299,9 @@ jobs:
              upstream_sha:"aebc405d2b4bf42808387e0ca597bf7dad9b565f",
              lock_sha256:$lock,manifest_sha256:$manifest,
              gpu_compute_cap:$cc,gpu_executed:true,status:"GPU_PASSED",auto_promote:$auto_promote,
-             suite_coverage:"all_six",sources:$sources[0].sources}
+             suite_coverage:"all_six",asd_policy_sha256:$asd_policy,
+             asd_policy_promoted_decisions:12,asd_policy_gpu_uuid_matches:true,
+             sources:$sources[0].sources}
           ' > "${report}/report.json"
           echo "All six feature suites PASSED on physical SM61, exact SHA ${SHA}" \
             >> "${GITHUB_STEP_SUMMARY}"
