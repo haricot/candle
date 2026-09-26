@@ -123,6 +123,17 @@ jobs:
                 --test mxfp4_tests --test nvfp4_experiment \
                 > "$report/fp4-reference-tests.log" 2>&1 || test_rc=$?
             fi
+            if [[ "$CHECK_BRANCH" == moe_simt_f16_candle && "$check_rc" -eq 0 ]]; then
+              # The selector is pure Rust; compile and execute its unit tests
+              # without loading CUDA libraries or requiring a hosted GPU.
+              rustc --edition=2021 --test candle-kernels/src/moe_selection.rs \
+                -o "$RUNNER_TEMP/moe-selection-tests" \
+                > "$report/moe-selection-tests.log" 2>&1 || test_rc=$?
+              if ((test_rc == 0)); then
+                "$RUNNER_TEMP/moe-selection-tests" --nocapture \
+                  >> "$report/moe-selection-tests.log" 2>&1 || test_rc=$?
+              fi
+            fi
           fi
           lock_sha=""
           if [[ -f Cargo.lock ]]; then
@@ -150,7 +161,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ "$status" != CPU_PASSED ]]; then
             echo "::error::Candidate CPU gate failed: fmt=$fmt_rc, lock=$lock_rc, cpu=$check_rc, targeted_tests=$test_rc"
-            for item in fmt lock cpu-check grouped-cpu-tests fp4-reference-tests; do
+            for item in fmt lock cpu-check grouped-cpu-tests fp4-reference-tests moe-selection-tests; do
               log="$report/$item.log"
               [[ -s "$log" ]] || continue
               echo "::group::$item.log (last 35 lines)"
