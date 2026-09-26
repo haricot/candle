@@ -17,6 +17,11 @@ on:
           - cudnn_fallback_candle
           - moe_simt_f16_candle
           - asd_core
+      auto_fmt:
+        description: Run rustfmt and commit formatting on temporary candidates before validation
+        required: true
+        type: boolean
+        default: true
       validation:
         description: How to validate prepared candidates
         required: true
@@ -56,6 +61,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install the same rustfmt toolchain as Candidate CI
+        if: inputs.auto_fmt
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt
+
       - name: Prepare from exact upstream and branch SHAs
         id: prepare
         shell: bash
@@ -63,11 +75,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SYNC_BRANCH: ${{ inputs.branch }}
           CAMPAIGN_INPUT: ${{ inputs.campaign }}
+          AUTO_FMT: ${{ inputs.auto_fmt }}
         run: |
           set -euo pipefail
           umask 077
           report="${RUNNER_TEMP}/candle-sync-report"
-          mkdir -p "${report}/logs" "${report}/conflicts"
+          mkdir -p "${report}/logs" "${report}/conflicts" "${report}/format"
           results="${report}/branch-results.ndjson"
           : > "${results}"
 
@@ -118,15 +131,16 @@ jobs:
           # preparation of another branch.
           record() {
             local branch="$1" source="$2" status="$3" candidate="$4" sha="$5" detail="$6"
+            local fmt_status="${7:-NOT_RUN}"
             jq -cn \
               --arg branch "${branch}" --arg source_sha "${source}" \
               --arg status "${status}" --arg candidate "${candidate}" \
               --arg candidate_sha "${sha}" --arg detail "${detail}" \
-              --arg upstream_sha "${upstream_sha}" \
+              --arg upstream_sha "${upstream_sha}" --arg fmt_status "${fmt_status}" \
               '{branch:$branch,
                 source_sha:(if $source_sha=="" then null else $source_sha end),
                 upstream_sha:$upstream_sha,
-                status:$status,
+                status:$status,format_status:$fmt_status,
                 candidate:(if $candidate=="" then null else $candidate end),
                 candidate_sha:(if $candidate_sha=="" then null else $candidate_sha end),
                 detail:$detail}' >> "${results}"
