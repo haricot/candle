@@ -71,7 +71,7 @@ jobs:
             jq -e --arg approved "${approved}" '
               .schema_version==1 and .approved_pr==11
               and .reviewed_gate_sha==$approved
-              and .candidate_sha|type=="string"
+              and (.candidate_sha | type=="string")
             ' "${request}" > /dev/null || {
               echo "::error::GPU request must refer to the actual approved six-source PR merge"; exit 3;
             }
