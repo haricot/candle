@@ -94,11 +94,11 @@ jobs:
             proof_match=false
             while IFS=$'\t' read -r sha name; do
               if [[ "${sha}" == "${promoted_sha}" &&
-                    "${name}" == refs/tags/promoted/"${branch}"/* ]]; then
+                    "${name}" == refs/tags/promoted/"${branch}"/*'{}' ]]; then
                 proof_match=true
               fi
             done < <(git ls-remote --tags origin "refs/tags/promoted/${branch}/*")
-            # gh supplies one peeled ^{} line for annotated promotion tags.
+            # Annotated promotion tags must be compared by their peeled commit SHA.
             if [[ "${proof_match}" != true ]]; then
               echo "::error::No post-promotion tag matches current ${branch} head"; exit 3
             fi
@@ -142,6 +142,11 @@ jobs:
               "+${fullref}:refs/remotes/origin/candle-cleanup-current"
             [[ "$(git rev-parse refs/remotes/origin/candle-cleanup-current)" == "${sha}" ]] || {
               echo "::error::Temporary ref moved during cleanup: ${name}"; exit 3;
+            }
+            git fetch --no-tags -q origin \
+              "+refs/heads/${feature}:refs/remotes/origin/candle-cleanup-promoted"
+            [[ "$(git rev-parse refs/remotes/origin/candle-cleanup-promoted)" == "${current}" ]] || {
+              echo "::error::Promoted feature moved during cleanup: ${feature}"; exit 3;
             }
             is_ancestor=false
             git merge-base --is-ancestor "${sha}" "${current}" && is_ancestor=true
