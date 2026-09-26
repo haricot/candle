@@ -1,0 +1,212 @@
+# Explicit promotion only. CPU+CUDA CI is compile-only, not a GPU-runtime guarantee.
+name: Candle Promote
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Functional branch to update
+        required: true
+        type: choice
+        options:
+          - bf16_candle
+          - fp8_candle
+          - fp4_candle
+          - cudnn_fallback_candle
+          - moe_simt_f16_candle
+          - asd_core
+      candidate_ref:
+        description: Existing validated sync/ or rebase/ reference
+        required: true
+        type: string
+      candidate_sha:
+        description: Exact immutable candidate commit SHA (40 lowercase hex)
+        required: true
+        type: string
+      expected_source_sha:
+        description: Current functional branch SHA, used as a force-with-lease guard
+        required: true
+        type: string
+      upstream_sha:
+        description: Pinned upstream SHA used for candidate CI
+        required: true
+        type: string
+      campaign:
+        description: Candidate CI campaign associated with this candidate
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful Candle Candidate CI workflow run ID
+        required: true
+        type: string
+      allow_open_pr:
+        description: Allow rewriting a functional branch with an open PR (requires review)
+        required: true
+        type: boolean
+        default: false
+      dry_run:
+        description: Validate and preview without moving the functional branch
+        required: true
+        type: boolean
+        default: true
+      confirmation:
+        description: Type PROMOTE to permit an actual update (ignored in dry-run)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: candle-promotion-${{ inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout orchestration branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0, Node 24
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact candidate, complete CI evidence and expected old head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.branch }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EXPECTED_OLD: ${{ inputs.expected_source_sha }}
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRM: ${{ inputs.confirmation }}
+          ALLOW_OPEN_PR: ${{ inputs.allow_open_pr }}
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/candle-promotion"
+          mkdir -p "${report}/cpu" "${report}/cuda"
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ &&
+             "${EXPECTED_OLD}" =~ ^[0-9a-f]{40}$ &&
+             "${UPSTREAM_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Expected full lowercase commit SHAs"; exit 2;
+          }
+          [[ "${CANDIDATE_REF}" =~ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] &&
+          git check-ref-format --branch "${CANDIDATE_REF}" >/dev/null &&
+          [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ &&
+             "${CI_RUN_ID}" =~ ^[0-9]{6,20}$ ]] || {
+            echo "::error::Invalid candidate ref, campaign or run ID"; exit 2;
+          }
+          if [[ "${DRY_RUN}" != true && "${CONFIRM}" != PROMOTE ]]; then
+            echo "::error::An actual promotion requires confirmation PROMOTE"; exit 2
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+          git fetch --no-tags origin \
+            "+refs/heads/${CANDIDATE_REF}:refs/remotes/origin/promotion-candidate" \
+            "+refs/heads/${TARGET}:refs/remotes/origin/promotion-old"
+          actual_candidate="$(git rev-parse refs/remotes/origin/promotion-candidate)"
+          actual_old="$(git rev-parse refs/remotes/origin/promotion-old)"
+          [[ "${actual_candidate}" == "${CANDIDATE_SHA}" &&
+             "${actual_old}" == "${EXPECTED_OLD}" ]] || {
+            echo "::error::A candidate or functional ref moved since it was selected"; exit 3;
+          }
+          git merge-base --is-ancestor "${UPSTREAM_SHA}" "${CANDIDATE_SHA}" || {
+            echo "::error::Pinned upstream is not an ancestor of the candidate"; exit 3;
+          }
+
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}")"
+          jq -e '.name == "Candle Candidate CI" and .conclusion == "success" and
+            .head_branch == "mirror_orch"' <<< "${run}" > /dev/null || {
+            echo "::error::The supplied CI run is not a successful Candidate CI"; exit 3;
+          }
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}/jobs?per_page=100")"
+          jq -e --arg branch "${TARGET}" '
+            any(.jobs[]; .name == ("CPU / " + $branch) and .conclusion == "success") and
+            any(.jobs[]; (.name | startswith("CUDA 12.9 SM61 compile / ")) and
+              (.name | endswith($branch)) and .conclusion == "success")
+          ' <<< "${jobs}" > /dev/null || {
+            echo "::error::Both CPU and hosted SM61 CUDA jobs must have passed"; exit 3;
+          }
+          gh run download "${CI_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candidate-${CAMPAIGN}-${TARGET}-cpu" --dir "${report}/cpu"
+          gh run download "${CI_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candidate-${CAMPAIGN}-${TARGET}-cuda" --dir "${report}/cuda"
+          jq -e --arg branch "${TARGET}" --arg sha "${CANDIDATE_SHA}" \
+            --arg upstream "${UPSTREAM_SHA}" --arg campaign "${CAMPAIGN}" '
+            .branch == $branch and .candidate_sha == $sha and .upstream_sha == $upstream
+            and .campaign == $campaign and .status == "CPU_PASSED"
+            and (.lock_sha256 | type == "string" and length == 64)
+          ' "${report}/cpu/report.json" > /dev/null
+          lock="$(jq -r .lock_sha256 "${report}/cpu/report.json")"
+          jq -e --arg branch "${TARGET}" --arg sha "${CANDIDATE_SHA}" \
+            --arg campaign "${CAMPAIGN}" --arg lock "${lock}" '
+            .branch == $branch and .candidate_sha == $sha and .campaign == $campaign
+            and .lock_sha256 == $lock and .status == "CUDA_COMPILE_PASSED"
+            and .target == "sm_61" and .gpu_executed == false
+          ' "${report}/cuda/report.json" > /dev/null
+
+          owner="${GITHUB_REPOSITORY%%/*}"
+          prs="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f state=open -f "head=${owner}:${TARGET}" --jq length)"
+          if (( prs > 0 )) && [[ "${ALLOW_OPEN_PR}" != true ]]; then
+            echo "::error::Functional branch has an open PR; approve this explicitly"; exit 3
+          fi
+
+          jq -n --arg branch "${TARGET}" --arg old "${EXPECTED_OLD}" \
+            --arg new "${CANDIDATE_SHA}" --arg upstream "${UPSTREAM_SHA}" \
+            --arg lock "${lock}" --argjson ci_run "${CI_RUN_ID}" \
+            --argjson open_prs "${prs}" --argjson dry_run "${DRY_RUN}" \
+            '{schema_version:1,branch:$branch,old_sha:$old,new_sha:$new,
+              upstream_sha:$upstream,lock_sha256:$lock,ci_run_id:$ci_run,
+              open_pr_count:$open_prs,dry_run:$dry_run,
+              gpu_runtime_validated:false}' > "${report}/promotion.json"
+          if [[ "${DRY_RUN}" == true ]]; then
+            echo "Dry-run: exact candidate, CI and source-branch checks passed" >> "${GITHUB_STEP_SUMMARY}"
+            cat "${report}/promotion.json" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ "${EXPECTED_OLD}" == "${CANDIDATE_SHA}" ]]; then
+            echo "Functional branch already at candidate SHA; no rewrite needed" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          short_old="${EXPECTED_OLD:0:12}"
+          short_new="${CANDIDATE_SHA:0:12}"
+          backup="archive/pre-promotion/${TARGET}/${short_old}-${CI_RUN_ID}"
+          git ls-remote --exit-code --tags origin "refs/tags/${backup}" > /dev/null && {
+            echo "::error::Backup tag already exists; inspect before promotion"; exit 3;
+          } || :
+          git tag -a "${backup}" "${EXPECTED_OLD}" \
+            -m "Pre-promotion backup $\nbranch=${TARGET}\nold=${EXPECTED_OLD}\nci_run=${CI_RUN_ID}"
+          git push origin "refs/tags/${backup}"
+          git push --force-with-lease="refs/heads/${TARGET}:${EXPECTED_OLD}" \
+            origin "${CANDIDATE_SHA}:refs/heads/${TARGET}"
+          actual="$(git ls-remote --heads origin "refs/heads/${TARGET}" | cut -f1)"
+          [[ "${actual}" == "${CANDIDATE_SHA}" ]] || {
+            echo "::error::Promotion remote SHA mismatch; backup tag is retained"; exit 3;
+          }
+          proof="promoted/${TARGET}/${short_new}-${CI_RUN_ID}"
+          git tag -a "${proof}" "${CANDIDATE_SHA}" \
+            -F "${report}/promotion.json"
+          git push origin "refs/tags/${proof}"
+          echo "Promoted $@{TARGET} from $@{EXPECTED_OLD} to $@{CANDIDATE_SHA}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+          echo "Backup tag: $@{backup}; promotion tag: $@{proof}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Preserve promotion manifest
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7, Node 24
+        with:
+          name: candle-promotion-${{ inputs.branch }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-promotion/promotion.json
+          if-no-files-found: warn
+          retention-days: 90
