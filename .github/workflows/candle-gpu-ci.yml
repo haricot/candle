@@ -1,0 +1,164 @@
+# Physical GPU verification on immutable candidates. Missing coverage fails closed.
+name: Candle GPU CI
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        required: true
+        type: choice
+        options: [bf16_candle, fp8_candle, fp4_candle, cudnn_fallback_candle, moe_simt_f16_candle, asd_core]
+      candidate_ref:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+      upstream_sha:
+        required: true
+        type: string
+      campaign:
+        required: true
+        type: string
+      ci_run_id:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: candle-gpu-${{ inputs.candidate_ref }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    outputs:
+      lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: check
+        name: Verify exact candidate and CPU/CUDA CI reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          B: ${{ inputs.branch }}
+          REF: ${{ inputs.candidate_ref }}
+          SHA: ${{ inputs.candidate_sha }}
+          UP: ${{ inputs.upstream_sha }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          CI: ${{ inputs.ci_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${SHA}" =$ ^[0-9a-f]{40}$ && "${UP}" =$ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "${CI}" =$ ^[0-9]{6,20}$ && "${CAMPAIGN}" =$ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
+          [[ "${REF}" =$ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || exit 2
+          git check-ref-format --branch "${REF}" >/dev/null
+          case "${B}" in
+            bf16_candle|fp8_candle|fp4_candle) ;;
+            *) echo "::error::Dedicated GPU-runtime suite missing for ${B}; promotion blocked"; exit 3 ;;
+          esac
+          git fetch --no-tags origin "+refs/heads/${REF}:refs/remotes/origin/gpu-candidate"
+          [[ "$(git rev-parse refs/remotes/origin/gpu-candidate)" == "${SHA}" ]] || exit 3
+          git merge-base --is-ancestor "${UP}" "${SHA}" || exit 3
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI}")"
+          jq -e '.name=="Candle Candidate CI" and .conclusion=="success" and .head_branch=="mirror_orch"' <<< "${run}" >/dev/null
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI}/jobs?per_page=100")"
+          jq -e --arg b "${B}" '
+            any(.jobs[]; .name==("CPU / "+$b) and .conclusion=="success") and
+            any(.jobs[]; .name==("CUDA 12.9 SM61 compile / "+$b) and .conclusion=="success")
+          ' <<< "${jobs}" >/dev/null
+          d="${RUNNER_TEMP}/gpu-ci-preflight"
+          mkdir -p "${d}/cpu" "${d}/cuda"
+          gh run download "${CI}" --repo "${GITHUB_REPOSITORY}" --name "candidate-${CAMPAIGN}-${B}-cpu" --dir "${d}/cpu"
+          gh run download "${CI}" --repo "${GITHUB_REPOSITORY}" --name "candidate-${CAMPAIGN}-${B}-cuda" --dir "${d}/cuda"
+          jq -e --arg b "${B}" --arg sha "${SHA}" --arg up "${UP}" --arg c "${CAMPAIGN}" '
+            .branch==$b and .candidate_sha==$sha and .upstream_sha==$up and .campaign==$c
+            and .status=="CPU_PASSED" and (.lock_sha256|test("^[0-9a-f]{64}$"))
+          ' "${d}/cpu/report.json" >/dev/null
+          lock="$(jq -r .lock_sha256 "${d}/cpu/report.json")"
+          [[ "$(sha256sum "${d}/cpu/Cargo.lock" | cut -d' ' -f1)" == "${lock}" ]] || exit 3
+          jq -e --arg b "${B}" --arg sha "${SHA}" --arg c "${CAMPAIGN}" --arg lock "${lock}" '
+            .branch==$b and .candidate_sha==$sha and .campaign==$c
+            and .lock_sha256==$lock and .status=="CUDA_COMPILE_PASSED"
+            and .target=="sm_61" and .gpu_executed==false
+          ' "${d}/cuda/report.json" >/dev/null
+          echo "lock_sha256=${lock}" >> "${GITHUB_OUTPUT}"
+  gpu:
+    needs: preflight
+    runs-on: [self-hosted, linux, x64, cuda, sm61]
+    timeout-minutes: 120
+    env:
+      CUDA_COMPUTE_CAP: "61"
+      CARGO_TERM_COLOR: never
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      B: ${{ inputs.branch }}
+      UP: ${{ inputs.upstream_sha }}
+      CAMPAIGN: ${{ inputs.campaign }}
+      CI: ${{ inputs.ci_run_id }}
+      LOCK_SHA256: ${{ needs.preflight.outputs.lock_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7 / Node 24
+        with:
+          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/verified-cpu
+      - name: Run feature tests on physical Pascal and record proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          d="${RUNNER_TEMP}/candle-gpu-proof"
+          mkdir -p "${d}"
+          [[ "$(git rev-parse HEAD)" == "${CANDIDATE_SHA}" ]] || exit 3
+          nvidia-smi -q > "${d}/gpu-info.txt"
+          nvcc --version > "${d}/nvcc.txt"
+          cc="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d '[:space:]')"
+          [[ "${cc}" == 6.1 ]] || { echo "::error::Physical GPU is not SM61"; exit 3; }
+          cp "${RUNNER_TEMP}/verified-cpu/Cargo.lock" Cargo.lock
+          lock="$(sha256sum Cargo.lock | cut -d' ' -f1)"
+          [[ "${lock}" == "${LOCK_SHA256}" ]] || exit 3
+          case "${B}" in
+            bf16_candle)
+              cargo test -p candle-core --no-default-features --locked --features "cuda cuda-legacy-bf16" \
+                --test cuda_legacy_bf16_tests -- --nocapture > "${d}/gpu-tests.log" 2>&1
+              for t in elementwise reduction transformer_ops memory_ops indexing matmul conv; do
+                grep -Fq "test cuda_legacy_bf16_${t}_runtime ... ok" "${d}/gpu-tests.log"
+              done ;;
+            fp8_candle)
+              cargo test -p candle-core --no-default-features --locked --features "cuda cuda-legacy-fp8" \
+                --test fp8_legacy_tests -- --nocapture > "${d}/gpu-tests.log" 2>&1
+              for t in legacy_fp8_cast_roundtrip_cuda legacy_fp8_unary_ops_cuda legacy_fp8_binary_ops_cuda legacy_fp8_reduces_after_widening_cuda; do
+                grep -Fq "test ${t} ... ok" "${d}/gpu-tests.log"
+              done ;;
+            fp4_candle)
+              cargo test -p candle-core --no-default-features --locked --features cuda \
+                --test mxfp4_tests -- --nocapture > "${d}/gpu-tests.log" 2>&1
+              for t in cuda_dequantize_matches_cpu cuda_mxfp4_dp4a_batch_1_to_8 cuda_mxfp4_prefill_parity cuda_mxfp4_indexed_moe_parity; do
+                grep -Fq "test ${t} ... ok" "${d}/gpu-tests.log"
+              done ;;
+            *) echo "::error::No dedicated GPU suite for ${B}"; exit 3 ;;
+          esac
+          jq -n --arg b "${B}" --arg sha "${CANDIDATE_SHA}" --arg up "${UP}" \
+            --arg c "${CAMPAIGN}" --arg lock "${lock}" --argjson ci "${CI}" --arg cc "${cc}" \
+            '{schema_version:1,branch:$b,candidate_sha:$sha,upstream_sha:$up,
+              campaign:$c,ci_run_id:$ci,lock_sha256:$lock,gpu_compute_cap:$cc,
+              gpu_executed:true,suite_coverage:"required",status:"GPU_PASSED"}' > "${d}/report.json"
+          echo "GPU_PASS: ${B} ${CANDIDATE_SHA} on SM${cc}" >> "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candle-gpu-${{ inputs.campaign }}-${{ inputs.branch }}
+          path: ${{ runner.temp }}/candle-gpu-proof/
+          if-no-files-found: warn
+          retention-days: 90
