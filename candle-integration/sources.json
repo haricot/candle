@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "baseline_sha": "23cd66e38694c54c2184a57ba9f2c25a7ba1c682",
+  "upstream_sha": "aebc405d2b4bf42808387e0ca597bf7dad9b565f",
+  "sources": [
+    {
+      "feature": "bf16_candle",
+      "source_ref": "sync/36131430605-1/bf16_candle",
+      "source_sha": "07980b71e52cfccc4c95c0c747043c9fb985dcab"
+    },
+    {
+      "feature": "fp8_candle",
+      "source_ref": "rebase/20260925-aebc405d/fp8_candle-final",
+      "source_sha": "121f14beb269754ff9edcb3a33e77c38844d5c26"
+    },
+    {
+      "feature": "fp4_candle",
+      "source_ref": "rebase/20260925-aebc405d/fp4_candle-rc2",
+      "source_sha": "9e92a11d99c451bbf7bc1a2a7b32ff8f04aa4179"
+    },
+    {
+      "feature": "cudnn_fallback_candle",
+      "source_ref": "rebase/20260925-aebc405d/cudnn_fallback_candle-gpu-tests",
+      "source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f"
+    },
+    {
+      "feature": "moe_simt_f16_candle",
+      "source_ref": "rebase/20260925-aebc405d/moe_simt_f16_candle-gpu-tests",
+      "source_sha": "8707865a92e2801a0ccb22727bc82c3db6a5bb8b"
+    },
+    {
+      "feature": "asd_core",
+      "source_ref": "asd_core",
+      "source_sha": "b0281c1339b43f52439d2e7ef02335bbc03f74a6"
+    }
+  ]
+}

@@ -72,7 +72,6 @@ fn main() -> Result<()> {
         .build_ptx()?;
     sm61_ptx.write(&out_dir.join("sm61_ptx.rs"))?;
 
-
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
         "src/moe/moe_simt_f16.cu",

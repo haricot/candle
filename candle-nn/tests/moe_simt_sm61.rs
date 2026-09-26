@@ -40,11 +40,18 @@ fn check(
         .transpose()?;
     let result = moe_gemm(&x, &w, &topk_weights, &sorted, &experts, topk, is_prefill)?;
     gpu.synchronize()?;
-    let output = result.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let output = result
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
 
     assert_eq!(output.len(), token_experts.len() * N);
     for (row, &expert) in token_experts.iter().enumerate() {
-        let input_row = if route_weights.is_some() { row } else { row / topk };
+        let input_row = if route_weights.is_some() {
+            row
+        } else {
+            row / topk
+        };
         for n in 0..N {
             let reference: f32 = (0..K)
                 .map(|k| inputs[input_row * K + k] * weights[(expert * N + n) * K + k])
@@ -66,7 +73,15 @@ fn check(
 fn sm61_simt_prefill_topk2_fp16() -> Result<()> {
     // Two tokens, two routes each: expert 0 receives output rows 0 and 2,
     // expert 1 receives output rows 1 and 3.
-    check(2, &[0, 2, 1, 3], &[0, 0, 1, 1], &[0, 1, 0, 1], 2, None, true)
+    check(
+        2,
+        &[0, 2, 1, 3],
+        &[0, 0, 1, 1],
+        &[0, 1, 0, 1],
+        2,
+        None,
+        true,
+    )
 }
 
 #[test]
@@ -74,7 +89,12 @@ fn sm61_simt_decode_weighted_fp16() -> Result<()> {
     // Exercise the light prefix-sum path, nonidentity routing and FP32
     // per-output route weights. Experts are sorted in the routing arrays.
     check(
-        3, &[1, 0, 2], &[0, 1, 1], &[1, 0, 1], 1,
-        Some(&[0.5, 0.75, 1.25]), false,
+        3,
+        &[1, 0, 2],
+        &[0, 1, 1],
+        &[1, 0, 1],
+        1,
+        Some(&[0.5, 0.75, 1.25]),
+        false,
     )
 }
