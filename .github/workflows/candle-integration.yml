@@ -43,7 +43,7 @@ jobs:
           umask 077
           report="${RUNNER_TEMP}/candle-integration"
           mkdir -p "${report}/conflicts" "${report}/logs"
-          [[ "${CAMPAIGN}" =$ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
+          [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
           echo "campaign=${CAMPAIGN}" >> "${GITHUB_OUTPUT}"
 
           upstream="aebc405d2b4bf42808387e0ca597bf7dad9b565f"
@@ -187,7 +187,7 @@ jobs:
           CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
         run: |
           set -euo pipefail
-          [[ "${SHA}" =$ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]] || exit 2
           gh workflow run candle-candidate-ci.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
             -f branch=cuda_asd_runner_v2 \
             -f candidate_ref=integration/cuda_asd_runner_v2-candidate \
