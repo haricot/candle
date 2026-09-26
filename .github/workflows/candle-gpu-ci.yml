@@ -62,7 +62,7 @@ jobs:
           [[ "${REF}" =$ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || exit 2
           git check-ref-format --branch "${REF}" >/dev/null
           case "${B}" in
-            bf16_candle|fp8_candle|fp4_candle|moe_simt_f16_candle) ;;
+            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle) ;;
             *) echo "::error::Dedicated GPU-runtime suite missing for ${B}; promotion blocked"; exit 3 ;;
           esac
           git fetch --no-tags origin "+refs/heads/${REF}:refs/remotes/origin/gpu-candidate"
@@ -151,6 +151,27 @@ jobs:
                 --test mxfp4_tests -- --nocapture > "${d}/gpu-tests.log" 2>&1
               for t in cuda_dequantize_matches_cpu cuda_mxfp4_dp4a_batch_1_to_8 cuda_mxfp4_prefill_parity cuda_mxfp4_indexed_moe_parity; do
                 grep -Fq "test ${t} ... ok" "${d}/gpu-tests.log"
+              done ;;
+            cudnn_fallback_candle)
+              # Require the source-backed synthetic policy test; old
+              # compile-only candidates cannot pass this runtime suite.
+              grep -Fq "fn synthetic_quarantine_routes_generic_conv1d_conv2d()" \
+                candle-core/src/cuda_backend/mod.rs
+              cargo test -p candle-core --no-default-features --locked \
+                --features "cuda cudnn" --lib \
+                synthetic_quarantine_routes_generic_conv1d_conv2d \
+                -- --nocapture > "${d}/gpu-tests.log" 2>&1
+              grep -Eq 'test .*synthetic_quarantine_routes_generic_conv1d_conv2d ... ok' \
+                "${d}/gpu-tests.log"
+              cargo test -p candle-core --no-default-features --locked \
+                --features cuda --test conv_tests \
+                -- --nocapture > "${d}/cuda-only-conv.log" 2>&1
+              cargo test -p candle-core --no-default-features --locked \
+                --features "cuda cudnn" --test conv_tests \
+                -- --nocapture > "${d}/cudnn-conv.log" 2>&1
+              for test_name in conv1d_gpu conv2d_gpu; do
+                grep -Fq "test ${test_name} ... ok" "${d}/cuda-only-conv.log"
+                grep -Fq "test ${test_name} ... ok" "${d}/cudnn-conv.log"
               done ;;
             moe_simt_f16_candle)
               # Source-backed numerical parity tests are required; the old
