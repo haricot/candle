@@ -1,0 +1,75 @@
+name: Install official protoc 25.0
+description: Obtain the official platform-native protobuf compiler without a JavaScript runtime
+inputs:
+  version:
+    description: Pinned protoc release; only 25.0 is supported
+    required: false
+    default: '25.0'
+runs:
+  using: composite
+  steps:
+    - name: Download official protoc release, verify binary and add to PATH
+      shell: bash
+      env:
+        PROTOC_PYTHON: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+        PROTOC_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        "$PROTOC_PYTHON" - <<'PY'
+        import os
+        import pathlib
+        import platform
+        import subprocess
+        import sys
+        import urllib.request
+        import zipfile
+        from io import BytesIO
+
+        version = os.environ["PROTOC_VERSION"]
+        if version != "25.0":
+            raise SystemExit(f"Unsupported protoc version: {version!r}; expected 25.0")
+        machine = platform.machine().lower()
+        if sys.platform == "win32":
+            target = "win64" if machine in {"amd64", "x86_64", "arm64", "aarch64"} else "win32"
+            binary = "protoc.exe"
+        elif sys.platform == "darwin":
+            target = "osx-aarch_64" if machine in {"arm64", "aarch64"} else "osx-x86_64"
+            binary = "protoc"
+        elif sys.platform.startswith("linux") and machine in {"x86_64", "amd64"}:
+            target = "linux-x86_64"
+            binary = "protoc"
+        else:
+            raise SystemExit(f"No pinned protoc archive for {sys.platform}/{machine}")
+
+        url = (f"https://github.com/protocolbuffers/protobuf/releases/download/"
+               f"v{version}/protoc-{version}-{target}.zip")
+        install = pathlib.Path(os.environ["RUNNER_TEMP"]) / f"candle-protoc-{version}"
+        install.mkdir(parents=True, exist_ok=True)
+        print(f"Retrieving official protoc release: {url}", flush=True)
+        request = urllib.request.Request(url, headers={"User-Agent": "candle-ci-protoc-installer"})
+        with urllib.request.urlopen(request, timeout=90) as response:
+            archive = BytesIO(response.read())
+        with zipfile.ZipFile(archive) as z:
+            bad = z.testzip()
+            if bad:
+                raise SystemExit(f"Corrupt protobuf release archive: {bad}")
+            for name in z.namelist():
+                parts = pathlib.PurePosixPath(name).parts
+                if not parts or parts[0] not in {"bin", "include"}:
+                    continue
+                if ".." in parts or name.startswith("/"):
+                    raise SystemExit(f"Unsafe protoc archive member: {name}")
+                z.extract(name, install)
+
+        executable = install / "bin" / binary
+        if not executable.is_file():
+            raise SystemExit(f"protoc executable missing from {url}")
+        if sys.platform != "win32":
+            executable.chmod(executable.stat().st_mode | 0o111)
+        output = subprocess.run([str(executable), "--version"], check=True, capture_output=True, text=True)
+        print(f"Installed {output.stdout.strip()}", flush=True)
+        if output.stdout.strip() != "libprotoc 25.0":
+            raise SystemExit("Downloaded protoc version does not match pinned release")
+        with open(os.environ["GITHUB_PATH"], "a", encoding="utf-8") as path:
+            path.write(str(executable.parent) + "\n")
+        PY
