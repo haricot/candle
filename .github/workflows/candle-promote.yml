@@ -112,8 +112,8 @@ jobs:
           [[ "${CANDIDATE_REF}" =~ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] &&
           git check-ref-format --branch "${CANDIDATE_REF}" >/dev/null &&
           [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ &&
-             "${CI_RUN_ID}" =$ ^[0-9]{6,20}$ &&
-             "${GPU_RUN_ID}" =$ ^[0-9]{6,20}$ ]] || {
+             "${CI_RUN_ID}" =~ ^[0-9]{6,20}$ &&
+             "${GPU_RUN_ID}" =~ ^[0-9]{6,20}$ ]] || {
             echo "::error::Invalid candidate ref, campaign or run ID"; exit 2;
           }
           if [[ "${DRY_RUN}" != true && "${CONFIRM}" != PROMOTE ]]; then
