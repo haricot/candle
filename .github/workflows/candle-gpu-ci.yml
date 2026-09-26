@@ -23,10 +23,10 @@ on:
         required: true
         type: string
       auto_promote:
-        description: Dispatch GPU-backed guarded promotion after full success (open PRs are excluded)
+        description: Legacy single-feature diagnostic only; integrated GPU promotion uses Candle Integration GPU
         required: true
         type: boolean
-        default: true
+        default: false
 permissions:
   contents: read
   actions: read
