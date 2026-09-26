@@ -1,0 +1,197 @@
+name: Candle Integration
+# Exactly one combined CPU/CUDA validation candidate; no per-feature GPU campaigns.
+on:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: One identifier for this six-feature integration
+        type: string
+        required: true
+        default: integrated-sm61-v2
+permissions:
+  contents: read
+concurrency:
+  group: candle-single-integration
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.combine.outputs.sha }}
+      campaign: ${{ steps.combine.outputs.campaign }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0 Node24
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Combine exact pinned source commits into one integrated candidate
+        id: combine
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAMPAIGN: ${{ inputs.campaign }}
+        run: |
+          set -euo pipefail
+          umask 077
+          report="${RUNNER_TEMP}/candle-integration"
+          mkdir -p "${report}/conflicts" "${report}/logs"
+          [[ "${CAMPAIGN}" =$ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
+          echo "campaign=${CAMPAIGN}" >> "${GITHUB_OUTPUT}"
+
+          upstream="aebc405d2b4bf42808387e0ca597bf7dad9b565f"
+          baseline="23cd66e38694c54c2184a57ba9f2c25a7ba1c682"
+          target="integration/cuda_asd_runner_v2-candidate"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git
+          git remote add upstream https://github.com/huggingface/candle.git
+          git fetch --no-tags upstream +refs/heads/main:refs/remotes/upstream/main
+          git fetch --no-tags origin \
+            +refs/heads/compat/sm61-cuda-baseline-aebc405d:refs/remotes/origin/candle-integration-baseline
+          [[ "$(git rev-parse refs/remotes/origin/candle-integration-baseline)" == "${baseline}" ]] || {
+            echo "::error::Shared SM61 baseline has changed; refuse integration"; exit 3;
+          }
+          git merge-base --is-ancestor "${upstream}" "${baseline}" || exit 3
+          git merge-base --is-ancestor "${upstream}" refs/remotes/upstream/main || exit 3
+
+          sources=(
+            'bf16_candle|sync/36131430605-1/bf16_candle|07980b71e52cfccc4c95c0c747043c9fb985dcab'
+            'fp8_candle|rebase/20260925-aebc405d/fp8_candle-final|121f14beb269754ff9edcb3a33e77c38844d5c26'
+            'fp4_candle|rebase/20260925-aebc405d/fp4_candle-rc2|9e92a11d99c451bbf7bc1a2a7b32ff8f04aa4179'
+            'cudnn_fallback_candle|rebase/20260925-aebc405d/cudnn_fallback_candle-gpu-tests|84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f'
+            'moe_simt_f16_candle|rebase/20260925-aebc405d/moe_simt_f16_candle-gpu-tests|8707865a92e2801a0ccb22727bc82c3db6a5bb8b'
+            'asd_core|asd_core|b0281c1339b43f52439d2e7ef02335bbc03f74a6'
+          )
+          : > "${report}/sources.ndjson"
+          # Resolve each exact source before modifying any refs.
+          for item in "${sources[@]}"; do
+            IFS='|' read -r feature ref expected <<< "${item}"
+            git check-ref-format --branch "${ref}" || exit 3
+            git fetch --no-tags origin "+refs/heads/${ref}:refs/remotes/origin/candle-integration-source"
+            actual="$(git rev-parse refs/remotes/origin/candle-integration-source)"
+            [[ "${actual}" == "${expected}" ]] || {
+              echo "::error::${feature} source advanced from ${expected} to ${actual}"; exit 3;
+            }
+            jq -cn --arg feature "${feature}" --arg ref "${ref}" --arg sha "${expected}" \
+              '{feature:${feature},source_ref:${ref},source_sha:${sha}}' \
+              >> "${report}/sources.ndjson"
+          done
+          jq -s --arg baseline "${baseline}" --arg upstream "${upstream}" \
+            '{schema_version:1,baseline_sha:${baseline},upstream_sha:${upstream},sources:.}' \
+            "${report}/sources.ndjson" > "${report}/sources.json"
+
+          current="$(git ls-remote --heads origin "refs/heads/${target}" | cut -f1)"
+          if [[ -n "${current}" && "${current}" != "${baseline}" ]]; then
+            # An existing integrated candidate can be validated, but may
+            # not be silently overwritten after earlier CI.
+            git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/integration-existing"
+            git switch --detach -f "${current}"
+            test -f candle-integration/sources.json || {
+              echo "::error::Existing integration SHA has no source manifest"; exit 3;
+            }
+            cmp -s "${report}/sources.json" candle-integration/sources.json || {
+              echo "::error::Existing integration source pins differ"; exit 3;
+            }
+            while read -r feature sha; do
+              git merge-base --is-ancestor "${sha}" HEAD || {
+                echo "::error::Existing integration lacks ${feature} ${sha}"; exit 3;
+              }
+            done < <(jq -r '.sources[] | [.feature,.source_sha] | @tsv' "${report}/sources.json")
+            cargo fmt --all -- --check > "${report}/format-check.log" 2>&1 || {
+              echo "::error::Existing candidate requires explicit format repair"; exit 3;
+            }
+            echo "Reusing previously prepared combined source SHA ${current}" >> "${GITHUB_STEP_SUMMARY}"
+            echo "sha=${current}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git switch --detach -f "${baseline}"
+          for item in "${sources[@]}"; do
+            IFS='|' read -r feature ref expected <<< "${item}"
+            echo "::group::Merge ${feature} exact ${expected}"
+            git fetch --no-tags origin "+refs/heads/${ref}:refs/remotes/origin/candle-integration-source"
+            [[ "$(git rev-parse refs/remotes/origin/candle-integration-source)" == "${expected}" ]] || exit 3
+            if ! git merge --no-ff --no-edit -m "integrate(${feature}): merge exact pinned source ${expected}" \
+              "${expected}" > "${report}/logs/${feature}.log" 2>&1; then
+              mkdir -p "${report}/conflicts/${feature}"
+              git ls-files -u > "${report}/conflicts/${feature}/index-stages.txt"
+              git diff --name-only --diff-filter=U > "${report}/conflicts/${feature}/files.txt"
+              git diff -- > "${report}/conflicts/${feature}/merged-conflict.patch" || :
+              git status --short > "${report}/conflicts/${feature}/status.txt"
+              echo "::error::Integration conflict in ${feature}; no candidate published"
+              tail -n 45 "${report}/logs/${feature}.log"
+              exit 3
+            fi
+            echo "::endgroup::"
+          done
+
+          mkdir -p candle-integration
+          cp "${report}/sources.json" candle-integration/sources.json
+          # Source manifest is data-only: public Git SHAs, no runner/user paths.
+          cargo fmt --all > "${report}/fmt.log" 2>&1
+          git diff --check > "${report}/diff-check.log" 2>&1
+          if [[ -n "$(git diff --name-only -- . ':!*.rs')" ]]; then
+            echo "::error::Formatter changed unexpected non-Rust paths"; exit 3
+          fi
+          git add -u -- '*.rs' candle-integration/sources.json
+          git add candle-integration/sources.json
+          if ! git diff --cached --quiet; then
+            git commit -m "integrate: lock six source SHAs and rustfmt final combination"
+          fi
+          cargo fmt --all -- --check > "${report}/format-check.log" 2>&1
+          while read -r feature sha; do
+            git merge-base --is-ancestor "${sha}" HEAD || exit 3
+          done < <(jq -r '.sources[] | [.feature,.source_sha] | @tsv' candle-integration/sources.json)
+          sha="$(git rev-parse HEAD)"
+          if [[ -n "${current}" ]]; then
+            git push --force-with-lease="refs/heads/${target}:${baseline}" \
+              origin "${sha}:refs/heads/${target}"
+          else
+            git push origin "${sha}:refs/heads/${target}"
+          fi
+          actual="$(git ls-remote --heads origin "refs/heads/${target}" | cut -f1)"
+          [[ "${actual}" == "${sha}" ]] || {
+            echo "::error::Integrated candidate ref did not match pushed SHA"; exit 3;
+          }
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "One six-feature integrated candidate: ${target} @ ${sha}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Preserve integration manifest and conflicts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 Node24
+        with:
+          name: candle-integration-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-integration/
+          if-no-files-found: warn
+          retention-days: 90
+
+  dispatch_cpu_cuda:
+    needs: prepare
+    if: needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch exactly ONE combined Candidate CI on final immutable SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+          CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+        run: |
+          set -euo pipefail
+          [[ "${SHA}" =$ ^[0-9a-f]{40}$ ]] || exit 2
+          gh workflow run candle-candidate-ci.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+            -f branch=cuda_asd_runner_v2 \
+            -f candidate_ref=integration/cuda_asd_runner_v2-candidate \
+            -f "candidate_sha=${SHA}" -f "campaign=${CAMPAIGN}" \
+            -f upstream_sha=aebc405d2b4bf42808387e0ca597bf7dad9b565f \
+            -f validation=cpu_cuda
+          echo "Integrated CPU+CUDA validation dispatched for ${SHA}" >> "${GITHUB_STEP_SUMMARY}"
