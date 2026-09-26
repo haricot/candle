@@ -1,8 +1,8 @@
 //! Operation-scoped exact activation fusions extracted from ASD runner 0835f4a.
 //! Fallbacks preserve generic Candle CPU behavior for unsupported signatures.
-use candle::{Result, Tensor};
 #[cfg(feature = "cuda")]
 use candle::DType;
+use candle::{Result, Tensor};
 
 // R4-R1-P1 production activation: exact F32 CUDA Conv2d bias+SiLU epilogue.
 // The ten promoted shapes select this path by default. A kill switch is retained
