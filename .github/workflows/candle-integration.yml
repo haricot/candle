@@ -166,8 +166,27 @@ jobs:
             cargo fmt --all -- --check > "${report}/format-check.log" 2>&1 || {
               echo "::error::Existing candidate requires explicit format repair"; exit 3;
             }
-            echo "Reusing previously prepared combined source SHA ${current}" >> "${GITHUB_STEP_SUMMARY}"
+            # Reusing a repaired candidate must still prove it descends
+            # from the *merged* and reviewed six-source gate, rather than
+            # silently publishing any old pre-review temporary branch.
+            approval="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/11")"
+            jq -e '.state=="closed" and .merged==true and
+              .base.ref=="integration/review-stage-sm61"' <<< "${approval}" >/dev/null || {
+              echo "::error::Reviewed PR #11 is not merged; existing candidate cannot be dispatched"; exit 3;
+            }
+            approved="$(jq -r .merge_commit_sha <<< "${approval}")"
+            git fetch --no-tags origin \
+              +refs/heads/integration/review-stage-sm61:refs/remotes/origin/integration-reviewed
+            [[ "${approved}" =~ ^[0-9a-f]{40}$ &&
+               "$(git rev-parse refs/remotes/origin/integration-reviewed)" == "${approved}" ]] || {
+              echo "::error::Review gate moved after approval"; exit 3;
+            }
+            git merge-base --is-ancestor "${approved}" HEAD || {
+              echo "::error::Existing candidate is not descended from reviewed PR #11"; exit 3;
+            }
+            echo "Reusing approved six-source candidate SHA ${current}" >> "${GITHUB_STEP_SUMMARY}"
             echo "sha=${current}" >> "${GITHUB_OUTPUT}"
+            echo "publish=true" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
