@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       gpu_run_id:
-        description: Completed successful Candle Integration GPU workflow run ID
+        description: Numeric GitHub Actions RUN ID (not campaign name); normally launch Candle Integration, promotion is automatic after GPU
         required: true
         type: string
       update_feature_branches:
@@ -49,7 +49,10 @@ jobs:
           MANUAL_CLEANUP: ${{ inputs.cleanup_after_promotion }}
         run: |
           set -euo pipefail
-          [[ "${GPU_RUN}" =~ ^[0-9]{6,20}$ ]] || exit 2
+          if [[ ! "${GPU_RUN}" =~ ^[0-9]{6,20}$ ]]; then
+            echo "::error::gpu_run_id must be a numeric completed Candle Integration GPU Actions run ID, not the campaign name. Start with Candle Integration on mirror_orch."
+            exit 2
+          fi
           report="${RUNNER_TEMP}/candle-integrated-promotion"
           mkdir -p "${report}/gpu" "${report}/cpu" "${report}/cuda"
           umask 077
