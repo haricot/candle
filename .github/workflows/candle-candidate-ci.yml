@@ -89,6 +89,27 @@ jobs:
             echo "::error::Pinned upstream is not an ancestor of the candidate"; exit 3;
           }
           git checkout --detach -q "$CANDIDATE_SHA"
+          if [[ "$CHECK_BRANCH" == cuda_asd_runner_v2 ]]; then
+            test -s candle-integration/sources.json || {
+              echo "::error::Integration source-SHA manifest is missing"; exit 3;
+            }
+            jq -e --arg upstream "$UPSTREAM_SHA" '
+              .schema_version==1 and .upstream_sha==$upstream
+              and .baseline_sha=="23cd66e38694c54c2184a57ba9f2c25a7ba1c682"
+              and ([.sources[].feature]|sort)==
+                (["bf16_candle","fp8_candle","fp4_candle",
+                  "cudnn_fallback_candle","moe_simt_f16_candle","asd_core"]|sort)
+              and all(.sources[]; (.source_sha|test("^[0-9a-f]{40}$")))
+            ' candle-integration/sources.json > /dev/null || {
+              echo "::error::Integration manifest lacks all six exact sources"; exit 3;
+            }
+            while read -r feature sha; do
+              git merge-base --is-ancestor "$sha" HEAD || {
+                echo "::error::Integration lacks $feature pinned commit $sha"; exit 3;
+              }
+            done < <(jq -r '.sources[] | [.feature,.source_sha] | @tsv' candle-integration/sources.json)
+            echo "Six original feature commits are ancestors of the integrated SHA" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "Candidate $CANDIDATE_REF @ $CANDIDATE_SHA, upstream $UPSTREAM_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -113,17 +134,17 @@ jobs:
           if ((lock_rc == 0)); then
             cargo check -p candle-core -p candle-nn --no-default-features --locked \
               > "$report/cpu-check.log" 2>&1 || check_rc=$?
-            if [[ "$CHECK_BRANCH" == asd_core && "$check_rc" -eq 0 ]]; then
+            if [[ ( "$CHECK_BRANCH" == asd_core || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$check_rc" -eq 0 ]]; then
               cargo test -p candle-core --no-default-features --locked \
                 --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
                 > "$report/grouped-cpu-tests.log" 2>&1 || test_rc=$?
             fi
-            if [[ "$CHECK_BRANCH" == fp4_candle && "$check_rc" -eq 0 ]]; then
+            if [[ ( "$CHECK_BRANCH" == fp4_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$check_rc" -eq 0 ]]; then
               cargo test -p candle-core --no-default-features --locked \
                 --test mxfp4_tests --test nvfp4_experiment \
                 > "$report/fp4-reference-tests.log" 2>&1 || test_rc=$?
             fi
-            if [[ "$CHECK_BRANCH" == moe_simt_f16_candle && "$check_rc" -eq 0 ]]; then
+            if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$check_rc" -eq 0 ]]; then
               # The selector is pure Rust; compile and execute its unit tests
               # without loading CUDA libraries or requiring a hosted GPU.
               rustc --edition=2021 --test candle-kernels/src/moe_selection.rs \
@@ -243,8 +264,10 @@ jobs:
             bf16_candle) features="candle-core/cuda-legacy-bf16,candle-nn/cuda" ;;
             fp8_candle) features="candle-core/cuda-legacy-fp8,candle-nn/cuda" ;;
             fp4_candle|moe_simt_f16_candle) features="candle-core/cuda,candle-nn/cuda" ;;
-            cudnn_fallback_candle|asd_core|cuda_asd_runner_v2)
+            cudnn_fallback_candle|asd_core)
               features="candle-core/cudnn,candle-nn/cudnn" ;;
+            cuda_asd_runner_v2)
+              features="candle-core/cuda-legacy-bf16,candle-core/cuda-legacy-fp8,candle-nn/cudnn" ;;
             *) echo "::error::Unknown branch"; exit 2 ;;
           esac
           {
@@ -258,7 +281,7 @@ jobs:
             --no-default-features --features "$features" --locked \
             > "$report/cuda-check.log" 2>&1 || build_rc=$?
 
-          if [[ "$CHECK_BRANCH" == moe_simt_f16_candle && "$build_rc" -eq 0 ]]; then
+          if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$build_rc" -eq 0 ]]; then
             # cargo check cannot prove static-library linkability. For Pascal,
             # the SIMT translation unit must define both the real SIMT entry
             # and the WMMA compatibility ABI stub omitted with WMMA objects.
