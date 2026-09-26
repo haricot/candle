@@ -57,9 +57,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "${SHA}" =$ ^[0-9a-f]{40}$ && "${UP}" =$ ^[0-9a-f]{40}$ ]] || exit 2
-          [[ "${CI}" =$ ^[0-9]{6,20}$ && "${CAMPAIGN}" =$ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
-          [[ "${REF}" =$ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || exit 2
+          [[ "${SHA}" =~ ^[0-9a-f]{40}$ && "${UP}" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "${CI}" =~ ^[0-9]{6,20}$ && "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
+          [[ "${REF}" =~ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || exit 2
           git check-ref-format --branch "${REF}" >/dev/null
           case "${B}" in
             bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle) ;;
@@ -260,7 +260,7 @@ jobs:
             exit 0
           fi
           old="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${TARGET}" --jq .commit.sha)"
-          [[ "${old}" =$ ^[0-9a-f]{40}$ ]] || exit 3
+          [[ "${old}" =~ ^[0-9a-f]{40}$ ]] || exit 3
           if [[ "${old}" == "${CANDIDATE_SHA}" ]]; then
             echo "Functional branch already equals tested GPU SHA; no promotion required" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
