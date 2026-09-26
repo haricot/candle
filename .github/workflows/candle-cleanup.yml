@@ -1,0 +1,191 @@
+# Branch hygiene after explicit, evidence-backed promotion. Always dry-run first.
+name: Candle Cleanup
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Promoted feature whose temporary refs may be removed
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - bf16_candle
+          - fp8_candle
+          - fp4_candle
+          - cudnn_fallback_candle
+          - moe_simt_f16_candle
+          - asd_core
+      dry_run:
+        description: Preview eligible deletions without changing any refs
+        required: true
+        type: boolean
+        default: true
+      archive_orphans:
+        description: Explicitly archive non-ancestor temp heads as tags before deletion
+        required: true
+        type: boolean
+        default: false
+      confirmation:
+        description: Type DELETE_TEMP_REFS to actually remove eligible temp branches
+        required: false
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: candle-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout orchestration and verify completed promotions
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0, Node 24
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check every selected feature and delete only provably safe temporary refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCOPE: ${{ inputs.scope }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ARCHIVE_ORPHANS: ${{ inputs.archive_orphans }}
+          CONFIRM: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/candle-cleanup"
+          mkdir -p "${report}"
+          : > "${report}/ref-results.ndjson"
+          : > "${report}/skipped-refs.txt"
+          branches=(bf16_candle fp8_candle fp4_candle cudnn_fallback_candle moe_simt_f16_candle asd_core)
+          if [[ "${SCOPE}" != all ]]; then
+            chosen=false
+            for branch in "${branches[@]}"; do
+              [[ "${branch}" == "${SCOPE}" ]] && chosen=true
+            done
+            [[ "${chosen}" == true ]] || { echo "::error::Invalid scope"; exit 2; }
+            branches=("${SCOPE}")
+          fi
+          if [[ "${DRY_RUN}" != true && "${CONFIRM}" != DELETE_TEMP_REFS ]]; then
+            echo "::error::Deletion requires explicit confirmation DELETE_TEMP_REFS"; exit 2
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+
+          # Full preflight: when scope=all, NONE are removed until ALL six
+          # functional heads match a post-promotion tag published by Promote.
+          declare -A promoted_heads=()
+          for branch in "${branches[@]}"; do
+            promoted_sha="$(git ls-remote --heads origin "refs/heads/${branch}" | cut -f1)"
+            [[ "${promoted_sha}" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "::error::Functional branch missing: ${branch}"; exit 3
+            }
+            proof_match=false
+            while IFS=$'\t' read -r sha name; do
+              if [[ "${sha}" == "${promoted_sha}" &&
+                    "${name}" == refs/tags/promoted/"${branch}"/'/'* ]]; then
+                proof_match=true
+              fi
+            done < <(git ls-remote --tags origin "refs/tags/promoted/${branch}/*")
+            # gh supplies one peeled ^{} line for annotated promotion tags.
+            if [[ "${proof_match}" != true ]]; then
+              echo "::error::No post-promotion tag matches current ${branch} head"; exit 3
+            fi
+            promoted_heads["${branch}"]="${promoted_sha}"
+          done
+
+          record() {
+            local name="${1}" sha="${2}" status="${3}" info="${4:-}"
+            jq -cn --arg name "${name}" --arg sha "${sha}" \
+              --arg status "${status}" --arg info "${info}" \
+              '{branch:$name,sha:$sha,status:$status,detail:$info}' \
+              >> "${report}/ref-results.ndjson"
+          }
+          owner="${GITHUB_REPOSITORY%%/*}"
+          matched=0; removed=0; skipped=0
+          while IFS=$'\t' read -r sha fullref; do
+            [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || continue
+            name="${fullref#refs/heads/}"
+            [[ "${name}" =~ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || continue
+            leaf="${name##*/}"
+            feature=""
+            for branch in "${branches[@]}"; do
+              case "${leaf}" in
+                "${branch}"|"${branch}"-*) feature="${branch}"; break ;;
+              esac
+            done
+            [[ -n "${feature}" ]] || continue
+            matched=$((matched+1))
+            current="${promoted_heads[$feature]}"
+
+            # Never delete the head of an open PR, even if fully archived.
+            prs="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/pulls" \
+              -f state=open -f "head=${owner}:${name}" --jq length)"
+            if (( prs > 0 )); then
+              record "${name}" "${sha}" SKIPPED_OPEN_PR "${prs} open pull requests"
+              skipped=$((skipped+1))
+              continue
+            fi
+
+            git fetch --no-tags -q origin \
+              "+${fullref}:refs/remotes/origin/candle-cleanup-current"
+            [[ "$(git rev-parse refs/remotes/origin/candle-cleanup-current)" == "${sha}" ]] || {
+              echo "::error::Temporary ref moved during cleanup: ${name}"; exit 3;
+            }
+            is_ancestor=false
+            git merge-base --is-ancestor "${sha}" "${current}" && is_ancestor=true
+            if [[ "${is_ancestor}" != true && "${ARCHIVE_ORPHANS}" != true ]]; then
+              record "${name}" "${sha}" SKIPPED_UNMERGED "Not reachable from promoted HEAD"
+              skipped=$((skipped+1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == true ]]; then
+              if [[ "${is_ancestor}" == true ]]; then
+                record "${name}" "${sha}" WOULD_DELETE "Commit retained in promoted branch history"
+              else
+                record "${name}" "${sha}" WOULD_ARCHIVE_AND_DELETE "Explicit archive_orphans enabled"
+              fi
+              continue
+            fi
+            if [[ "${is_ancestor}" != true ]]; then
+              sanitized="${name//\//-}"
+              backup="archive/orphan-temp/${sanitized}-${sha:0:12}-${GITHUB_RUN_ID}"
+              git tag -a "${backup}" "${sha}" \
+                -m "Archived unmerged temporary candidate ${name} before deletion"
+              git push origin "refs/tags/${backup}"
+            fi
+            # Force-with-lease prevents deletion if another worker advanced a ref.
+            git push --force-with-lease="${fullref}:${sha}" \
+              origin ":${fullref}"
+            if git ls-remote --exit-code --heads origin "${fullref}" > /dev/null; then
+              echo "::error::Ref still exists after deletion: ${name}"; exit 3
+            fi
+            record "${name}" "${sha}" DELETED \
+              "${is_ancestor}; archive_orphans=${ARCHIVE_ORPHANS}"
+            removed=$((removed+1))
+          done < <(git ls-remote --heads origin 'refs/heads/sync/*' 'refs/heads/rebase/*')
+          jq -n --arg scope "${SCOPE}" --argjson dry_run "${DRY_RUN}" \
+            --argjson matched "${matched}" --argjson removed "${removed}" \
+            --argjson skipped "${skipped}" \
+            '{scope:$scope,dry_run:$dry_run,matched:$matched,removed:$removed,skipped:$skipped}' \
+            > "${report}/summary.json"
+          cat "${report}/summary.json" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Preserve cleanup manifest
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7, Node 24
+        with:
+          name: candle-cleanup-${{ inputs.scope }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-cleanup/
+          if-no-files-found: warn
+          retention-days: 90
