@@ -194,16 +194,69 @@ jobs:
               continue
             fi
 
+            fmt_status=SKIPPED
+            if [[ "${AUTO_FMT}" == "true" ]]; then
+              fmt_dir="${report}/format/${branch}"
+              mkdir -p "${fmt_dir}"
+              # Only Rust files changed by this candidate relative to the
+              # recorded upstream SHA are eligible for automatic formatting.
+              git diff --name-only -z "${upstream_sha}" HEAD -- '*.rs' > "${fmt_dir}/allowlist.nul"
+              declare -A fmt_allowed=()
+              while IFS= read -r -d '' path; do
+                fmt_allowed["${path}"]=1
+              done < "${fmt_dir}/allowlist.nul"
+
+              rustfmt --version > "${fmt_dir}/rustfmt-version.txt"
+              fmt_status=UNCHANGED
+              if ! cargo fmt --all > "${fmt_dir}/cargo-fmt.log" 2>&1; then
+                fmt_status=FMT_FAILED
+              else
+                : > "${fmt_dir}/changed-files.txt"
+                : > "${fmt_dir}/out-of-scope.txt"
+                while IFS= read -r -d '' path; do
+                  printf '%s\n' "${path}" >> "${fmt_dir}/changed-files.txt"
+                  if [[ "${path}" != *.rs || -z "${fmt_allowed[$path]+yes}" ]]; then
+                    printf '%s\n' "${path}" >> "${fmt_dir}/out-of-scope.txt"
+                  fi
+                done < <(git diff --name-only -z)
+                git ls-files --others --exclude-standard > "${fmt_dir}/untracked.txt"
+                if [[ -s "${fmt_dir}/out-of-scope.txt" || -s "${fmt_dir}/untracked.txt" ]]; then
+                  fmt_status=FMT_SCOPE_VIOLATION
+                elif ! git diff --check > "${fmt_dir}/diff-check.log" 2>&1; then
+                  fmt_status=FMT_FAILED
+                elif ! cargo fmt --all -- --check > "${fmt_dir}/fmt-check.log" 2>&1; then
+                  fmt_status=FMT_FAILED
+                elif [[ -s "${fmt_dir}/changed-files.txt" ]]; then
+                  git add -u
+                  if git commit -m "style(sync): rustfmt temporary candidate ${branch}" >> "${log}" 2>&1; then
+                    fmt_status=AUTO_FORMATTED
+                  else
+                    fmt_status=FMT_FAILED
+                  fi
+                fi
+              fi
+              unset fmt_allowed
+              printf '%s\n' "${fmt_status}" > "${fmt_dir}/status.txt"
+              if [[ "${fmt_status}" == FMT_FAILED || "${fmt_status}" == FMT_SCOPE_VIOLATION ]]; then
+                git diff > "${fmt_dir}/uncommitted.patch" || true
+                record "${branch}" "${source_sha}" "${fmt_status}" "" "" \
+                  "Formatting failed or changed files outside the feature delta; see format evidence" "${fmt_status}"
+                echo "::error::Formatting blocked ${branch}: ${fmt_status}; see report/format/${branch}"
+                echo "::endgroup::"
+                continue
+              fi
+            fi
+
             candidate_sha="$(git rev-parse HEAD)"
             if [[ "${candidate_sha}" == "${source_sha}" ]]; then
-              record "${branch}" "${source_sha}" "UP_TO_DATE" "" "" "Source already contains the recorded upstream SHA"
+              record "${branch}" "${source_sha}" "UP_TO_DATE" "" "" "Source already contains the recorded upstream SHA" "${fmt_status}"
               echo "::endgroup::"
               continue
             fi
 
             # The push creates a new ref only; it never updates a public feature branch.
             if git push origin "${candidate_sha}:refs/heads/${candidate}" >>"${log}" 2>&1; then
-              record "${branch}" "${source_sha}" "CHECKS_PENDING" "${candidate}" "${candidate_sha}" "Candidate published for independent read-only CI"
+              record "${branch}" "${source_sha}" "CHECKS_PENDING" "${candidate}" "${candidate_sha}" "Candidate published for independent read-only CI" "${fmt_status}"
             else
               record "${branch}" "${source_sha}" "PUSH_FAILED" "" "" "See branch log"
             fi
