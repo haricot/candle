@@ -1,4 +1,4 @@
-name: Candle Integration Promote
+name: Candle Integration Promote (automatic after GPU)
 # Promotion follows ONE successfully completed all-six physical GPU workflow.
 on:
   workflow_run:
