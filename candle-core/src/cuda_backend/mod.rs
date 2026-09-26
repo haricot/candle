@@ -87,6 +87,42 @@ mod cudnn_fallback_classifier_tests {
     fn unrelated_statuses_are_not_silently_swallowed() {
         assert_eq!(classify(cudnnStatus_t::CUDNN_STATUS_BAD_PARAM), None);
     }
+
+    #[test]
+    fn synthetic_quarantine_routes_generic_conv1d_conv2d() -> crate::Result<()> {
+        // This test explicitly simulates the policy transition caused by an
+        // EXECUTION_FAILED cuDNN status. It does not claim to reproduce an
+        // actual cuDNN library failure; the normal cuDNN suite runs separately.
+        assert_eq!(
+            classify(cudnnStatus_t::CUDNN_STATUS_EXECUTION_FAILED),
+            Some(CudnnConvFallback::ExecutionFailed)
+        );
+        let device = crate::Device::new_cuda(0)?;
+        let cuda = device.as_cuda_device()?;
+        assert!(!super::cudnn::convolution_is_disabled(cuda.id()));
+        assert!(
+            super::cudnn::disable_convolution_after_execution_failure(cuda),
+            "GPU must be pre-Volta for this physical SM61 regression"
+        );
+        assert!(super::cudnn::convolution_is_disabled(cuda.id()));
+
+        let x1 = crate::Tensor::ones((1, 1, 5), crate::DType::F32, &device)?;
+        let w1 = crate::Tensor::ones((1, 1, 3), crate::DType::F32, &device)?;
+        let out1 = x1.conv1d(&w1, 0, 1, 1, 1)?;
+        assert_eq!(out1.dims(), [1, 1, 3]);
+        let values1 = out1.flatten_all()?.to_vec1::<f32>()?;
+        assert!(values1.iter().all(|v| (*v - 3.0).abs() < 1e-4));
+
+        let x2 = crate::Tensor::ones((1, 1, 5, 5), crate::DType::F32, &device)?;
+        let w2 = crate::Tensor::ones((1, 1, 3, 3), crate::DType::F32, &device)?;
+        let out2 = x2.conv2d(&w2, 0, 1, 1, 1)?;
+        assert_eq!(out2.dims(), [1, 1, 3, 3]);
+        let values2 = out2.flatten_all()?.to_vec1::<f32>()?;
+        assert!(values2.iter().all(|v| (*v - 9.0).abs() < 1e-4));
+        assert!(super::cudnn::convolution_is_disabled(cuda.id()));
+        device.synchronize()?;
+        Ok(())
+    }
 }
 
 type ParamCache = HashMap<(DeviceId, Vec<usize>), Arc<CudaSlice<usize>>>;
