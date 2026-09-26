@@ -41,11 +41,10 @@ jobs:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install Protoc
-        uses: arduino/setup-protoc@a8b67ba40b37d35169e222f3bb352603327985b6  # v2
+      - name: Install Protoc (official binary, no legacy Node action)
+        uses: ./.github/actions/setup-protoc
         with:
           version: "25.0"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install
         working-directory: ./candle-pyo3
