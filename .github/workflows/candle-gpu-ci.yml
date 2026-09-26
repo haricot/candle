@@ -116,32 +116,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if command -v nvcc >/dev/null 2>&1; then
+          if [[ -n "${CUDA_HOME:-}" && -x "${CUDA_HOME}/bin/nvcc" ]]; then
+            root="${CUDA_HOME}"
+          elif command -v nvcc >/dev/null 2>&1; then
             root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd -P)"
           else
-            root=""
-            for candidate in /opt/cuda129 /opt/cuda /usr/local/cuda; do
-              if [[ -x "$candidate/bin/nvcc" ]]; then
-                root="$candidate"
-                break
-              fi
-            done
-          fi
-          [[ -n "$root" && -x "$root/bin/nvcc" ]] || {
-            echo "::error::CUDA nvcc was not found on the physical SM61 runner"
+            echo "::error::Configure CUDA_HOME or put nvcc on the runner PATH"
             exit 3
-          }
+          fi
           echo "$root/bin" >> "$GITHUB_PATH"
           echo "CUDA_ROOT=$root" >> "$GITHUB_ENV"
           cuda_lib="$root/lib64"
           [[ -d "$cuda_lib" ]] || cuda_lib="$root/lib"
           libs="$cuda_lib"
-          for cudnn_lib in /opt/cudnn9102/lib /opt/cudnn9102/lib64; do
-            if [[ -d "$cudnn_lib" ]]; then
-              libs="$cudnn_lib:$libs"
-              break
-            fi
-          done
+          if [[ -n "${CUDNN_HOME:-}" ]]; then
+            cudnn_lib="${CUDNN_HOME}/lib64"
+            [[ -d "$cudnn_lib" ]] || cudnn_lib="${CUDNN_HOME}/lib"
+            [[ -d "$cudnn_lib" ]] || {
+              echo "::error::CUDNN_HOME lacks lib/lib64"; exit 3
+            }
+            libs="$cudnn_lib:$libs"
+          fi
           echo "LD_LIBRARY_PATH=$libs:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
           "$root/bin/nvcc" --version
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7 / Node 24
