@@ -1,6 +1,12 @@
 name: Candle Integration GPU
 # Exactly one physical GPU regression suite for the combined six-feature SHA.
 on:
+  # Exact one-shot request, authenticated by the six-source reviewed gate
+  # and successful Candidate CI artifacts. No extra workflow is required.
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/integration-gpu-request.json
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -34,6 +40,10 @@ jobs:
     outputs:
       lock_sha256: ${{ steps.verify.outputs.lock_sha256 }}
       manifest_sha256: ${{ steps.verify.outputs.manifest_sha256 }}
+      candidate_sha: ${{ steps.verify.outputs.candidate_sha }}
+      campaign: ${{ steps.verify.outputs.campaign }}
+      ci_run_id: ${{ steps.verify.outputs.ci_run_id }}
+      auto_promote: ${{ steps.verify.outputs.auto_promote }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
         with:
@@ -44,11 +54,35 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
           SHA: ${{ inputs.candidate_sha }}
           CAMPAIGN: ${{ inputs.campaign }}
           CI: ${{ inputs.ci_run_id }}
+          AUTO_PROMOTE: ${{ inputs.auto_promote }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT}" == push ]]; then
+            request=".github/integration-gpu-request.json"
+            test -s "${request}" || {
+              echo "::error::Push-triggered physical GPU validation requires the exact request file"; exit 3;
+            }
+            approved="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/11" --jq .merge_commit_sha)"
+            [[ "${approved}" =~ ^[0-9a-f]{40}$ ]] || exit 3
+            jq -e --arg approved "${approved}" '
+              .schema_version==1 and .approved_pr==11
+              and .reviewed_gate_sha==$approved
+              and .candidate_sha|type=="string"
+            ' "${request}" > /dev/null || {
+              echo "::error::GPU request must refer to the actual approved six-source PR merge"; exit 3;
+            }
+            SHA="$(jq -r .candidate_sha "${request}")"
+            CAMPAIGN="$(jq -r .campaign "${request}")"
+            CI="$(jq -r .ci_run_id "${request}")"
+            AUTO_PROMOTE="$(jq -r .auto_promote "${request}")"
+          fi
+          [[ "${AUTO_PROMOTE}" == true || "${AUTO_PROMOTE}" == false ]] || {
+            echo "::error::auto_promote must be a boolean"; exit 2;
+          }
           [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]] || exit 2
           [[ "${CI}" =~ ^[0-9]{6,20}$ ]] || exit 2
           [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
@@ -109,7 +143,13 @@ jobs:
           for symbol in moe_gemm_simt_f16 moe_gemm_wmma; do
             grep -Eq "[[:space:]](T|W)[[:space:]]${symbol}$" "${proof}/cuda/moe-symbols.log"
           done
-          echo "lock_sha256=${lock}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "lock_sha256=${lock}"
+            echo "candidate_sha=${SHA}"
+            echo "campaign=${CAMPAIGN}"
+            echo "ci_run_id=${CI}"
+            echo "auto_promote=${AUTO_PROMOTE}"
+          } >> "${GITHUB_OUTPUT}"
           echo "Six-source integration history, one CPU/CUDA run and lockfile verified" \
             >> "${GITHUB_STEP_SUMMARY}"
 
@@ -121,26 +161,26 @@ jobs:
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
       CARGO_TERM_COLOR: never
-      SHA: ${{ inputs.candidate_sha }}
-      CAMPAIGN: ${{ inputs.campaign }}
-      CI: ${{ inputs.ci_run_id }}
+      SHA: ${{ needs.preflight.outputs.candidate_sha }}
+      CAMPAIGN: ${{ needs.preflight.outputs.campaign }}
+      CI: ${{ needs.preflight.outputs.ci_run_id }}
       LOCK: ${{ needs.preflight.outputs.lock_sha256 }}
       MANIFEST: ${{ needs.preflight.outputs.manifest_sha256 }}
-      AUTO_PROMOTE: ${{ inputs.auto_promote }}
+      AUTO_PROMOTE: ${{ needs.preflight.outputs.auto_promote }}
       EXPECTED_ASD_POLICY_SHA256: 912c8b0c88fc8b3e07a25a79f5b9f0d10eef1b8193271ee8fafb4db1f9e9615f
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ needs.preflight.outputs.candidate_sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           toolchain: stable
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # Node24
         with:
-          name: candidate-${{ inputs.campaign }}-cuda_asd_runner_v2-cpu
+          name: candidate-${{ needs.preflight.outputs.campaign }}-cuda_asd_runner_v2-cpu
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.ci_run_id }}
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/integrated-cpu-lock
       - name: Configure CUDA from runner-managed environment
@@ -309,7 +349,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 Node24
         with:
-          name: candle-integrated-gpu-${{ inputs.campaign }}
+          name: candle-integrated-gpu-${{ needs.preflight.outputs.campaign }}
           path: ${{ runner.temp }}/candle-integration-gpu/
           if-no-files-found: warn
           retention-days: 90
