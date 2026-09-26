@@ -22,6 +22,11 @@ on:
       ci_run_id:
         required: true
         type: string
+      auto_promote:
+        description: Dispatch GPU-backed guarded promotion after full success (open PRs are excluded)
+        required: true
+        type: boolean
+        default: true
 permissions:
   contents: read
   actions: read
@@ -162,3 +167,48 @@ jobs:
           path: ${{ runner.temp }}/candle-gpu-proof/
           if-no-files-found: warn
           retention-days: 90
+
+  promote_dispatch:
+    needs: [preflight, gpu]
+    if: needs.preflight.result == 'success' && needs.gpu.result == 'success' && inputs.auto_promote
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Promote the exact GPU-tested candidate unless target has an open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.branch }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          GPU_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          prs="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f state=open -f "head=${owner}:${TARGET}" --jq length)"
+          if (( prs > 0 )); then
+            echo "No automatic branch rewrite: ${TARGET} has ${prs} open PR(s)" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          old="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${TARGET}" --jq .commit.sha)"
+          [[ "${old}" =$ ^[0-9a-f]{40}$ ]] || exit 3
+          if [[ "${old}" == "${CANDIDATE_SHA}" ]]; then
+            echo "Functional branch already equals tested GPU SHA; no promotion required" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          gh workflow run candle-promote.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+            -f "branch=${TARGET}" -f "candidate_ref=${CANDIDATE_REF}" \
+            -f "candidate_sha=${CANDIDATE_SHA}" -f "expected_source_sha=${old}" \
+            -f "upstream_sha=${UPSTREAM_SHA}" -f "campaign=${CAMPAIGN}" \
+            -f "ci_run_id=${CI_RUN_ID}" -f "gpu_run_id=${GPU_RUN_ID}" \
+            -f "dry_run=false" -f "confirmation=PROMOTE" \
+            -f "allow_open_pr=false" -f "clean_temporary_refs=true"
+          echo "Dispatched guarded GPU-backed promotion for ${TARGET} at ${CANDIDATE_SHA}" \
+            >> "${GITHUB_STEP_SUMMARY}"
