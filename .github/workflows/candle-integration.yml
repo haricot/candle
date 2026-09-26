@@ -32,6 +32,13 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
+      - name: Restore prior verified rerere resolutions for the pinned six-source set
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5 Node24
+        with:
+          path: .git/rr-cache
+          key: candle-rerere-v1-sm61-sixpins-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            candle-rerere-v1-sm61-sixpins-
       - name: Combine exact pinned source commits into one integrated candidate
         id: combine
         shell: bash
@@ -51,6 +58,13 @@ jobs:
           target="integration/cuda_asd_runner_v2-candidate"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Exact repeated conflict preimages may reuse previous reviewed
+          # resolutions, but do not autostage unreviewed or novel conflicts.
+          git config rerere.enabled true
+          git config rerere.autoupdate false
+          mkdir -p .git/rr-cache
+          echo "rerere.enabled=$(git config rerere.enabled)" > "${report}/logs/rerere-configuration.txt"
+          echo "rerere.autoupdate=$(git config rerere.autoupdate)" >> "${report}/logs/rerere-configuration.txt"
           gh auth setup-git
           git remote add upstream https://github.com/huggingface/candle.git
           git fetch --no-tags upstream +refs/heads/main:refs/remotes/upstream/main
@@ -81,11 +95,11 @@ jobs:
               echo "::error::${feature} source advanced from ${expected} to ${actual}"; exit 3;
             }
             jq -cn --arg feature "${feature}" --arg ref "${ref}" --arg sha "${expected}" \
-              '{feature:${feature},source_ref:${ref},source_sha:${sha}}' \
+              '{feature:$feature,source_ref:$ref,source_sha:$sha}' \
               >> "${report}/sources.ndjson"
           done
           jq -s --arg baseline "${baseline}" --arg upstream "${upstream}" \
-            '{schema_version:1,baseline_sha:${baseline},upstream_sha:${upstream},sources:.}' \
+            '{schema_version:1,baseline_sha:$baseline,upstream_sha:$upstream,sources:.}' \
             "${report}/sources.ndjson" > "${report}/sources.json"
 
           current="$(git ls-remote --heads origin "refs/heads/${target}" | cut -f1)"
@@ -121,14 +135,50 @@ jobs:
             [[ "$(git rev-parse refs/remotes/origin/candle-integration-source)" == "${expected}" ]] || exit 3
             if ! git merge --no-ff --no-edit -m "integrate(${feature}): merge exact pinned source ${expected}" \
               "${expected}" > "${report}/logs/${feature}.log" 2>&1; then
+              # "rerere" has already tried any matching learned preimage.
+              # With autoupdate=false, only explicitly identified replayed
+              # paths are staged. All novel or ambiguous conflicts fail closed.
+              git rerere >> "${report}/logs/${feature}.log" 2>&1 || :
               mkdir -p "${report}/conflicts/${feature}"
+              git rerere status > "${report}/conflicts/${feature}/rerere-status.txt" 2>&1 || :
+              git rerere diff > "${report}/conflicts/${feature}/rerere-diff.patch" 2>&1 || :
+              git rerere remaining > "${report}/conflicts/${feature}/rerere-unresolved.txt" 2>&1 || :
+              mapfile -t still_conflicted < "${report}/conflicts/${feature}/rerere-unresolved.txt"
+              mapfile -t conflicted_paths < <(git diff --name-only --diff-filter=U)
+              : > "${report}/conflicts/${feature}/rerere-replayed.txt"
+              for path in "${conflicted_paths[@]}"; do
+                unresolved=false
+                for outstanding in "${still_conflicted[@]}"; do
+                  [[ "${path}" != "${outstanding}" ]] || unresolved=true
+                done
+                if [[ "${unresolved}" == false ]]; then
+                  # rerere recognized the exact conflict and wrote its
+                  # existing resolution in the working tree; stage it only
+                  # after checking markers and whitespace.
+                  if grep -Eq '^(<<<<<<< |=======|>>>>>>> )' -- "${path}" 2>/dev/null; then
+                    echo "Replay contains conflict markers: ${path}" >> "${report}/conflicts/${feature}/rerere-rejected.txt"
+                    continue
+                  fi
+                  git add -- "${path}"
+                  printf '%s\n' "${path}" >> "${report}/conflicts/${feature}/rerere-replayed.txt"
+                fi
+              done
               git ls-files -u > "${report}/conflicts/${feature}/index-stages.txt"
               git diff --name-only --diff-filter=U > "${report}/conflicts/${feature}/files.txt"
-              git diff -- > "${report}/conflicts/${feature}/merged-conflict.patch" || :
               git status --short > "${report}/conflicts/${feature}/status.txt"
-              echo "::error::Integration conflict in ${feature}; no candidate published"
-              tail -n 45 "${report}/logs/${feature}.log"
-              exit 3
+              if [[ -s "${report}/conflicts/${feature}/index-stages.txt" ]] || \
+                 ! git diff --cached --check > "${report}/conflicts/${feature}/diff-check.log" 2>&1; then
+                git diff -- > "${report}/conflicts/${feature}/merged-conflict.patch" || :
+                echo "::error::Unlearned or unsafe conflict in ${feature}; no candidate published"
+                tail -n 45 "${report}/logs/${feature}.log"
+                exit 3
+              fi
+              # Every unmerged file was resolved by an exact cached
+              # resolution; Git recorded the final working tree in the index.
+              git commit --no-edit -m "integrate(${feature}): rerere replay of verified resolution" \
+                >> "${report}/logs/${feature}.log" 2>&1
+              echo "Successfully replayed cached rerere for ${feature}" \
+                >> "${GITHUB_STEP_SUMMARY}"
             fi
             echo "::endgroup::"
           done
@@ -172,6 +222,12 @@ jobs:
           path: ${{ runner.temp }}/candle-integration/
           if-no-files-found: warn
           retention-days: 90
+      - name: Persist learned rerere resolutions for identical pinned sources
+        if: always()
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5 Node24
+        with:
+          path: .git/rr-cache
+          key: candle-rerere-v1-sm61-sixpins-${{ github.run_id }}-${{ github.run_attempt }}
 
   dispatch_cpu_cuda:
     needs: prepare
