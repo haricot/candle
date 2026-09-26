@@ -1,0 +1,288 @@
+name: Candle Integration GPU
+# Exactly one physical GPU regression suite for the combined six-feature SHA.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex integration candidate SHA
+        required: true
+        type: string
+      campaign:
+        description: Original Candle Integration campaign
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful combined Candle Candidate CI run ID
+        required: true
+        type: string
+      auto_promote:
+        description: Dispatch guarded integration promotion after every GPU gate passes
+        required: true
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: candle-single-integration-gpu
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-latest
+    outputs:
+      lock_sha256: ${{ steps.verify.outputs.lock_sha256 }}
+      manifest_sha256: ${{ steps.verify.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check SHA, six-source history and independent CPU/CUDA reports
+        id: verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.candidate_sha }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          CI: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "${CI}" =~ ^[0-9]{6,20}$ ]] || exit 2
+          [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
+          git fetch --no-tags origin \
+            +refs/heads/integration/cuda_asd_runner_v2-candidate:refs/remotes/origin/integrated
+          [[ "$(git rev-parse refs/remotes/origin/integrated)" == "${SHA}" ]] || {
+            echo "::error::Integrated ref changed; exact SHA is required"; exit 3;
+          }
+          git switch --detach -q "${SHA}"
+          test -s candle-integration/sources.json
+          jq -e '
+            .schema_version==1 and
+            .baseline_sha=="23cd66e38694c54c2184a57ba9f2c25a7ba1c682" and
+            .upstream_sha=="aebc405d2b4bf42808387e0ca597bf7dad9b565f" and
+            ([.sources[].feature]|sort)==
+              (["bf16_candle","fp8_candle","fp4_candle","cudnn_fallback_candle",
+                "moe_simt_f16_candle","asd_core"]|sort)
+          ' candle-integration/sources.json >/dev/null
+          while read -r name sha; do
+            git merge-base --is-ancestor "${sha}" HEAD || {
+              echo "::error::Integrated candidate lacks ${name} source ${sha}"; exit 3;
+            }
+          done < <(jq -r '.sources[] | [.feature,.source_sha] | @tsv' candle-integration/sources.json)
+          manifest="$(sha256sum candle-integration/sources.json | cut -d' ' -f1)"
+          echo "manifest_sha256=${manifest}" >> "${GITHUB_OUTPUT}"
+
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI}")"
+          jq -e '.name=="Candle Candidate CI" and .conclusion=="success" and
+            .head_branch=="mirror_orch" and .event=="workflow_dispatch"' <<< "${run}" >/dev/null
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI}/jobs?per_page=100")"
+          jq -e '
+            any(.jobs[]; .name=="CPU / cuda_asd_runner_v2" and .conclusion=="success") and
+            any(.jobs[]; .name=="CUDA 12.9 SM61 compile / cuda_asd_runner_v2" and .conclusion=="success")
+          ' <<< "${jobs}" >/dev/null
+          proof="${RUNNER_TEMP}/integrated-preflight"
+          mkdir -p "${proof}/cpu" "${proof}/cuda"
+          gh run download "${CI}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candidate-${CAMPAIGN}-cuda_asd_runner_v2-cpu" --dir "${proof}/cpu"
+          gh run download "${CI}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candidate-${CAMPAIGN}-cuda_asd_runner_v2-cuda" --dir "${proof}/cuda"
+          jq -e --arg sha "${SHA}" --arg c "${CAMPAIGN}" '
+            .branch=="cuda_asd_runner_v2" and .candidate_sha==$sha
+            and .upstream_sha=="aebc405d2b4bf42808387e0ca597bf7dad9b565f"
+            and .campaign==$c and .status=="CPU_PASSED" and
+            (.lock_sha256|test("^[0-9a-f]{64}$"))
+          ' "${proof}/cpu/report.json" >/dev/null
+          lock="$(jq -r .lock_sha256 "${proof}/cpu/report.json")"
+          [[ "$(sha256sum "${proof}/cpu/Cargo.lock" | cut -d' ' -f1)" == "${lock}" ]] || exit 3
+          jq -e --arg sha "${SHA}" --arg c "${CAMPAIGN}" --arg lock "${lock}" '
+            .branch=="cuda_asd_runner_v2" and .candidate_sha==$sha
+            and .campaign==$c and .lock_sha256==$lock and .target=="sm_61"
+            and .status=="CUDA_COMPILE_PASSED" and .gpu_executed==false
+            and (.features|contains("cuda-legacy-bf16"))
+            and (.features|contains("cuda-legacy-fp8"))
+            and (.features|contains("cudnn"))
+          ' "${proof}/cuda/report.json" >/dev/null
+          test -s "${proof}/cuda/moe-symbols.log"
+          for symbol in moe_gemm_simt_f16 moe_gemm_wmma; do
+            grep -Eq "[[:space:]](T|W)[[:space:]]${symbol}$" "${proof}/cuda/moe-symbols.log"
+          done
+          echo "lock_sha256=${lock}" >> "${GITHUB_OUTPUT}"
+          echo "Six-source integration history, one CPU/CUDA run and lockfile verified" \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+  gpu:
+    needs: preflight
+    runs-on: [self-hosted, linux, x64, cuda, sm61]
+    timeout-minutes: 180
+    env:
+      CUDA_COMPUTE_CAP: '61'
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: never
+      SHA: ${{ inputs.candidate_sha }}
+      CAMPAIGN: ${{ inputs.campaign }}
+      CI: ${{ inputs.ci_run_id }}
+      LOCK: ${{ needs.preflight.outputs.lock_sha256 }}
+      MANIFEST: ${{ needs.preflight.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # Node24
+        with:
+          name: candidate-${{ inputs.campaign }}-cuda_asd_runner_v2-cpu
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/integrated-cpu-lock
+      - name: Configure CUDA from runner-managed environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CUDA_HOME:-}" && -x "${CUDA_HOME}/bin/nvcc" ]]; then
+            root="${CUDA_HOME}"
+          elif command -v nvcc >/dev/null 2>&1; then
+            root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd -P)"
+          else
+            echo "::error::Runner must provide CUDA_HOME or put nvcc on PATH"; exit 3
+          fi
+          echo "CUDA_ROOT=${root}" >> "${GITHUB_ENV}"
+          echo "${root}/bin" >> "${GITHUB_PATH}"
+          cuda_lib="${root}/lib64"
+          [[ -d "${cuda_lib}" ]] || cuda_lib="${root}/lib"
+          libs="${cuda_lib}"
+          if [[ -n "${CUDNN_HOME:-}" ]]; then
+            cudnn_lib="${CUDNN_HOME}/lib64"
+            [[ -d "${cudnn_lib}" ]] || cudnn_lib="${CUDNN_HOME}/lib"
+            [[ -d "${cudnn_lib}" ]] || {
+              echo "::error::CUDNN_HOME lacks a lib/lib64 directory"; exit 3
+            }
+            libs="${cudnn_lib}:${libs}"
+          fi
+          echo "LD_LIBRARY_PATH=${libs}:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
+          "${root}/bin/nvcc" --version | grep -F 'release 12.9'
+      - name: Execute all six feature suites on one physical Pascal GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/candle-integration-gpu"
+          mkdir -p "${report}/logs"
+          [[ "$(git rev-parse HEAD)" == "${SHA}" ]] || exit 3
+          test -s candle-integration/sources.json
+          [[ "$(sha256sum candle-integration/sources.json | cut -d' ' -f1)" == "${MANIFEST}" ]] || exit 3
+          nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv,noheader > "${report}/device.txt"
+          capability="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d '[:space:]')"
+          [[ "${capability}" == '6.1' ]] || { echo "::error::GPU is not SM61"; exit 3; }
+          nvcc --version > "${report}/nvcc.txt"
+          cp "${RUNNER_TEMP}/integrated-cpu-lock/Cargo.lock" Cargo.lock
+          lock="$(sha256sum Cargo.lock | cut -d' ' -f1)"
+          [[ "${lock}" == "${LOCK}" ]] || exit 3
+
+          features="cuda cuda-legacy-bf16 cuda-legacy-fp8 cudnn"
+          # BF16: seven real CUDA tests.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test cuda_legacy_bf16_tests -- --nocapture > "${report}/logs/bf16.log" 2>&1
+          for t in elementwise reduction transformer_ops memory_ops indexing matmul conv; do
+            grep -Fq "test cuda_legacy_bf16_${t}_runtime ... ok" "${report}/logs/bf16.log"
+          done
+          # FP8: all four CUDA-specific regression tests.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test fp8_legacy_tests -- --nocapture > "${report}/logs/fp8.log" 2>&1
+          for t in legacy_fp8_cast_roundtrip_cuda legacy_fp8_unary_ops_cuda \
+                   legacy_fp8_binary_ops_cuda legacy_fp8_reduces_after_widening_cuda; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/fp8.log"
+          done
+          # FP4: decode, DP4A and both MoE/prefill parity paths.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test mxfp4_tests -- --nocapture > "${report}/logs/fp4.log" 2>&1
+          for t in cuda_dequantize_matches_cpu cuda_mxfp4_dp4a_batch_1_to_8 \
+                   cuda_mxfp4_prefill_parity cuda_mxfp4_indexed_moe_parity; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/fp4.log"
+          done
+          # cuDNN and native CUDA on the exact same integrated code.
+          cargo test -p candle-core --locked --no-default-features --features cuda \
+            --test conv_tests -- --nocapture > "${report}/logs/conv-native.log" 2>&1
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test conv_tests -- --nocapture > "${report}/logs/conv-cudnn.log" 2>&1
+          for t in conv1d_gpu conv2d_gpu; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/conv-native.log"
+            grep -Fq "test ${t} ... ok" "${report}/logs/conv-cudnn.log"
+          done
+          cargo test -p candle-core --locked --no-default-features --features "${features}" --lib \
+            synthetic_quarantine_routes_generic_conv1d_conv2d -- --nocapture \
+            > "${report}/logs/cudnn-quarantine.log" 2>&1
+          grep -Eq 'test .*synthetic_quarantine_routes_generic_conv1d_conv2d ... ok' \
+            "${report}/logs/cudnn-quarantine.log"
+          # MoE: independent FP32 reference, top-k2 prefill and weighted decode.
+          test -s candle-nn/tests/moe_simt_sm61.rs
+          cargo test -p candle-nn --locked --no-default-features --features "cuda cudnn" \
+            --test moe_simt_sm61 -- --nocapture > "${report}/logs/moe.log" 2>&1
+          for t in sm61_simt_prefill_topk2_fp16 sm61_simt_decode_weighted_fp16; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/moe.log"
+          done
+          # ASD: run core grouped reference suites + explicit GPU dispatch
+          # parity, negative-domain probes and integration performance gates.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
+            -- --nocapture > "${report}/logs/asd-core.log" 2>&1
+          cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
+            --example grouped_conv_transpose_asd_validate -- --warmup 4 --iters 12 \
+            --inner 8 --max-drift-pct 20 --min-integrated-speedup-x 1.01 \
+            > "${report}/logs/asd-transpose.log" 2>&1
+          grep -Fxq 'STATUS=PASS' "${report}/logs/asd-transpose.log"
+          cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
+            --example grouped_conv2d_asd_real_dispatch_validate -- \
+            --warmup-ms 250 --iters 8 --inner 8 --max-drift-pct 20 \
+            --min-integrated-speedup-x 1.01 > "${report}/logs/asd-conv2d.log" 2>&1
+          grep -Fxq 'STATUS=PASS' "${report}/logs/asd-conv2d.log"
+
+          cp candle-integration/sources.json "${report}/sources.json"
+          jq -n --arg sha "${SHA}" --arg c "${CAMPAIGN}" --argjson ci "${CI}" \
+            --arg lock "${lock}" --arg manifest "${MANIFEST}" --arg cc "${capability}" \
+            --slurpfile sources "${report}/sources.json" '
+            {schema_version:1,branch:"cuda_asd_runner_v2",
+             candidate_sha:$sha,campaign:$c,ci_run_id:$ci,
+             upstream_sha:"aebc405d2b4bf42808387e0ca597bf7dad9b565f",
+             lock_sha256:$lock,manifest_sha256:$manifest,
+             gpu_compute_cap:$cc,gpu_executed:true,status:"GPU_PASSED",
+             suite_coverage:"all_six",sources:$sources[0].sources}
+          ' > "${report}/report.json"
+          echo "All six feature suites PASSED on physical SM61, exact SHA ${SHA}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+      - name: Preserve full integrated GPU proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 Node24
+        with:
+          name: candle-integrated-gpu-${{ inputs.campaign }}
+          path: ${{ runner.temp }}/candle-integration-gpu/
+          if-no-files-found: warn
+          retention-days: 90
+
+  promote_dispatch:
+    needs: [preflight, gpu]
+    if: needs.preflight.result == 'success' && needs.gpu.result == 'success' && inputs.auto_promote
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Trigger guarded aggregate promotion and one cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.candidate_sha }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          CI: ${{ inputs.ci_run_id }}
+          GPU_RUN: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run candle-integration-promote.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+            -f "candidate_sha=${SHA}" -f "campaign=${CAMPAIGN}" \
+            -f "ci_run_id=${CI}" -f "gpu_run_id=${GPU_RUN}" \
+            -f update_feature_branches=true -f cleanup_after_promotion=true
+          echo "Triggered independent SHA-locked aggregate promotion" >> "${GITHUB_STEP_SUMMARY}"
