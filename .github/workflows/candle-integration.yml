@@ -141,7 +141,7 @@ jobs:
           if [[ -n "$(git diff --name-only -- . ':!*.rs')" ]]; then
             echo "::error::Formatter changed unexpected non-Rust paths"; exit 3
           fi
-          git add -u -- '*.rs' candle-integration/sources.json
+          git add -u -- '*.rs'
           git add candle-integration/sources.json
           if ! git diff --cached --quiet; then
             git commit -m "integrate: lock six source SHAs and rustfmt final combination"
