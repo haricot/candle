@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      issues: write
     outputs:
       sha: ${{ steps.combine.outputs.sha }}
       campaign: ${{ steps.combine.outputs.campaign }}
@@ -380,6 +381,43 @@ jobs:
           echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
           echo "One six-feature integrated candidate: ${target} @ ${sha}" >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Attach novel-conflict diagnostics to the one cumulative review PR
+        if: failure() && steps.combine.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/candle-integration"
+          shopt -s nullglob
+          conflict_dirs=("$report"/conflicts/*)
+          (( ${#conflict_dirs[@]} )) || exit 0
+          msg="${RUNNER_TEMP}/integration-review-comment.md"
+          {
+            printf '<!-- candle-sm61-sixway-single-pr-status -->\n'
+            printf 'Latest six-way conflict preview: [Actions run %s](https://github.com/%s/actions/runs/%s).\n\n' \
+              "${GITHUB_RUN_ID}" "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}"
+            printf 'The same draft PR remains open; no integrated candidate was published. '
+            printf 'Download the run artifact for index-stage files, rerere status and conflict patches.\n\n'
+            for dir in "${conflict_dirs[@]}"; do
+              printf '**%s**\n\n' "$(basename "${dir}")"
+              if [[ -s "${dir}/files.txt" ]]; then
+                while IFS= read -r path; do
+                  printf -- '- %s\n' "${path}"
+                done < "${dir}/files.txt"
+              fi
+              printf '\n'
+            done
+          } > "${msg}"
+          old="$(gh api "repos/${GITHUB_REPOSITORY}/issues/11/comments?per_page=100" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- candle-sm61-sixway-single-pr-status -->")) | .id' | tail -n1)"
+          if [[ "${old}" =~ ^[0-9]+$ ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${old}" \
+              --raw-field "body=$(cat "${msg}")" >/dev/null
+          else
+            gh pr comment 11 --repo "${GITHUB_REPOSITORY}" --body-file "${msg}"
+          fi
       - name: Preserve integration manifest and conflicts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 Node24
