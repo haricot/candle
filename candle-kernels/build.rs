@@ -17,6 +17,7 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed={LEGACY_FP8_FEATURE}");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
+    println!("cargo:rustc-env=CANDLE_CUDA_COMPUTE_CAP={compute_cap}");
     let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
     let legacy_fp8 = compute_cap < 89 && env::var_os(LEGACY_FP8_FEATURE).is_some();
 
@@ -42,6 +43,7 @@ fn main() -> Result<()> {
 
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
+        "src/moe/moe_simt_f16.cu",
         "src/moe/moe_wmma.cu",
         "src/moe/moe_wmma_gguf.cu",
         "src/mmvq_gguf.cu",
@@ -78,6 +80,12 @@ fn main() -> Result<()> {
 
     if legacy_bf16 {
         moe_builder = moe_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+
+    // On pre-Volta SM61 there are no WMMA translation units; provide the
+    // fallback FFI stub from the SIMT MoE unit without touching BF16 flags.
+    if compute_cap < 70 {
+        moe_builder = moe_builder.arg("-DNO_WMMA_KERNEL");
     }
 
     // BF16 WMMA fragments require Ampere.
