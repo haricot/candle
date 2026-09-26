@@ -38,6 +38,15 @@ on:
         description: Successful Candle Candidate CI workflow run ID
         required: true
         type: string
+      gpu_run_id:
+        description: Successful physical SM61 Candle GPU CI run for this candidate
+        required: true
+        type: string
+      clean_temporary_refs:
+        description: Dispatch guarded feature cleanup after an actual promotion
+        required: true
+        type: boolean
+        default: true
       allow_open_pr:
         description: Allow rewriting a functional branch with an open PR (requires review)
         required: true
@@ -66,7 +75,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
-      actions: read
+      actions: write
       pull-requests: read
     steps:
       - name: Checkout orchestration branch
@@ -86,13 +95,15 @@ jobs:
           UPSTREAM_SHA: ${{ inputs.upstream_sha }}
           CAMPAIGN: ${{ inputs.campaign }}
           CI_RUN_ID: ${{ inputs.ci_run_id }}
+          GPU_RUN_ID: ${{ inputs.gpu_run_id }}
+          CLEAN_TEMP: ${{ inputs.clean_temporary_refs }}
           DRY_RUN: ${{ inputs.dry_run }}
           CONFIRM: ${{ inputs.confirmation }}
           ALLOW_OPEN_PR: ${{ inputs.allow_open_pr }}
         run: |
           set -euo pipefail
           report="${RUNNER_TEMP}/candle-promotion"
-          mkdir -p "${report}/cpu" "${report}/cuda"
+          mkdir -p "${report}/cpu" "${report}/cuda" "${report}/gpu"
           [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ &&
              "${EXPECTED_OLD}" =~ ^[0-9a-f]{40}$ &&
              "${UPSTREAM_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
@@ -101,7 +112,8 @@ jobs:
           [[ "${CANDIDATE_REF}" =~ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] &&
           git check-ref-format --branch "${CANDIDATE_REF}" >/dev/null &&
           [[ "${CAMPAIGN}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ &&
-             "${CI_RUN_ID}" =~ ^[0-9]{6,20}$ ]] || {
+             "${CI_RUN_ID}" =$ ^[0-9]{6,20}$ &&
+             "${GPU_RUN_ID}" =$ ^[0-9]{6,20}$ ]] || {
             echo "::error::Invalid candidate ref, campaign or run ID"; exit 2;
           }
           if [[ "${DRY_RUN}" != true && "${CONFIRM}" != PROMOTE ]]; then
@@ -155,6 +167,35 @@ jobs:
             and .target == "sm_61" and .gpu_executed == false
           ' "${report}/cuda/report.json" > /dev/null
 
+          # Hosted CUDA compilation is not GPU runtime evidence.
+          gpu_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN_ID}")"
+          jq -e '.name=="Candle GPU CI" and .conclusion=="success"
+            and .head_branch=="mirror_orch" and .event=="workflow_dispatch"' \
+            <<< "${gpu_run}" > /dev/null || {
+            echo "::error::GPU run must be a successful independent GPU CI dispatch"; exit 3;
+          }
+          gpu_jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN_ID}/jobs?per_page=100")"
+          jq -e '
+            any(.jobs[]; .name=="preflight" and .conclusion=="success") and
+            any(.jobs[]; .name=="gpu" and .conclusion=="success")
+          ' <<< "${gpu_jobs}" > /dev/null || {
+            echo "::error::GPU preflight and physical GPU job must both pass"; exit 3;
+          }
+          gh run download "${GPU_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "candle-gpu-${CAMPAIGN}-${TARGET}" --dir "${report}/gpu"
+          jq -e --arg b "${TARGET}" --arg sha "${CANDIDATE_SHA}" \
+            --arg up "${UPSTREAM_SHA}" --arg c "${CAMPAIGN}" \
+            --arg lock "${lock}" --argjson ci "${CI_RUN_ID}" '
+            .schema_version==1 and .branch==$b and .candidate_sha==$sha
+            and .upstream_sha==$up and .campaign==$c and .lock_sha256==$lock
+            and .ci_run_id==$ci and .gpu_compute_cap=="6.1" and .gpu_executed==true
+            and .suite_coverage=="required" and .status=="GPU_PASSED"
+          ' "${report}/gpu/report.json" > /dev/null || {
+            echo "::error::GPU report disagrees with candidate SHA, campaign or lockfile"; exit 3;
+          }
+          test -s "${report}/gpu/gpu-tests.log"
+          test -s "${report}/gpu/gpu-info.txt"
+
           owner="${GITHUB_REPOSITORY%%/*}"
           prs="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/pulls" \
             -f state=open -f "head=${owner}:${TARGET}" --jq length)"
@@ -166,10 +207,11 @@ jobs:
             --arg new "${CANDIDATE_SHA}" --arg upstream "${UPSTREAM_SHA}" \
             --arg lock "${lock}" --argjson ci_run "${CI_RUN_ID}" \
             --argjson open_prs "${prs}" --argjson dry_run "${DRY_RUN}" \
+            --argjson gpu_run "${GPU_RUN_ID}" \
             '{schema_version:1,branch:$branch,old_sha:$old,new_sha:$new,
               upstream_sha:$upstream,lock_sha256:$lock,ci_run_id:$ci_run,
               open_pr_count:$open_prs,dry_run:$dry_run,
-              gpu_runtime_validated:false}' > "${report}/promotion.json"
+              gpu_runtime_validated:true,gpu_run_id:$gpu_run}' > "${report}/promotion.json"
           if [[ "${DRY_RUN}" == true ]]; then
             echo "Dry-run: exact candidate, CI and source-branch checks passed" >> "${GITHUB_STEP_SUMMARY}"
             cat "${report}/promotion.json" >> "${GITHUB_STEP_SUMMARY}"
@@ -202,6 +244,12 @@ jobs:
             >> "${GITHUB_STEP_SUMMARY}"
           echo "Backup tag: ${backup}; promotion tag: ${proof}" \
             >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${CLEAN_TEMP}" == true ]]; then
+            gh workflow run candle-cleanup.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+              -f "scope=${TARGET}" -f "dry_run=false" -f "archive_orphans=true" \
+              -f "confirmation=DELETE_TEMP_REFS"
+            echo "Triggered guarded cleanup for ${TARGET}" >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       - name: Preserve promotion manifest
         if: always()
