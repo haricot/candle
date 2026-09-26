@@ -62,7 +62,7 @@ jobs:
           [[ "${REF}" =$ ^(sync|rebase)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || exit 2
           git check-ref-format --branch "${REF}" >/dev/null
           case "${B}" in
-            bf16_candle|fp8_candle|fp4_candle) ;;
+            bf16_candle|fp8_candle|fp4_candle|moe_simt_f16_candle) ;;
             *) echo "::error::Dedicated GPU-runtime suite missing for ${B}; promotion blocked"; exit 3 ;;
           esac
           git fetch --no-tags origin "+refs/heads/${REF}:refs/remotes/origin/gpu-candidate"
@@ -150,6 +150,15 @@ jobs:
               cargo test -p candle-core --no-default-features --locked --features cuda \
                 --test mxfp4_tests -- --nocapture > "${d}/gpu-tests.log" 2>&1
               for t in cuda_dequantize_matches_cpu cuda_mxfp4_dp4a_batch_1_to_8 cuda_mxfp4_prefill_parity cuda_mxfp4_indexed_moe_parity; do
+                grep -Fq "test ${t} ... ok" "${d}/gpu-tests.log"
+              done ;;
+            moe_simt_f16_candle)
+              # Source-backed numerical parity tests are required; the old
+              # MoE candidate without these tests cannot be auto-promoted.
+              test -s candle-nn/tests/moe_simt_sm61.rs
+              cargo test -p candle-nn --no-default-features --locked --features cuda \
+                --test moe_simt_sm61 -- --nocapture > "${d}/gpu-tests.log" 2>&1
+              for t in sm61_simt_prefill_topk2_fp16 sm61_simt_decode_weighted_fp16; do
                 grep -Fq "test ${t} ... ok" "${d}/gpu-tests.log"
               done ;;
             *) echo "::error::No dedicated GPU suite for ${B}"; exit 3 ;;
