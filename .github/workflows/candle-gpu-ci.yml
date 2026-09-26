@@ -112,6 +112,38 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           toolchain: stable
+      - name: Resolve self-hosted CUDA and optional local cuDNN
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v nvcc >/dev/null 2>&1; then
+            root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd -P)"
+          else
+            root=""
+            for candidate in /opt/cuda129 /opt/cuda /usr/local/cuda; do
+              if [[ -x "$candidate/bin/nvcc" ]]; then
+                root="$candidate"
+                break
+              fi
+            done
+          fi
+          [[ -n "$root" && -x "$root/bin/nvcc" ]] || {
+            echo "::error::CUDA nvcc was not found on the physical SM61 runner"
+            exit 3
+          }
+          echo "$root/bin" >> "$GITHUB_PATH"
+          echo "CUDA_ROOT=$root" >> "$GITHUB_ENV"
+          cuda_lib="$root/lib64"
+          [[ -d "$cuda_lib" ]] || cuda_lib="$root/lib"
+          libs="$cuda_lib"
+          for cudnn_lib in /opt/cudnn9102/lib /opt/cudnn9102/lib64; do
+            if [[ -d "$cudnn_lib" ]]; then
+              libs="$cudnn_lib:$libs"
+              break
+            fi
+          done
+          echo "LD_LIBRARY_PATH=$libs:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          "$root/bin/nvcc" --version
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7 / Node 24
         with:
           name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
