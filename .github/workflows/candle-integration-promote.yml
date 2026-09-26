@@ -204,6 +204,18 @@ jobs:
               -f archive_orphans=true -f confirmation=DELETE_TEMP_REFS
             echo "Dispatched one promotion-tag-guarded cleanup of eligible temporary refs" \
               >> "${GITHUB_STEP_SUMMARY}"
+            # The final branch and annotated tag now retain the exact
+            # tested aggregate. Drop the redundant integration candidate ref
+            # with an expected-SHA lease; do not affect the permanent branch.
+            integrated="integration/cuda_asd_runner_v2-candidate"
+            current="$(git ls-remote --heads origin "refs/heads/${integrated}" | cut -f1)"
+            final="$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v2 | cut -f1)"
+            if [[ "${current}" == "${sha}" && "${final}" == "${sha}" ]]; then
+              git push --force-with-lease="refs/heads/${integrated}:${sha}" \
+                origin ":refs/heads/${integrated}"
+              echo "Removed redundant integrated candidate ref; final validated branch retained" \
+                >> "${GITHUB_STEP_SUMMARY}"
+            fi
           fi
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # Node24
