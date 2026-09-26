@@ -198,6 +198,63 @@ jobs:
             reviewed_mode=true
             echo "publish=true" >> "${GITHUB_OUTPUT}"
             echo "APPROVED: cumulative review PR merged; exact six-source gate ${approved_sha}" >> "${GITHUB_STEP_SUMMARY}"
+            # Reconstruct each approved intermediate tree on a throwaway
+            # detached head to *train* Git rerere from the reviewed stages.
+            # No state from this reconstruction is pushed. Tree equality at
+            # every source boundary rejects incomplete or mismatched reviews.
+            for item in "${sources[@]}"; do
+              IFS='|' read -r feature ref expected <<< "${item}"
+              reviewed_stage=""
+              while read -r candidate; do
+                read -r -a ancestry <<< "$(git rev-list --parents -n 1 "${candidate}")"
+                if [[ "${#ancestry[@]}" -eq 3 && "${ancestry[2]}" == "${expected}" ]]; then
+                  reviewed_stage="${candidate}"
+                  break
+                fi
+              done < <(git rev-list "${approved_sha}")
+              [[ "${reviewed_stage}" =~ ^[0-9a-f]{40}$ ]] || {
+                echo "::error::No two-parent reviewed merge stage for ${feature}"; exit 3;
+              }
+              echo "${feature}|${expected}|${reviewed_stage}" >> "${report}/logs/approved-stages.txt"
+            done
+
+            git switch --detach -f "${baseline}"
+            while IFS='|' read -r feature expected reviewed_stage; do
+              if ! git merge --no-ff --no-edit -m "train(${feature}): replay reviewed source merge" \
+                "${expected}" > "${report}/logs/train-${feature}.log" 2>&1; then
+                mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+                [[ "${#conflicts[@]}" -gt 0 ]] || {
+                  echo "::error::Failed merge has no reviewable conflicting files: ${feature}"; exit 3;
+                }
+                for path in "${conflicts[@]}"; do
+                  git cat-file -e "${reviewed_stage}:${path}" || {
+                    echo "::error::Reviewed stage lacks conflicting path ${path}"; exit 3;
+                  }
+                  git show "${reviewed_stage}:${path}" > "${path}"
+                  if grep -Eq '^(<<<<<<< |=======|>>>>>>> )' -- "${path}"; then
+                    echo "::error::Reviewed path still contains conflict markers: ${path}"; exit 3;
+                  fi
+                done
+                # Record approved postimages for every actual conflict
+                # preimage *before* staging removes the unmerged index.
+                git rerere >> "${report}/logs/train-${feature}.log" 2>&1
+                git add -- "${conflicts[@]}"
+                [[ -z "$(git ls-files -u)" ]] || exit 3
+                git diff --cached --check || exit 3
+                git commit --no-edit -m "integrate(${feature}): exact approved rerere resolution" \
+                  >> "${report}/logs/train-${feature}.log" 2>&1
+              fi
+              approved_tree="$(git rev-parse "${reviewed_stage}^{tree}")"
+              trained_tree="$(git rev-parse 'HEAD^{tree}')"
+              [[ "${approved_tree}" == "${trained_tree}" ]] || {
+                echo "::error::Replay tree for ${feature} differs from reviewed stage ${reviewed_stage}"; exit 3;
+              }
+              echo "TRAINED: ${feature}, exact approved tree ${trained_tree}" >> "${GITHUB_STEP_SUMMARY}"
+            done < "${report}/logs/approved-stages.txt"
+            # Only the reviewed gate HEAD can be published. Replay commits are
+            # disposable; the successfully trained cache survives this switch.
+            git switch --detach -f "${approved_sha}"
+
           else
             echo "::error::Review PR must remain open or be merged into its review gate"; exit 3
           fi
