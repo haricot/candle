@@ -126,6 +126,7 @@ jobs:
       CI: ${{ inputs.ci_run_id }}
       LOCK: ${{ needs.preflight.outputs.lock_sha256 }}
       MANIFEST: ${{ needs.preflight.outputs.manifest_sha256 }}
+      AUTO_PROMOTE: ${{ inputs.auto_promote }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
         with:
@@ -245,12 +246,13 @@ jobs:
           cp candle-integration/sources.json "${report}/sources.json"
           jq -n --arg sha "${SHA}" --arg c "${CAMPAIGN}" --argjson ci "${CI}" \
             --arg lock "${lock}" --arg manifest "${MANIFEST}" --arg cc "${capability}" \
+            --argjson auto_promote "${AUTO_PROMOTE}" \
             --slurpfile sources "${report}/sources.json" '
             {schema_version:1,branch:"cuda_asd_runner_v2",
              candidate_sha:$sha,campaign:$c,ci_run_id:$ci,
              upstream_sha:"aebc405d2b4bf42808387e0ca597bf7dad9b565f",
              lock_sha256:$lock,manifest_sha256:$manifest,
-             gpu_compute_cap:$cc,gpu_executed:true,status:"GPU_PASSED",
+             gpu_compute_cap:$cc,gpu_executed:true,status:"GPU_PASSED",auto_promote:$auto_promote,
              suite_coverage:"all_six",sources:$sources[0].sources}
           ' > "${report}/report.json"
           echo "All six feature suites PASSED on physical SM61, exact SHA ${SHA}" \
@@ -263,26 +265,3 @@ jobs:
           path: ${{ runner.temp }}/candle-integration-gpu/
           if-no-files-found: warn
           retention-days: 90
-
-  promote_dispatch:
-    needs: [preflight, gpu]
-    if: needs.preflight.result == 'success' && needs.gpu.result == 'success' && inputs.auto_promote
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Trigger guarded aggregate promotion and one cleanup
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.candidate_sha }}
-          CAMPAIGN: ${{ inputs.campaign }}
-          CI: ${{ inputs.ci_run_id }}
-          GPU_RUN: ${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh workflow run candle-integration-promote.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
-            -f "candidate_sha=${SHA}" -f "campaign=${CAMPAIGN}" \
-            -f "ci_run_id=${CI}" -f "gpu_run_id=${GPU_RUN}" \
-            -f update_feature_branches=true -f cleanup_after_promotion=true
-          echo "Triggered independent SHA-locked aggregate promotion" >> "${GITHUB_STEP_SUMMARY}"
