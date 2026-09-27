@@ -334,10 +334,31 @@ jobs:
               tail -n 100 "${report}/logs/asd-core.log"
               exit 1
             }
-          cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
+          # Historical CT1D raw dispatch requires an explicit runtime opt-in.
+          # Set it only for this A/B benchmark: the current/reference phase
+          # disables ASD itself and must remain the cuDNN baseline.
+          CANDLE_ASD_V2_CT1D_ENABLE=1 \
+            cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
             --example grouped_conv_transpose_asd_validate -- --warmup 4 --iters 12 \
             --inner 8 --max-drift-pct 20 --min-integrated-speedup-x 1.01 \
-            > "${report}/logs/asd-transpose.log" 2>&1
+            > "${report}/logs/asd-transpose.log" 2>&1 || {
+              echo "::error::ASD ConvTranspose benchmark failed; actual runtime trace:"
+              tail -n 110 "${report}/logs/asd-transpose.log"
+              exit 1
+            }
+          # The A/B timing is not valid unless the candidate actually launched
+          # raw CUDA, rather than measuring two cuDNN paths.
+          awk '
+            /^PROBE mode=asd_candidate / { candidate=1; next }
+            /^COMPLETION mode=asd_candidate / { candidate=0 }
+            candidate && /requested=auto sm=61 dim=1d groups=2 selected=raw reason=exact_asd/ { selected=1 }
+            candidate && /submitted_backend=raw launch_submission=success/ { submitted=1 }
+            END { exit !(selected && submitted) }
+          ' "${report}/logs/asd-transpose.log" || {
+            echo "::error::The candidate did not select and submit its exact raw CUDA backend"
+            tail -n 110 "${report}/logs/asd-transpose.log"
+            exit 1
+          }
           grep -Fxq 'STATUS=PASS' "${report}/logs/asd-transpose.log"
           cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
             --example grouped_conv2d_asd_real_dispatch_validate -- \
