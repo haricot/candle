@@ -38,6 +38,25 @@ cargo check -p candle-core -p candle-nn --lib --tests \
   --no-default-features --features "$features" --locked \
   > "$report/cuda-check.log" 2>&1 || build_rc=$?
 
+
+# The regular --tests check above uses the integrated feature selection.
+# It may compile candle-nn without its own cuda feature, which excludes
+# moe_simt_sm61.rs via #![cfg(feature = "cuda")]. Explicitly compile this
+# test with BOTH candle-nn features before assigning a physical GPU job.
+if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$build_rc" -eq 0 ]]; then
+  moe_test_rc=0
+  cargo check -p candle-nn --locked --no-default-features \
+    --features "cuda cudnn" --test moe_simt_sm61 \
+    > "$report/moe-test-compile.log" 2>&1 || moe_test_rc=$?
+  if ((moe_test_rc != 0)); then
+    echo "::error::SM61 MoE test fails explicit CUDA compilation (rc=$moe_test_rc)."
+    tail -n 70 "$report/moe-test-compile.log"
+    build_rc="$moe_test_rc"
+  else
+    echo "SM61 MoE CUDA test compilation passed" >> "$report/environment.txt"
+  fi
+fi
+
 if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$build_rc" -eq 0 ]]; then
   # cargo check cannot prove static-library linkability. For Pascal,
   # the SIMT translation unit must define both the real SIMT entry
