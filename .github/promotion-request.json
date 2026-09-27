@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "gpu_run_id": 36338057224,
+  "ci_run_id": 36332683085,
+  "candidate_sha": "ac983d16750a136a8563def01926ee83a7831d22",
+  "campaign": "integrated-sm61-1292-u2604-moe-r1",
+  "update_feature_branches": true,
+  "cleanup_after_promotion": false,
+  "auto_promote": false
+}
