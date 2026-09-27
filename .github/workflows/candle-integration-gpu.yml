@@ -36,7 +36,7 @@ concurrency:
 jobs:
   preflight:
     if: github.ref == 'refs/heads/mirror_orch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       lock_sha256: ${{ steps.verify.outputs.lock_sha256 }}
       manifest_sha256: ${{ steps.verify.outputs.manifest_sha256 }}
@@ -209,6 +209,17 @@ jobs:
           fi
           echo "LD_LIBRARY_PATH=${libs}:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
           "${root}/bin/nvcc" --version | grep -F 'release 12.9'
+          # nvcc's 12.9.x compiler version alone cannot identify the toolkit patch.
+          # NVIDIA containers expose CUDA_VERSION; native Arch exposes cuda-12.9's package revision.
+          if [[ -n "${CUDA_VERSION:-}" ]]; then
+            [[ "${CUDA_VERSION}" == '12.9.2' ]] || { echo "::error::Expected CUDA 12.9.2 container"; exit 3; }
+          elif command -v pacman >/dev/null 2>&1; then
+            [[ "$(pacman -Q cuda-12.9)" == 'cuda-12.9 12.9.2-1' ]] || {
+              echo "::error::Expected Arch cuda-12.9 12.9.2-1"; exit 3;
+            }
+          elif [[ "${CANDLE_CUDA_TOOLKIT_RELEASE:-}" != '12.9.2' ]]; then
+            echo "::error::Set CANDLE_CUDA_TOOLKIT_RELEASE=12.9.2 on non-Arch runners"; exit 3
+          fi
       - name: Verify and provision machine-matched Stage2F promoted ASD policy
         shell: bash
         env:

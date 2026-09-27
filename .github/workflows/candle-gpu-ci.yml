@@ -36,7 +36,7 @@ concurrency:
 jobs:
   preflight:
     if: github.ref == 'refs/heads/mirror_orch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
     steps:
@@ -138,7 +138,18 @@ jobs:
             libs="$cudnn_lib:$libs"
           fi
           echo "LD_LIBRARY_PATH=$libs:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-          "$root/bin/nvcc" --version
+          "${root}/bin/nvcc" --version | grep -F 'release 12.9'
+          # nvcc's 12.9.x compiler version alone cannot identify the toolkit patch.
+          # NVIDIA containers expose CUDA_VERSION; native Arch exposes cuda-12.9's package revision.
+          if [[ -n "${CUDA_VERSION:-}" ]]; then
+            [[ "${CUDA_VERSION}" == '12.9.2' ]] || { echo "::error::Expected CUDA 12.9.2 container"; exit 3; }
+          elif command -v pacman >/dev/null 2>&1; then
+            [[ "$(pacman -Q cuda-12.9)" == 'cuda-12.9 12.9.2-1' ]] || {
+              echo "::error::Expected Arch cuda-12.9 12.9.2-1"; exit 3;
+            }
+          elif [[ "${CANDLE_CUDA_TOOLKIT_RELEASE:-}" != '12.9.2' ]]; then
+            echo "::error::Set CANDLE_CUDA_TOOLKIT_RELEASE=12.9.2 on non-Arch runners"; exit 3
+          fi
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7 / Node 24
         with:
           name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
@@ -228,7 +239,7 @@ jobs:
   promote_dispatch:
     needs: [preflight, gpu]
     if: needs.preflight.result == 'success' && needs.gpu.result == 'success' && inputs.auto_promote
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       actions: write

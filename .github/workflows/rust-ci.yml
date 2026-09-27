@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04, windows-latest, macOS-latest, ubuntu-24.04-arm]
+        os: [ubuntu-26.04, ubuntu-24.04, windows-latest, macOS-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -42,7 +42,7 @@ jobs:
         run: cargo check --workspace --all-targets --features metal
 
       - name: Run normal cpu
-        if: matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest'
+        if: matrix.os == 'ubuntu-26.04' || matrix.os == 'windows-latest'
         run: cargo check --workspace --all-targets
 
       - name: Run with avx2
@@ -64,7 +64,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        os: [ubuntu-26.04, windows-latest, macOS-latest]
     steps:
       - name: Free disk space (Linux)
         if: runner.os == 'Linux'
@@ -107,7 +107,7 @@ jobs:
     permissions:
       contents: read
     name: Rustfmt
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: dtolnay/rust-toolchain@stable
@@ -119,7 +119,7 @@ jobs:
     permissions:
       contents: read
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: dtolnay/rust-toolchain@stable

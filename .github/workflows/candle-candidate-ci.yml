@@ -50,7 +50,7 @@ jobs:
   cpu:
     if: github.ref == 'refs/heads/mirror_orch'
     name: CPU / ${{ inputs.branch }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -205,10 +205,10 @@ jobs:
     name: CUDA 12.9 SM61 compile / ${{ inputs.branch }}
     needs: cpu
     if: needs.cpu.result == 'success' && inputs.validation == 'cpu_cuda'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     container:
-      image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04@sha256:a2e1e2360c85298ac47ec2543b406ab1e8cec42e31ee47e4d32140ebc82e1067
+      image: nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04@sha256:5a480db8cbf90098ca816d7e77f07ce5cb4c43353530b6a84915c2dd99c4e0b6
     permissions:
       contents: read
     env:
@@ -228,7 +228,11 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates curl git build-essential pkg-config libssl-dev \
             protobuf-compiler clang libclang-dev jq
-          nvcc --version
+          # Official NVIDIA CUDA 12.9.2 image pins cuDNN 9.10.2.21 and cuBLAS 12.9.2.10.
+          [[ "${CUDA_VERSION:-}" == '12.9.2' ]] || { echo "::error::Expected CUDA toolkit 12.9.2"; exit 3; }
+          [[ "${NV_CUDNN_VERSION:-}" == '9.10.2.21-1' ]] || { echo "::error::Expected cuDNN 9.10.2.21"; exit 3; }
+          [[ "${NV_LIBCUBLAS_DEV_VERSION:-}" == '12.9.2.10-1' ]] || { echo "::error::Expected cuBLAS 12.9.2.10"; exit 3; }
+          nvcc --version | grep -F 'release 12.9'
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -307,7 +311,7 @@ jobs:
             --arg sha "$CANDIDATE_SHA" --arg lock "$lock" --arg status "$status" \
             --arg features "$features" --argjson rc "$build_rc" \
             '{branch:$branch,campaign:$campaign,candidate_sha:$sha,lock_sha256:$lock,
-              status:$status,cuda_version:"12.9.1",target:"sm_61",
+              status:$status,cuda_version:"12.9.2",target:"sm_61",
               features:$features,exit_code:$rc,gpu_executed:false}' > "$report/report.json"
           echo "CUDA: $status / $CHECK_BRANCH / $CANDIDATE_SHA (GPU not executed)" >> "$GITHUB_STEP_SUMMARY"
           [[ "$status" == CUDA_COMPILE_PASSED ]]
