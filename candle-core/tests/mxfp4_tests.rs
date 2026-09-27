@@ -7,12 +7,12 @@
 //! compatibility with llama.cpp.
 #![allow(clippy::excessive_precision)] // exact f32 literals emitted by the C golden generator
 
-use candle_core::quantized::{gguf_file, GgmlDType, QTensor};
 #[cfg(feature = "cuda")]
 use candle_core::quantized::QStorage;
-use candle_core::{Device, Result, Tensor};
+use candle_core::quantized::{gguf_file, GgmlDType, QTensor};
 #[cfg(feature = "cuda")]
 use candle_core::DType;
+use candle_core::{Device, Result, Tensor};
 #[cfg(feature = "cuda")]
 use std::borrow::Cow;
 use std::io::Cursor;
