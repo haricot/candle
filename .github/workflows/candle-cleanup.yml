@@ -85,7 +85,9 @@ jobs:
               .scope=="all" and .skip_unpromoted==true and
               .archive_orphans==true and
               ((.phase=="preview" and .dry_run==true and .confirmation=="PREVIEW_TEMP_REFS") or
-               (.phase=="apply" and .dry_run==false and .confirmation=="DELETE_TEMP_REFS"))
+               (.phase=="apply" and .dry_run==false and .confirmation=="DELETE_TEMP_REFS") or
+               (.phase=="finalize" and .dry_run==false and .confirmation=="DELETE_TEMP_REFS" and
+                .approved_apply_run_id==36341444643))
             ' "${request}" >/dev/null || {
               echo "::error::Cleanup request not bound to the reviewed GPU promotion"; exit 3
             }
@@ -237,6 +239,54 @@ jobs:
             '{scope:$scope,dry_run:$dry_run,matched:$matched,removed:$removed,skipped:$skipped}' \
             > "${report}/summary.json"
           cat "${report}/summary.json" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Remove redundant integrated candidate only after archived cleanup proof
+        if: success() && github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -e '.phase=="finalize"' .github/cleanup-request.json >/dev/null || exit 0
+          sha=ac983d16750a136a8563def01926ee83a7831d22
+          prior=36341444643
+          validated_gpu=36338057224
+          ref=integration/cuda_asd_runner_v2-candidate
+          branch="refs/heads/$ref"
+          permanent="$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v2 | cut -f1)"
+          candidate="$(git ls-remote --heads origin "$branch" | cut -f1)"
+          [[ "$permanent" == "$sha" && "$candidate" == "$sha" ]] || {
+            echo "::error::Cannot close candidate: SHA changed or permanent ref missing"; exit 3;
+          }
+          short="$(printf %s "$sha" | cut -c1-12)"
+          proof_tag="refs/tags/promoted/cuda_asd_runner_v2/$short-$validated_gpu"
+          peeled="$(git ls-remote --tags origin "$proof_tag^{}" | cut -f1)"
+          [[ "$peeled" == "$sha" ]] || {
+            echo "::error::Annotated permanent promotion tag does not match tested SHA"; exit 3;
+          }
+          prior_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prior")"
+          jq -e '.name=="Candle Cleanup" and .conclusion=="success" and .head_branch=="mirror_orch"' \
+            <<< "$prior_run" >/dev/null || exit 3
+          gh run download "$prior" --repo "$GITHUB_REPOSITORY" \
+            --name "candle-cleanup-all-$prior" --dir "$RUNNER_TEMP/verified-apply"
+          jq -e '.scope=="all" and .dry_run==false and .matched==20 and .removed==20 and .skipped==0' \
+            "$RUNNER_TEMP/verified-apply/summary.json" >/dev/null || {
+            echo "::error::Cleanup manifest does not attest the 20 reviewed deletions"; exit 3;
+          }
+          # Keep the active BF16 PR and all BF16 sync refs untouched.
+          owner="$(printf %s "$GITHUB_REPOSITORY" | cut -d/ -f1)"
+          prs="$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f "head=$owner:$ref" --jq length)"
+          [[ "$prs" == 0 ]] || {
+            echo "::error::Integrated candidate is head of an open PR"; exit 3;
+          }
+          gh auth setup-git
+          git push --force-with-lease="$branch:$sha" origin ":$branch"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "::error::Redundant candidate ref still exists"; exit 3
+          fi
+          echo "CLEANED: permanent cuda_asd_runner_v2=$sha; promotion tag retained; removed $ref" \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preserve cleanup manifest
         if: always()
