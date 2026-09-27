@@ -17,7 +17,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'workflow_dispatch' &&
       github.event.workflow_run.head_branch == 'mirror_orch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - name: Verify the exact integrated Candidate CI artifacts and dispatch one GPU campaign
@@ -81,7 +81,9 @@ jobs:
             .branch=="cuda_asd_runner_v2" and .campaign==$c and
             .candidate_sha==$sha and .lock_sha256==$lock and
             .status=="CUDA_COMPILE_PASSED" and .target=="sm_61" and
-            .gpu_executed==false
+            .gpu_executed==false and .cuda_version=="12.9.2" and
+            .ubuntu_version=="26.04" and
+            (.cuda_containerfile_sha256|test("^[0-9a-f]{64}$"))
           ' "${cuda}" >/dev/null
           [[ "$(sha256sum "${evidence}/cpu/Cargo.lock" | cut -d' ' -f1)" == "${lock}" ]] || {
             echo "::error::CPU proof lockfile hash is inconsistent"; exit 3;
@@ -92,6 +94,6 @@ jobs:
           }
           gh workflow run candle-integration-gpu.yml --repo "${repo}" --ref mirror_orch \
             -f "candidate_sha=${sha}" -f "campaign=${campaign}" \
-            -f "ci_run_id=${CI_RUN_ID}" -f "auto_promote=true"
+            -f "ci_run_id=${CI_RUN_ID}" -f "auto_promote=false"
           echo "Dispatched ONE combined physical SM61 GPU run for ${sha} from Candidate CI ${CI_RUN_ID}." \
             >> "${GITHUB_STEP_SUMMARY}"

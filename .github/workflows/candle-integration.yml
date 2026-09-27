@@ -22,7 +22,7 @@ concurrency:
 jobs:
   prepare:
     if: github.ref == 'refs/heads/mirror_orch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: write
@@ -487,7 +487,7 @@ jobs:
   dispatch_cpu_cuda:
     needs: prepare
     if: needs.prepare.result == 'success' && needs.prepare.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       actions: write
     steps:

@@ -45,7 +45,7 @@ concurrency:
 jobs:
   cleanup:
     if: github.ref == 'refs/heads/mirror_orch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 35
     permissions:
       contents: write
