@@ -4,6 +4,10 @@ on:
   workflow_run:
     workflows: ["Candle Integration GPU"]
     types: [completed]
+  # Audited one-shot manual promotion from a reviewed, exact-GPU-run request.
+  push:
+    branches: [mirror_orch]
+    paths: [.github/promotion-request.json]
   workflow_dispatch:
     inputs:
       gpu_run_id:
@@ -27,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   promote:
-    if: github.ref == 'refs/heads/mirror_orch' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    if: github.ref == 'refs/heads/mirror_orch' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-26.04
     timeout-minutes: 35
     permissions:
@@ -49,6 +53,26 @@ jobs:
           MANUAL_CLEANUP: ${{ inputs.cleanup_after_promotion }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT}" == push ]]; then
+            request=.github/promotion-request.json
+            test -s "${request}" || exit 3
+            [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]] || exit 3
+            jq -e '
+              .schema_version==1 and
+              .gpu_run_id==36338057224 and
+              .ci_run_id==36332683085 and
+              .candidate_sha=="ac983d16750a136a8563def01926ee83a7831d22" and
+              .campaign=="integrated-sm61-1292-u2604-moe-r1" and
+              .update_feature_branches==true and
+              .cleanup_after_promotion==false and
+              .auto_promote==false
+            ' "${request}" >/dev/null || {
+              echo "::error::One-shot promotion request does not match reviewed GPU proof"; exit 3;
+            }
+            GPU_RUN="$(jq -r .gpu_run_id "${request}")"
+            MANUAL_FEATURES=true
+            MANUAL_CLEANUP=false
+          fi
           if [[ ! "${GPU_RUN}" =~ ^[0-9]{6,20}$ ]]; then
             echo "::error::gpu_run_id must be a numeric completed Candle Integration GPU Actions run ID, not the campaign name. Start with Candle Integration on mirror_orch."
             exit 2
@@ -100,6 +124,16 @@ jobs:
               (["bf16_candle","fp8_candle","fp4_candle",
                 "cudnn_fallback_candle","moe_simt_f16_candle","asd_core"]|sort)
           ' "${report}/gpu/report.json" >/dev/null || exit 3
+          if [[ "${EVENT}" == push ]]; then
+            jq -e --arg sha "${sha}" --arg c "${campaign}" --argjson ci "${ci}" '
+              .candidate_sha==$sha and .campaign==$c and .ci_run_id==$ci
+            ' .github/promotion-request.json >/dev/null || {
+              echo "::error::GPU artifact differs from one-shot promotion request"; exit 3;
+            }
+            # A previously opted-out campaign must never be promoted by its
+            # automatic workflow_run path. This explicit request is separate.
+            jq -e '.auto_promote==false' "${report}/gpu/report.json" >/dev/null || exit 3
+          fi
           # One-shot push requests must match the GPU-tested SHA, approved
           # six-source gate and proof parameters. Do not allow a generic
           # successful push job to authorize branch rewrites.
