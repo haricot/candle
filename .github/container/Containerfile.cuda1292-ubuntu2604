@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+# Experimental: Ubuntu 26.04 + official NVIDIA ubuntu2404 CUDA packages.
+# Pinned versions reproduce the physical Pascal SM61 Podman build.
+FROM docker.io/library/ubuntu:26.04
+ENV DEBIAN_FRONTEND=noninteractive \
+    CUDA_HOME=/usr/local/cuda-12.9 \
+    CUDA_ROOT=/usr/local/cuda-12.9 \
+    CUDA_VERSION=12.9.2 \
+    NVCC_CCBIN=/usr/bin/g++-14 \
+    CC=/usr/bin/gcc-14 \
+    CXX=/usr/bin/g++-14 \
+    CUDA_COMPUTE_CAP=61 \
+    CARGO_HOME=/opt/cargo \
+    RUSTUP_HOME=/opt/rustup \
+    PATH=/usr/local/cuda-12.9/bin:/opt/cargo/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64
+RUN set -eux; \
+    if test -f /etc/apt/sources.list.d/ubuntu.sources; then \
+       sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl git jq pkg-config gcc-14 g++-14 make cmake \
+      clang libclang-dev libssl-dev protobuf-compiler python3 \
+      file binutils; \
+    rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    repo='https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64'; \
+    curl -fsSL "$repo/cuda-archive-keyring.gpg" \
+      -o /usr/share/keyrings/cuda-archive-keyring.gpg; \
+    printf 'deb [signed-by=/usr/share/keyrings/cuda-archive-keyring.gpg] %s/ /\n' "$repo" \
+      > /etc/apt/sources.list.d/nvidia-cuda.list
+RUN set -eux; \
+    apt-get update; \
+    apt-get -s install --no-install-recommends \
+      cuda-toolkit-12-9=12.9.2-1 \
+      libcublas-12-9=12.9.2.10-1 \
+      libcublas-dev-12-9=12.9.2.10-1 \
+      libcudnn9-cuda-12=9.10.2.21-1 \
+      libcudnn9-headers-cuda-12=9.10.2.21-1 \
+      libcudnn9-dev-cuda-12=9.10.2.21-1 > /tmp/apt-plan; \
+    ! grep -Eq '^Remv ' /tmp/apt-plan; \
+    apt-get install -y --no-install-recommends \
+      cuda-toolkit-12-9=12.9.2-1 \
+      libcublas-12-9=12.9.2.10-1 \
+      libcublas-dev-12-9=12.9.2.10-1 \
+      libcudnn9-cuda-12=9.10.2.21-1 \
+      libcudnn9-headers-cuda-12=9.10.2.21-1 \
+      libcudnn9-dev-cuda-12=9.10.2.21-1; \
+    rm -rf /var/lib/apt/lists/* /tmp/apt-plan
+# Ubuntu 26.04 glibc: patch only six known CUDA 12.9 math declarations.
+# Fail closed if NVIDIA ever changes the upstream header layout.
+RUN set -eux; \
+    h=/usr/local/cuda-12.9/targets/x86_64-linux/include/crt/math_functions.h; \
+    cp "$h" "$h.upstream"; \
+    for spec in 'double sinpi' 'double cospi' 'double rsqrt' \
+                'float sinpif' 'float cospif' 'float rsqrtf'; do \
+        set -- $spec; \
+        grep -Eq "^extern __DEVICE_FUNCTIONS_DECL__ __device_builtin__ ${1}[[:space:]]+${2}\(${1} x\);$" "$h"; \
+    done; \
+    sed -Ei '/^extern __DEVICE_FUNCTIONS_DECL__ __device_builtin__ (double|float)[[:space:]]+(sinpi|cospi|rsqrt|sinpif|cospif|rsqrtf)\((double|float) x\);$/s/;$/ noexcept (true);/' "$h"; \
+    diff -u "$h.upstream" "$h" > /tmp/cuda-glibc.diff || test "$?" -eq 1; \
+    test "$(grep -c '^+extern __DEVICE_FUNCTIONS_DECL__ __device_builtin__' /tmp/cuda-glibc.diff)" -eq 6; \
+    cat /tmp/cuda-glibc.diff; \
+    rm -f /tmp/cuda-glibc.diff
+RUN set -eux; \
+    test "$(dpkg-query -W -f='${Version}' cuda-toolkit-12-9)" = 12.9.2-1; \
+    test "$(dpkg-query -W -f='${Version}' libcublas-12-9)" = 12.9.2.10-1; \
+    test "$(dpkg-query -W -f='${Version}' libcudnn9-cuda-12)" = 9.10.2.21-1; \
+    printf '__global__ void probe() {}\n' > /tmp/sm61.cu; \
+    nvcc -ccbin=/usr/bin/g++-14 -arch=sm_61 -c /tmp/sm61.cu -o /tmp/sm61.o; \
+    test -s /tmp/sm61.o; \
+    rm -f /tmp/sm61.cu /tmp/sm61.o
+RUN set -eux; \
+    curl --fail --location --show-error --silent --retry 3 https://sh.rustup.rs \
+      | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable; \
+    /opt/cargo/bin/rustc --version; \
+    /opt/cargo/bin/cargo --version; \
+    chmod -R a+rX /opt/rustup /opt/cargo
+WORKDIR /work
