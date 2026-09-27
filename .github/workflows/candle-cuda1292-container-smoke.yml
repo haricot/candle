@@ -1,0 +1,40 @@
+name: Candle CUDA 12.9.2 Ubuntu 26.04 container smoke
+on:
+  pull_request:
+    branches: [mirror_orch]
+    paths:
+      - .github/container/Containerfile.cuda1292-ubuntu2604
+      - .github/workflows/candle-candidate-ci.yml
+      - .github/scripts/candle-candidate-cuda-compile.sh
+      - .github/workflows/candle-cuda1292-container-smoke.yml
+permissions:
+  contents: read
+jobs:
+  build_image:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Rebuild exact Ubuntu 26.04 / CUDA 12.9.2 image and compile Pascal probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull \
+            --file .github/container/Containerfile.cuda1292-ubuntu2604 \
+            --tag candle-cuda1292-u2604:smoke \
+            .github/container
+          docker run --rm --network none \
+            candle-cuda1292-u2604:smoke \
+            bash -lc '
+              set -euo pipefail
+              grep -Fq "VERSION_ID=\"26.04\"" /etc/os-release
+              dpkg -s cuda-toolkit-12-9 | grep -Fxq "Version: 12.9.2-1"
+              dpkg -s libcublas-12-9 | grep -Fxq "Version: 12.9.2.10-1"
+              dpkg -s libcudnn9-cuda-12 | grep -Fxq "Version: 9.10.2.21-1"
+              printf "__global__ void probe() {}\n" > /tmp/sm61.cu
+              nvcc -ccbin=/usr/bin/g++-14 -arch=sm_61 -c /tmp/sm61.cu -o /tmp/sm61.o
+              test -s /tmp/sm61.o
+              echo CONTAINER_SM61_COMPILE=PASS
+            '

@@ -243,7 +243,7 @@ jobs:
           docker build --pull \
             --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
             --tag candle-cuda1292-u2604:candidate \
-            .ci-tools
+            .ci-tools/.github/container
           docker image inspect candle-cuda1292-u2604:candidate --format '{{.Id}}'
 
       - name: CUDA compilation without executing GPU kernels
