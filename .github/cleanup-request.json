@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "phase": "apply",
+  "phase": "finalize",
   "dry_run": false,
   "archive_orphans": true,
   "scope": "all",
@@ -9,5 +9,6 @@
   "gpu_run_id": 36338057224,
   "promotion_run_id": 36341268024,
   "promoted_sha": "ac983d16750a136a8563def01926ee83a7831d22",
-  "approved_preview_run_id": 36341360856
+  "approved_preview_run_id": 36341360856,
+  "approved_apply_run_id": 36341444643
 }
