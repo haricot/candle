@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "phase": "preview",
+  "dry_run": true,
+  "archive_orphans": true,
+  "scope": "all",
+  "skip_unpromoted": true,
+  "confirmation": "PREVIEW_TEMP_REFS",
+  "gpu_run_id": 36338057224,
+  "promotion_run_id": 36341268024,
+  "promoted_sha": "ac983d16750a136a8563def01926ee83a7831d22"
+}
