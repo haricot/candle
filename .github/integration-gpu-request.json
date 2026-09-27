@@ -3,7 +3,7 @@
   "approved_pr": 11,
   "reviewed_gate_sha": "fecee68ebd0169e5762608e134460fa118239113",
   "candidate_sha": "ac983d16750a136a8563def01926ee83a7831d22",
-  "campaign": "integrated-sm61-1292-u2604-moe-r2",
+  "campaign": "integrated-sm61-1292-u2604-moe-r1",
   "ci_run_id": "36332683085",
   "auto_promote": false
 }
