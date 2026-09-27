@@ -5,18 +5,27 @@ on:
   workflow_run:
     workflows: ["Candle Candidate CI"]
     types: [completed]
+  # A manual one-shot fallback for GITHUB_TOKEN-dispatched candidate runs,
+  # whose completion may not trigger another workflow automatically.
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful immutable Candle Candidate CI run ID
+        required: true
+        type: string
 permissions:
   contents: read
   actions: write
 concurrency:
-  group: candle-gpu-handoff-${{ github.event.workflow_run.id }}
+  group: candle-gpu-handoff-${{ github.event_name == 'workflow_dispatch' && inputs.ci_run_id || github.event.workflow_run.id }}
   cancel-in-progress: false
 jobs:
   dispatch:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'workflow_dispatch' &&
-      github.event.workflow_run.head_branch == 'mirror_orch'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_dispatch' &&
+       github.event.workflow_run.head_branch == 'mirror_orch')
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -24,7 +33,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.ci_run_id || github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           repo="${GITHUB_REPOSITORY}"
