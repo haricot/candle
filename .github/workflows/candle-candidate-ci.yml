@@ -206,9 +206,7 @@ jobs:
     needs: cpu
     if: needs.cpu.result == 'success' && inputs.validation == 'cpu_cuda'
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
-    container:
-      image: nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04@sha256:5a480db8cbf90098ca816d7e77f07ce5cb4c43353530b6a84915c2dd99c4e0b6
+    timeout-minutes: 120
     permissions:
       contents: read
     env:
@@ -219,106 +217,58 @@ jobs:
       CHECK_CAMPAIGN: ${{ inputs.campaign }}
       LOCK_SHA256: ${{ needs.cpu.outputs.lock_sha256 }}
     steps:
-      - name: Install CUDA build dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update -qq
-          apt-get install -y --no-install-recommends \
-            ca-certificates curl git build-essential pkg-config libssl-dev \
-            protobuf-compiler clang libclang-dev jq
-          # Official NVIDIA CUDA 12.9.2 image pins cuDNN 9.10.2.21 and cuBLAS 12.9.2.10.
-          [[ "${CUDA_VERSION:-}" == '12.9.2' ]] || { echo "::error::Expected CUDA toolkit 12.9.2"; exit 3; }
-          [[ "${NV_CUDNN_VERSION:-}" == '9.10.2.21-1' ]] || { echo "::error::Expected cuDNN 9.10.2.21"; exit 3; }
-          [[ "${NV_LIBCUBLAS_DEV_VERSION:-}" == '12.9.2.10-1' ]] || { echo "::error::Expected cuBLAS 12.9.2.10"; exit 3; }
-          nvcc --version | grep -F 'release 12.9'
-
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
         with:
           ref: ${{ inputs.candidate_sha }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      # The candidate is the original immutable six-source SHA. Fetch only
+      # the container recipe and compile harness from this workflow's
+      # orchestration commit, so the source candidate does not move.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          toolchain: stable
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
 
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7 / Node 24
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # Node24
         with:
           name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
           path: ${{ runner.temp }}/candidate-cpu-proof
 
+      - name: Build Ubuntu 26.04 CUDA 12.9.2 compiler container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull \
+            --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
+            --tag candle-cuda1292-u2604:candidate \
+            .ci-tools
+          docker image inspect candle-cuda1292-u2604:candidate --format '{{.Id}}'
+
       - name: CUDA compilation without executing GPU kernels
         shell: bash
         run: |
-          set -uo pipefail
-          report="$RUNNER_TEMP/candle-candidate-cuda"
-          mkdir -p "$report"
-          # Hosted CUDA containers run as root over a runner-owned workspace.
-          # The checkout action's host safe.directory setting does not cross
-          # the container HOME boundary; configure it before reading HEAD.
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]] || exit 3
-          cp "$RUNNER_TEMP/candidate-cpu-proof/Cargo.lock" Cargo.lock
-          lock="$(sha256sum Cargo.lock | cut -d' ' -f1)"
-          [[ -n "$LOCK_SHA256" && "$lock" == "$LOCK_SHA256" ]] || {
-            echo "::error::CPU and CUDA lockfile differ"; exit 3;
-          }
-          case "$CHECK_BRANCH" in
-            bf16_candle) features="candle-core/cuda-legacy-bf16,candle-nn/cuda" ;;
-            fp8_candle) features="candle-core/cuda-legacy-fp8,candle-nn/cuda" ;;
-            fp4_candle|moe_simt_f16_candle) features="candle-core/cuda,candle-nn/cuda" ;;
-            cudnn_fallback_candle|asd_core)
-              features="candle-core/cudnn,candle-nn/cudnn" ;;
-            cuda_asd_runner_v2)
-              features="candle-core/cuda-legacy-bf16,candle-core/cuda-legacy-fp8,candle-nn/cudnn" ;;
-            *) echo "::error::Unknown branch"; exit 2 ;;
-          esac
-          {
-            nvcc --version
-            rustc --version
-            echo "target: sm_61"
-            echo "features: $features"
-          } > "$report/environment.txt"
-          build_rc=0
-          cargo check -p candle-core -p candle-nn --lib --tests \
-            --no-default-features --features "$features" --locked \
-            > "$report/cuda-check.log" 2>&1 || build_rc=$?
-
-          if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$build_rc" -eq 0 ]]; then
-            # cargo check cannot prove static-library linkability. For Pascal,
-            # the SIMT translation unit must define both the real SIMT entry
-            # and the WMMA compatibility ABI stub omitted with WMMA objects.
-            archive="$(find target/debug/build -path '*/out/libmoe.a' -type f | sort | head -n 1)"
-            if [[ -z "$archive" ]]; then
-              echo "ERROR: libmoe.a absent after CUDA compilation" > "$report/moe-symbols.log"
-              build_rc=1
-            elif ! nm -g --defined-only "$archive" > "$report/moe-symbols.log" 2>&1; then
-              build_rc=1
-            else
-              echo "archive=$archive" >> "$report/moe-symbols.log"
-              for symbol in moe_gemm_simt_f16 moe_gemm_wmma; do
-                if ! grep -Eq "[[:space:]](T|W)[[:space:]]${symbol}$" "$report/moe-symbols.log"; then
-                  echo "ERROR: missing SM61 MoE ABI symbol $symbol" >> "$report/moe-symbols.log"
-                  build_rc=1
-                fi
-              done
-            fi
-          fi
-          status=CUDA_COMPILE_PASSED
-          ((build_rc == 0)) || status=CUDA_COMPILE_FAILED
-          jq -n --arg branch "$CHECK_BRANCH" --arg campaign "$CHECK_CAMPAIGN" \
-            --arg sha "$CANDIDATE_SHA" --arg lock "$lock" --arg status "$status" \
-            --arg features "$features" --argjson rc "$build_rc" \
-            '{branch:$branch,campaign:$campaign,candidate_sha:$sha,lock_sha256:$lock,
-              status:$status,cuda_version:"12.9.2",target:"sm_61",
-              features:$features,exit_code:$rc,gpu_executed:false}' > "$report/report.json"
-          echo "CUDA: $status / $CHECK_BRANCH / $CANDIDATE_SHA (GPU not executed)" >> "$GITHUB_STEP_SUMMARY"
-          [[ "$status" == CUDA_COMPILE_PASSED ]]
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/cuda-cargo"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --security-opt=no-new-privileges \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:rw" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP:rw" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env "HOME=$RUNNER_TEMP/cuda-home" \
+            --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
+            --env "RUSTUP_HOME=/opt/rustup" \
+            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
+            --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
+            --env CANDIDATE_SHA --env CHECK_BRANCH --env CHECK_CAMPAIGN --env LOCK_SHA256 \
+            candle-cuda1292-u2604:candidate \
+            bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
 
       - name: Upload CUDA compilation proof
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 / Node 24
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # Node24
         with:
           name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cuda
           path: ${{ runner.temp }}/candle-candidate-cuda/

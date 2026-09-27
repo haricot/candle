@@ -1,0 +1,73 @@
+name: Candle CUDA 12.9.2 Candidate Request
+# One-shot reviewed request: cancel queued old GPU before launching the
+# new Candidate CI. GitHub Actions GITHUB_TOKEN has actions:write here only.
+on:
+  push:
+    branches: [mirror_orch]
+    paths: [.github/candidate-ci-request.json]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: candle-1292-single-candidate-request
+  cancel-in-progress: false
+jobs:
+  launch:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Attest PR 12; cancel stale run; dispatch exact new candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          req=.github/candidate-ci-request.json
+          test -s "$req"
+          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/12" --jq .merge_commit_sha)"
+          [[ "$approved" =~ ^[0-9a-f]{40}$ ]] || exit 3
+          jq -e --arg approved "$approved" '
+            .schema_version==1 and .approved_pr==12 and
+            .reviewed_gate_sha==$approved and .auto_promote==false and
+            .cuda_version=="12.9.2" and .ubuntu_version=="26.04" and
+            .candidate_ref=="integration/cuda_asd_runner_v2-candidate" and
+            .candidate_sha=="6df9930055364055a179e9d5b6f55e3381ab244a" and
+            .upstream_sha=="aebc405d2b4bf42808387e0ca597bf7dad9b565f" and
+            .validation=="cpu_cuda" and .cancel_previous_run==36269718063 and
+            (.campaign|test("^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$"))
+          ' "$req" >/dev/null || {
+            echo "::error::Request differs from the reviewed six-source migration"; exit 3;
+          }
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/branches/integration/cuda_asd_runner_v2-candidate" --jq .commit.sha)"
+          [[ "$actual" == '6df9930055364055a179e9d5b6f55e3381ab244a' ]] || exit 3
+          old="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/36269718063")"
+          status="$(jq -r .status <<<"$old")"
+          if [[ "$status" != completed ]]; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/36269718063/cancel"
+            for attempt in {1..30}; do
+              status="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/36269718063" --jq .status)"
+              [[ "$status" == completed ]] && break
+              sleep 5
+            done
+            [[ "$status" == completed ]] || {
+              echo "::error::Stale GPU job did not cancel; refusing next campaign"; exit 3;
+            }
+          fi
+          conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/36269718063" --jq .conclusion)"
+          [[ "$conclusion" == cancelled ]] || {
+            echo "::error::Old GPU run ended with $conclusion, not cancellation"; exit 3;
+          }
+          campaign="$(jq -r .campaign "$req")"
+          gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" --ref mirror_orch \
+            -f branch=cuda_asd_runner_v2 \
+            -f candidate_ref=integration/cuda_asd_runner_v2-candidate \
+            -f candidate_sha=6df9930055364055a179e9d5b6f55e3381ab244a \
+            -f "campaign=$campaign" \
+            -f upstream_sha=aebc405d2b4bf42808387e0ca597bf7dad9b565f \
+            -f validation=cpu_cuda
+          echo "Dispatched new CPU/CUDA 12.9.2 campaign '$campaign' after old GPU cancellation." >> "$GITHUB_STEP_SUMMARY"

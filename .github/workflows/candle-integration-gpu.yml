@@ -25,7 +25,7 @@ on:
         description: Dispatch guarded integration promotion after every GPU gate passes
         required: true
         type: boolean
-        default: true
+        default: false
 permissions:
   contents: read
   actions: read
@@ -135,6 +135,8 @@ jobs:
             .branch=="cuda_asd_runner_v2" and .candidate_sha==$sha
             and .campaign==$c and .lock_sha256==$lock and .target=="sm_61"
             and .status=="CUDA_COMPILE_PASSED" and .gpu_executed==false
+            and .cuda_version=="12.9.2" and .ubuntu_version=="26.04"
+            and (.cuda_containerfile_sha256|test("^[0-9a-f]{64}$"))
             and (.features|contains("cuda-legacy-bf16"))
             and (.features|contains("cuda-legacy-fp8"))
             and (.features|contains("cudnn"))
