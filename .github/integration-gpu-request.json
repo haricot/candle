@@ -5,5 +5,7 @@
   "candidate_sha": "ac983d16750a136a8563def01926ee83a7831d22",
   "campaign": "integrated-sm61-1292-u2604-moe-r1",
   "ci_run_id": "36332683085",
-  "auto_promote": false
+  "auto_promote": false,
+  "rerun_reason": "ct1d-historical-optin-and-backend-identity",
+  "reviewed_gpu_workflow_fix_sha": "0864814e7a74397bd83301797c7b2ce4b2ebcc32"
 }
