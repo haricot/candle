@@ -1,6 +1,11 @@
 # Branch hygiene after explicit, evidence-backed promotion. Always dry-run first.
 name: Candle Cleanup
 on:
+  # Audited one-shot cleanup request: preview before applying. The request is
+  # a Git-tracked manifest; all refs are rechecked against promotion tags.
+  push:
+    branches: [mirror_orch]
+    paths: [.github/cleanup-request.json]
   workflow_dispatch:
     inputs:
       scope:
@@ -68,6 +73,32 @@ jobs:
           CONFIRM: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == push ]]; then
+            request=.github/cleanup-request.json
+            test -s "${request}" || exit 3
+            [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]] || exit 3
+            jq -e '
+              .schema_version==1 and
+              .promoted_sha=="ac983d16750a136a8563def01926ee83a7831d22" and
+              .gpu_run_id==36338057224 and
+              .promotion_run_id==36341268024 and
+              .scope=="all" and .skip_unpromoted==true and
+              .archive_orphans==true and
+              ((.phase=="preview" and .dry_run==true and .confirmation=="PREVIEW_TEMP_REFS") or
+               (.phase=="apply" and .dry_run==false and .confirmation=="DELETE_TEMP_REFS"))
+            ' "${request}" >/dev/null || {
+              echo "::error::Cleanup request not bound to the reviewed GPU promotion"; exit 3
+            }
+            SCOPE=all
+            SKIP_UNPROMOTED=true
+            ARCHIVE_ORPHANS=true
+            DRY_RUN="$(jq -r .dry_run "${request}")"
+            CONFIRM="$(jq -r .confirmation "${request}")"
+            promoted="$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v2 | cut -f1)"
+            [[ "${promoted}" == ac983d16750a136a8563def01926ee83a7831d22 ]] || {
+              echo "::error::Validated permanent branch changed after promotion"; exit 3
+            }
+          fi
           report="${RUNNER_TEMP}/candle-cleanup"
           mkdir -p "${report}"
           : > "${report}/ref-results.ndjson"
@@ -211,7 +242,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7, Node 24
         with:
-          name: candle-cleanup-${{ inputs.scope }}-${{ github.run_id }}
+          name: candle-cleanup-${{ github.event_name == 'push' && 'all' || inputs.scope }}-${{ github.run_id }}
           path: ${{ runner.temp }}/candle-cleanup/
           if-no-files-found: warn
           retention-days: 90
