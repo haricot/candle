@@ -2,13 +2,15 @@
   "schema_version": 1,
   "approved_pr": 12,
   "reviewed_gate_sha": "fdfafe65e929dc75517b7ed58afabd108108f8e5",
+  "fix_pr": 13,
+  "fix_merge_sha": "ac983d16750a136a8563def01926ee83a7831d22",
   "candidate_ref": "integration/cuda_asd_runner_v2-candidate",
-  "candidate_sha": "6df9930055364055a179e9d5b6f55e3381ab244a",
-  "campaign": "integrated-sm61-1292-u2604-p0",
+  "candidate_sha": "ac983d16750a136a8563def01926ee83a7831d22",
+  "campaign": "integrated-sm61-1292-u2604-moe-r1",
   "upstream_sha": "aebc405d2b4bf42808387e0ca597bf7dad9b565f",
   "validation": "cpu_cuda",
   "cuda_version": "12.9.2",
   "ubuntu_version": "26.04",
   "auto_promote": false,
-  "cancel_previous_run": 36269718063
+  "previous_gpu_run_id": 36331103943
 }
