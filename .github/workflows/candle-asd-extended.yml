@@ -60,24 +60,149 @@ jobs:
           jq -e --arg base "$base" '.schema_version==1 and .base_sha==$base and (.source_imported|type)=="boolean"' EXTENDED_FEATURE.json >/dev/null
           imported="$(jq -r .source_imported EXTENDED_FEATURE.json)"
           package="$(jq -r '.package_path // empty' EXTENDED_FEATURE.json)"
-          if [[ "$FEATURE" == rtmpose_body26_standalone ]]; then
-            [[ "$imported" == true && "$package" == haricot-pose-rtmpose-m-body26-candle ]] || exit 3
-            test -s "$package/Cargo.toml"
-            test -s "$package/MODEL_CONTRACT.json"
-            test -s "$package/src/model.rs"
-            ! grep -Eq 'git[[:space:]]*=[[:space:]]*"https://github.com/haricot/candle' "$package/Cargo.toml" || exit 3
-            find "$package" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum               > "$RUNNER_TEMP/extended-source-inventory.sha256"
-            sha256sum "$RUNNER_TEMP/extended-source-inventory.sha256" >> "$GITHUB_STEP_SUMMARY"
-          else
-            [[ "$imported" == false ]] || {
-              echo "::error::Staging branch unexpectedly claims source-imported"; exit 3;
+          [[ "$imported" == true ]] || {
+            echo "::error::No executable sources imported for $FEATURE"; exit 3;
+          }
+          case "$FEATURE" in
+            rtmpose_body26_standalone)
+              [[ "$package" == haricot-pose-rtmpose-m-body26-candle ]] || exit 3
+              test -s "$package/MODEL_CONTRACT.json"
+              test -s "$package/src/model.rs"
+              ;;
+            wham_lite_candle)
+              [[ "$package" == haricot-wham-lite-candle ]] || exit 3
+              test -s "$package/src/model.rs"
+              test -s "$package/src/layers.rs"
+              test ! -e "$package/src/motionbricks_runtime.rs" || {
+                echo "::error::WHAM branch contains the MotionBricks runtime"; exit 3;
+              }
+              ;;
+            motionbricks_candle)
+              [[ "$package" == haricot-motionbricks-candle ]] || exit 3
+              test -s "$package/src/motionbricks_runtime.rs"
+              test -s "$package/src/motionbricks_pipeline.rs"
+              test ! -e "$package/src/model.rs" || {
+                echo "::error::MotionBricks branch contains WHAM stage1"; exit 3;
+              }
+              ! grep -q 'asd_conv1d::' "$package/src/bin/haricot-motionbricks-runtime.rs" || {
+                echo "::error::Removed Candle ASD v0.1 API still imported"; exit 3;
+              }
+              grep -q 'ASD_V2_CONV1D_DISPATCH=BASELINE_NO_PRODUCTION_RULE'                 "$package/src/bin/haricot-motionbricks-runtime.rs" || exit 3
+              ;;
+          esac
+          test -s "$package/Cargo.toml"
+          grep -Fq 'path = "../candle-core"' "$package/Cargo.toml" ||             grep -Fq 'path="../candle-core"' "$package/Cargo.toml" || exit 3
+          ! grep -Eq 'git[[:space:]]*=[[:space:]]*"https://github.com/haricot/candle'             "$package/Cargo.toml" || exit 3
+          # Audited file receipt makes accidental omission/alteration visible.
+          if [[ "$FEATURE" != rtmpose_body26_standalone ]]; then
+            test -s SOURCE_INVENTORY.json
+            jq -e --arg base "$base"               '.schema=="haricot.extended.v2.source-inventory.v1" and .base_sha==$base and (.files|length)>=10'               SOURCE_INVENTORY.json > /dev/null
+            while IFS=
+          echo "source_imported=$imported" >> "$GITHUB_OUTPUT"
+          echo "package_path=$package" >> "$GITHUB_OUTPUT"
+          echo "Audited $FEATURE @ $SHA; source_imported=$imported" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ inputs.feature }}-${{ inputs.candidate_sha }}-inventory
+          path: ${{ runner.temp }}/extended-source-inventory.sha256
+          if-no-files-found: ignore
+          retention-days: 30
+
+  cpu:
+    needs: audit
+    if: needs.audit.result == 'success' && needs.audit.outputs.source_imported == 'true' && inputs.validation != 'audit'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      PKG: ${{ needs.audit.outputs.package_path }}
+      SHA: ${{ inputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - name: CPU compile of isolated feature (not model parity)
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SHA" ]] || exit 3
+          case "$PKG" in
+            haricot-pose-rtmpose-m-body26-candle|haricot-wham-lite-candle|haricot-motionbricks-candle) ;;
+            *) exit 3 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/extended-cpu"
+          cargo generate-lockfile --manifest-path "$PKG/Cargo.toml" > "$RUNNER_TEMP/extended-cpu/lock.log" 2>&1
+          cp "$PKG/Cargo.lock" "$RUNNER_TEMP/extended-cpu/Cargo.lock"
+          sha256sum "$PKG/Cargo.lock" > "$RUNNER_TEMP/extended-cpu/Cargo.lock.sha256"
+          cargo check --manifest-path "$PKG/Cargo.toml" --no-default-features --locked             > "$RUNNER_TEMP/extended-cpu/check.log" 2>&1 || {
+              tail -n 120 "$RUNNER_TEMP/extended-cpu/check.log"; exit 1;
             }
-            echo "SOURCE_REQUIRED: $FEATURE awaits local historical source ZIP" >> "$GITHUB_STEP_SUMMARY"
-            if [[ "$VALIDATION" != audit ]]; then
-              echo "::error::Refusing compiler PASS without actual WHAM / MotionBricks sources"
-              exit 3
-            fi
+          echo 'ISOLATED_FEATURE_CPU_COMPILE=PASS; MODEL_PARITY=NOT_TESTED' >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ inputs.feature }}-${{ inputs.candidate_sha }}-cpu
+          path: ${{ runner.temp }}/extended-cpu/
+          if-no-files-found: warn
+          retention-days: 30
+
+  cuda_compile:
+    needs: [audit, cpu]
+    if: needs.cpu.result == 'success' && inputs.validation == 'cpu_cuda'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    env:
+      PKG: ${{ needs.audit.outputs.package_path }}
+      SHA: ${{ inputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - name: Build official-package CUDA 12.9.2 on Ubuntu 26.04 with glibc fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SHA" ]] || exit 3
+          mkdir -p "$RUNNER_TEMP/extended-cuda" "$RUNNER_TEMP/extended-cargo" "$RUNNER_TEMP/extended-home"
+          sha256sum .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604             > "$RUNNER_TEMP/extended-cuda/Containerfile.sha256"
+          docker build --pull             -f .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604             -t candle-extended-u2604-cuda1292:ci .ci-tools/.github/container             > "$RUNNER_TEMP/extended-cuda/docker-build.log" 2>&1 || {
+              tail -n 120 "$RUNNER_TEMP/extended-cuda/docker-build.log"; exit 1;
+            }
+          docker image inspect candle-extended-u2604-cuda1292:ci --format '{{.Id}}'             > "$RUNNER_TEMP/extended-cuda/image-id.txt"
+          docker run --rm --user "$(id -u):$(id -g)" --security-opt=no-new-privileges             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:rw"             -v "$RUNNER_TEMP:$RUNNER_TEMP:rw"             -w "$GITHUB_WORKSPACE"             -e "HOME=$RUNNER_TEMP/extended-home"             -e "CARGO_HOME=$RUNNER_TEMP/extended-cargo" -e RUSTUP_HOME=/opt/rustup             -e PKG -e RUNNER_TEMP -e CUDA_COMPUTE_CAP=61             candle-extended-u2604-cuda1292:ci             bash -c 'set -euo pipefail
+              dpkg -s cuda-toolkit-12-9 | grep -Fxq "Version: 12.9.2-1"
+              dpkg -s libcudnn9-cuda-12 | grep -Fxq "Version: 9.10.2.21-1"
+              cargo generate-lockfile --manifest-path "$PKG/Cargo.toml"
+              cargo check --manifest-path "$PKG/Cargo.toml"                 --no-default-features --features "cuda cudnn" --locked                 > "$RUNNER_TEMP/extended-cuda/check.log" 2>&1 || {
+                  tail -n 120 "$RUNNER_TEMP/extended-cuda/check.log"; exit 1;
+                }'
+          echo 'ISOLATED_FEATURE_SM61_CUDA_COMPILE=PASS; PHYSICAL_GPU_EXECUTION=NOT_TESTED' >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ inputs.feature }}-${{ inputs.candidate_sha }}-cuda
+          path: ${{ runner.temp }}/extended-cuda/
+          if-no-files-found: warn
+          retention-days: 30
+\t' read -r expected path; do
+              actual="$(sha256sum "$package/$path" | cut -d' ' -f1)"
+              [[ "$actual" == "$expected" ]] || {
+                echo "::error::Source inventory mismatch: $path"; exit 3;
+              }
+            done < <(jq -r '.files|to_entries[]|[.value,.key]|@tsv' SOURCE_INVENTORY.json)
           fi
+          find "$package" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum             > "$RUNNER_TEMP/extended-source-inventory.sha256"
+          sha256sum "$RUNNER_TEMP/extended-source-inventory.sha256" >> "$GITHUB_STEP_SUMMARY"
           echo "source_imported=$imported" >> "$GITHUB_OUTPUT"
           echo "package_path=$package" >> "$GITHUB_OUTPUT"
           echo "Audited $FEATURE @ $SHA; source_imported=$imported" >> "$GITHUB_STEP_SUMMARY"
