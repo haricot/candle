@@ -39,6 +39,24 @@ cargo check -p candle-core -p candle-nn --lib --tests \
   > "$report/cuda-check.log" 2>&1 || build_rc=$?
 
 
+# Isolated FP4 deliberately leaves the normal GGUF MXFP4 paths enabled.
+# Also compile the explicitly opted-in NVFP4 software kernels/tests under SM61
+# before any physical GPU testing; failing this extra gate fails Candidate CI.
+if [[ "${CANDIDATE_REF:-}" == fp4_candle_standalone && "$build_rc" -eq 0 ]]; then
+  fp4_rc=0
+  cargo check -p candle-core -p candle-nn --lib --tests --locked \
+    --no-default-features \
+    --features "candle-core/cuda-legacy-fp4,candle-nn/cuda" \
+    > "$report/fp4-legacy-optin-check.log" 2>&1 || fp4_rc=$?
+  if ((fp4_rc != 0)); then
+    echo "::error::Standalone FP4 software NVFP4 opt-in fails SM61 compilation"
+    tail -n 100 "$report/fp4-legacy-optin-check.log"
+    build_rc=$fp4_rc
+  else
+    echo "Standalone FP4 MXFP4 default + optional NVFP4 software compile PASS" >> "$report/environment.txt"
+  fi
+fi
+
 # The regular --tests check above uses the integrated feature selection.
 # It may compile candle-nn without its own cuda feature, which excludes
 # moe_simt_sm61.rs via #![cfg(feature = "cuda")]. Explicitly compile this

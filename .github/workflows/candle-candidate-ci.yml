@@ -75,9 +75,18 @@ jobs:
             bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|asd_core|cuda_asd_runner_v2) ;;
             *) echo "::error::Unsupported branch"; exit 2 ;;
           esac
-          [[ "$CANDIDATE_REF" =~ ^(sync|rebase|integration)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || {
-            echo "::error::Invalid candidate ref"; exit 2;
-          }
+          # Standalone FP8/FP4 feature refs are directly descended from main;
+          # accept ONLY these two named direct refs without opening generic
+          # permission to run arbitrary repository branches as candidates.
+          case "$CANDIDATE_REF" in
+            fp8_candle_standalone) [[ "$CHECK_BRANCH" == fp8_candle ]] || exit 2 ;;
+            fp4_candle_standalone) [[ "$CHECK_BRANCH" == fp4_candle ]] || exit 2 ;;
+            *)
+              [[ "$CANDIDATE_REF" =~ ^(sync|rebase|integration)/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$ ]] || {
+                echo "::error::Invalid candidate ref"; exit 2;
+              }
+              ;;
+          esac
           git init -q .
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags origin "+refs/heads/${CANDIDATE_REF}:refs/remotes/origin/candidate-ci"
@@ -213,6 +222,7 @@ jobs:
       CUDA_COMPUTE_CAP: "61"
       CARGO_INCREMENTAL: "0"
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CANDIDATE_REF: ${{ inputs.candidate_ref }}
       CHECK_BRANCH: ${{ inputs.branch }}
       CHECK_CAMPAIGN: ${{ inputs.campaign }}
       LOCK_SHA256: ${{ needs.cpu.outputs.lock_sha256 }}
@@ -262,7 +272,7 @@ jobs:
             --env "RUSTUP_HOME=/opt/rustup" \
             --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
-            --env CANDIDATE_SHA --env CHECK_BRANCH --env CHECK_CAMPAIGN --env LOCK_SHA256 \
+            --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH --env CHECK_CAMPAIGN --env LOCK_SHA256 \
             candle-cuda1292-u2604:candidate \
             bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
 
