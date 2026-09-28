@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "stage": "STAGING_ONLY",
+  "base_sha": "ac983d16750a136a8563def01926ee83a7831d22",
+  "ready_for_merge": false,
+  "ready_for_gpu": false,
+  "auto_promote": false,
+  "features": [
+    {
+      "feature": "rtmpose_body26",
+      "branch": "rtmpose_body26_standalone",
+      "sha": "6e729d2fc1a1558e322abf89295ab3d93915bcb4",
+      "source_imported": true,
+      "cpu_compiled": false,
+      "cuda_compiled": false,
+      "model_parity_validated": false
+    },
+    {
+      "feature": "wham_lite",
+      "branch": "wham_lite_candle",
+      "sha": "26f66481b0d82077092113866d70ffeb0214cfbb",
+      "source_imported": false,
+      "cpu_compiled": false,
+      "cuda_compiled": false,
+      "model_parity_validated": false
+    },
+    {
+      "feature": "motionbricks",
+      "branch": "motionbricks_candle",
+      "sha": "bd59f206698d3a8108570343a31d82edb6343fb5",
+      "source_imported": false,
+      "cpu_compiled": false,
+      "cuda_compiled": false,
+      "model_parity_validated": false
+    }
+  ]
+}
