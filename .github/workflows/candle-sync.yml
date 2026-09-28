@@ -25,6 +25,12 @@ on:
         description: Optional pinned upstream SHA (empty uses latest upstream main)
         required: false
         type: string
+      update_strategy:
+        description: How to update detached candidates; never rewrites standalone source refs
+        required: true
+        type: choice
+        default: merge
+        options: [merge, rebase]
       auto_fmt:
         description: Run rustfmt and commit formatting on temporary candidates before validation
         required: true
@@ -85,6 +91,7 @@ jobs:
           CAMPAIGN_INPUT: ${{ inputs.campaign }}
           AUTO_FMT: ${{ inputs.auto_fmt }}
           SOURCE_REF: ${{ inputs.source_ref }}
+          UPDATE_STRATEGY: ${{ inputs.update_strategy }}
           PINNED_UPSTREAM_INPUT: ${{ inputs.upstream_sha }}
         run: |
           set -euo pipefail
@@ -185,7 +192,13 @@ jobs:
             echo "::group::Prepare ${branch}"
             candidate="sync/${campaign}/${branch}"
             log="${report}/logs/${branch}.log"
-            source_ref="${SOURCE_REF:-$branch}"
+            # The legacy feature names identify CI suites, not the source
+            # branches. FP8 and FP4 have truly standalone main-descended refs.
+            case "$branch" in
+              fp8_candle) source_ref="${SOURCE_REF:-fp8_candle_standalone}" ;;
+              fp4_candle) source_ref="${SOURCE_REF:-fp4_candle_standalone}" ;;
+              *) source_ref="${SOURCE_REF:-$branch}" ;;
+            esac
 
             if ! git fetch --no-tags origin \
               "+refs/heads/${source_ref}:refs/remotes/origin/candle-selected-source" >"${log}" 2>&1; then
@@ -203,7 +216,15 @@ jobs:
             fi
 
             git switch --detach -f "${source_sha}" >>"${log}" 2>&1
-            if ! git merge --no-ff --no-edit "${upstream_sha}" >>"${log}" 2>&1; then
+            if [[ "$UPDATE_STRATEGY" == rebase ]]; then
+              # The rebase operates on detached HEAD. Even if commits are
+              # rewritten, none of the original feature refs are updated.
+              fork="$(git merge-base "$source_sha" "$upstream_sha")"
+              operation=(git rebase --rebase-merges --onto "$upstream_sha" "$fork")
+            else
+              operation=(git merge --no-ff --no-edit "$upstream_sha")
+            fi
+            if ! "${operation[@]}" >>"${log}" 2>&1; then
               mkdir -p "${report}/conflicts/${branch}"
               git ls-files -u > "${report}/conflicts/${branch}/index-stages.txt"
               git diff --name-only --diff-filter=U > "${report}/conflicts/${branch}/files.txt"
@@ -219,7 +240,12 @@ jobs:
               else
                 status="MERGE_FAILED"
               fi
-              git merge --abort >>"${log}" 2>&1 || git reset --hard "${source_sha}" >>"${log}" 2>&1
+              if [[ "$UPDATE_STRATEGY" == rebase ]]; then
+                git rebase --abort >>"${log}" 2>&1 || :
+              else
+                git merge --abort >>"${log}" 2>&1 || :
+              fi
+              git reset --hard "$source_sha" >>"${log}" 2>&1 || :
               record "${branch}" "${source_sha}" "${status}" "" "" "See logs and conflict artifacts"
               echo "::endgroup::"
               continue
@@ -288,7 +314,13 @@ jobs:
               continue
             fi
             if [[ "${candidate_sha}" == "${source_sha}" && -z "${SOURCE_REF}" ]]; then
-              record "${branch}" "${source_sha}" "UP_TO_DATE" "" "" "Source already contains the recorded upstream SHA" "${fmt_status}"
+              if [[ "$branch" == fp8_candle || "$branch" == fp4_candle ]]; then
+                # Exact standalone ref is supported by Candidate CI. No
+                # redundant temporary branch is needed if already current.
+                record "$branch" "$source_sha" "REUSED_SOURCE" "$source_ref" "$source_sha"                   "Standalone ref already contains the selected upstream SHA" "$fmt_status"
+              else
+                record "$branch" "$source_sha" "UP_TO_DATE" "" ""                   "Source already contains the selected upstream SHA" "$fmt_status"
+              fi
               echo "::endgroup::"
               continue
             fi
@@ -311,7 +343,8 @@ jobs:
           {
             cat "${report}/report.md"
             echo
-            echo "Candidates are verified by Candle Candidate CI on exact commit SHAs."
+            echo "Update strategy: ${UPDATE_STRATEGY}; FP8/FP4 source: *_standalone." 
+          echo "Candidates are verified by Candle Candidate CI on exact commit SHAs."
             echo "CUDA compilation is not GPU execution. No public feature branch was modified."
           } >> "${GITHUB_STEP_SUMMARY}"
 
