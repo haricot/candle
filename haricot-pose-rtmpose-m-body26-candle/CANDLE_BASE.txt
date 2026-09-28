@@ -1,0 +1,6 @@
+repository=https://github.com/haricot/candle
+branch=cuda_asd_runner_v2
+commit=ac983d16750a136a8563def01926ee83a7831d22
+source_branch=rtmpose_body26_candle
+source_commit=f6a3e36a219e38687f121c45d769a8fe28aeb64b
+source_tree=e9e7562327b8f089105d31a39ca93e29cc9fc797
