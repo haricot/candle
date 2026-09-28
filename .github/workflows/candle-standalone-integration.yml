@@ -1,97 +1,504 @@
-name: Candle Standalone Integration
-# This is independent of the frozen six-feature integration and promotion.
+name: Candle Standalone Six — Rebase, Test, Publish
 on:
+  pull_request:
+    branches: [mirror_orch]
+    paths:
+      - .github/workflows/candle-standalone-integration.yml
+      - .github/scripts/candle-standalone-assemble.sh
+      - .github/scripts/candle-six-cpu.sh
+      - .github/scripts/candle-six-atomic-promote.sh
+      - .github/standalone-six-sources.json
   workflow_dispatch:
     inputs:
       campaign:
-        description: Unique immutable campaign ID
+        description: Immutable campaign name
+        type: string
         required: true
-        type: string
-      base_sha:
-        description: Optional exact 40-character fork main SHA
-        required: false
-        type: string
       strategy:
-        description: Prepare each source on main, without rewriting standalone
-        required: true
+        description: Update detached standalone worktrees against pinned fork main
         type: choice
-        default: merge
-        options: [merge, rebase]
+        required: true
+        default: rebase
+        options: [rebase, merge]
+      base_sha:
+        description: Optional exact fork main SHA
+        type: string
+        required: false
       publish:
-        description: Publish one new integration candidate (never the source refs)
-        required: true
+        description: Publish seven temporary refs and start CPU/CUDA/GPU gates
         type: boolean
-        default: false
-      validation:
-        description: Prepare only, or also dispatch hosted CPU/CUDA compilation
         required: true
-        type: choice
-        default: prepare_only
-        options: [prepare_only, cpu_cuda]
+        default: false
+      auto_promote:
+        description: Atomically update six standalone and six aliases plus v3 after GPU PASS
+        type: boolean
+        required: true
+        default: true
 permissions:
   contents: read
 concurrency:
-  group: candle-standalone-integration
+  group: candle-six-standalone-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'production' }}
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/mirror_orch'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/mirror_orch'
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write
-      actions: write
     outputs:
-      candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
-      candidate_ref: ${{ steps.prepare.outputs.candidate_ref }}
-      campaign: ${{ steps.prepare.outputs.campaign }}
-      base_sha: ${{ steps.prepare.outputs.base_sha }}
-      published: ${{ steps.prepare.outputs.published }}
+      candidate_sha: ${{ steps.worktrees.outputs.candidate_sha }}
+      candidate_ref: ${{ steps.worktrees.outputs.candidate_ref }}
+      campaign: ${{ steps.worktrees.outputs.campaign }}
+      base_sha: ${{ steps.worktrees.outputs.base_sha }}
+      manifest_sha256: ${{ steps.worktrees.outputs.manifest_sha256 }}
+      matrix: ${{ steps.worktrees.outputs.matrix }}
+      published: ${{ steps.worktrees.outputs.published }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Build one integration from two detached standalone worktrees
-        id: prepare
-        shell: bash
+      - name: Freeze six source refs and prepare six worktrees plus one integration
+        id: worktrees
         env:
           GH_TOKEN: ${{ github.token }}
-          CAMPAIGN: ${{ inputs.campaign }}
-          STRATEGY: ${{ inputs.strategy }}
+          CAMPAIGN: ${{ inputs.campaign || format('pr-{0}-{1}', github.event.pull_request.number, github.run_id) }}
+          STRATEGY: ${{ inputs.strategy || 'rebase' }}
           BASE_SHA_INPUT: ${{ inputs.base_sha }}
-          PUBLISH: ${{ inputs.publish }}
+          PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || false }}
         run: bash .github/scripts/candle-standalone-assemble.sh
-      - name: Preserve exact SHA manifest, feature diffs and conflict diagnostics
-        if: always()
+      - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: candle-standalone-${{ inputs.campaign }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/candle-standalone-prepare/
+          name: six-preparation-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-standalone-six/
           if-no-files-found: warn
-          retention-days: 45
-  candidate_ci:
+          retention-days: 90
+
+  standalone_cpu:
     needs: prepare
-    if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true' && inputs.validation == 'cpu_cuda'
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    permissions:
-      actions: write
-      contents: read
+    timeout-minutes: 90
+    env:
+      MODE: standalone
+      FEATURE: ${{ matrix.feature }}
+      SOURCE: ${{ matrix.source_sha }}
+      SHA: ${{ matrix.prepared_sha }}
+      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
     steps:
-      - name: Dispatch independent CPU/CUDA validation of the final integrated SHA
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ needs.prepare.outputs.candidate_sha }}
-          REF: ${{ needs.prepare.outputs.candidate_ref }}
-          CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
-          BASE: ${{ needs.prepare.outputs.base_sha }}
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ matrix.prepared_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+      - run: bash .ci-tools/.github/scripts/candle-six-cpu.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: standalone-${{ needs.prepare.outputs.campaign }}-${{ matrix.feature }}-cpu
+          path: ${{ runner.temp }}/six-standalone-cpu/
+          if-no-files-found: warn
+          retention-days: 90
+
+  integrated_cpu:
+    needs: [prepare, standalone_cpu]
+    if: needs.standalone_cpu.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    outputs:
+      lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
+    env:
+      MODE: integrated
+      SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      MANIFEST_SHA: ${{ needs.prepare.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+      - id: check
+        run: bash .ci-tools/.github/scripts/candle-six-cpu.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-integrated-cpu
+          path: ${{ runner.temp }}/six-integrated-cpu/
+          if-no-files-found: warn
+          retention-days: 90
+
+  integrated_cuda:
+    needs: [prepare, integrated_cpu]
+    if: needs.integrated_cpu.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 150
+    env:
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
+      CHECK_BRANCH: standalone_six_integration
+      CHECK_CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      LOCK_SHA256: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
+      CUDA_COMPUTE_CAP: '61'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-integrated-cpu
+          path: ${{ runner.temp }}/candidate-cpu-proof
+      - run: |
+          docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
+            --tag candle-cuda1292-u2604:standalone-six .ci-tools/.github/container
+          docker image inspect candle-cuda1292-u2604:standalone-six --format '{{.Id}}'
+      - shell: bash
         run: |
           set -euo pipefail
-          gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" \
-            --ref mirror_orch -f branch=standalone_fp48_integration \
-            -f "candidate_ref=$REF" -f "candidate_sha=$SHA" \
-            -f "upstream_sha=$BASE" -f "campaign=$CAMPAIGN" \
-            -f validation=cpu_cuda
-          echo "Dispatched hosted Candidate CI for aggregate $SHA" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/cuda-cargo"
+          docker run --rm --user "$(id -u):$(id -g)" --security-opt=no-new-privileges \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:rw" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP:rw" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env "HOME=$RUNNER_TEMP/cuda-home" \
+            --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
+            --env RUSTUP_HOME=/opt/rustup \
+            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
+            --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
+            --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
+            --env CHECK_CAMPAIGN --env LOCK_SHA256 \
+            candle-cuda1292-u2604:standalone-six \
+            bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-cuda
+          path: ${{ runner.temp }}/candle-candidate-cuda/
+          if-no-files-found: warn
+          retention-days: 90
+
+  gpu:
+    needs: [prepare, standalone_cpu, integrated_cpu, integrated_cuda]
+    if: needs.integrated_cuda.result == 'success'
+    runs-on: [self-hosted, linux, x64, cuda, sm61]
+    timeout-minutes: 180
+    env:
+      CUDA_COMPUTE_CAP: '61'
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: never
+      SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      MAIN: ${{ needs.prepare.outputs.base_sha }}
+      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      CI: ${{ github.run_id }}
+      LOCK: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
+      MANIFEST: ${{ needs.prepare.outputs.manifest_sha256 }}
+      AUTO_PROMOTE: ${{ inputs.auto_promote }}
+      EXPECTED_ASD_POLICY_SHA256: 912c8b0c88fc8b3e07a25a79f5b9f0d10eef1b8193271ee8fafb4db1f9e9615f
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-integrated-cpu
+          path: ${{ runner.temp }}/integrated-cpu-lock
+      - name: Configure CUDA from runner-managed environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CUDA_HOME:-}" && -x "${CUDA_HOME}/bin/nvcc" ]]; then
+            root="${CUDA_HOME}"
+          elif command -v nvcc >/dev/null 2>&1; then
+            root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd -P)"
+          else
+            echo "::error::Runner must provide CUDA_HOME or put nvcc on PATH"; exit 3
+          fi
+          echo "CUDA_ROOT=${root}" >> "${GITHUB_ENV}"
+          echo "${root}/bin" >> "${GITHUB_PATH}"
+          cuda_lib="${root}/lib64"
+          [[ -d "${cuda_lib}" ]] || cuda_lib="${root}/lib"
+          libs="${cuda_lib}"
+          if [[ -n "${CUDNN_HOME:-}" ]]; then
+            cudnn_lib="${CUDNN_HOME}/lib64"
+            [[ -d "${cudnn_lib}" ]] || cudnn_lib="${CUDNN_HOME}/lib"
+            [[ -d "${cudnn_lib}" ]] || {
+              echo "::error::CUDNN_HOME lacks a lib/lib64 directory"; exit 3
+            }
+            libs="${cudnn_lib}:${libs}"
+          fi
+          echo "LD_LIBRARY_PATH=${libs}:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
+          "${root}/bin/nvcc" --version | grep -F 'release 12.9'
+          # nvcc's 12.9.x compiler version alone cannot identify the toolkit patch.
+          # NVIDIA containers expose CUDA_VERSION; native Arch exposes cuda-12.9's package revision.
+          if [[ -n "${CUDA_VERSION:-}" ]]; then
+            [[ "${CUDA_VERSION}" == '12.9.2' ]] || { echo "::error::Expected CUDA 12.9.2 container"; exit 3; }
+          elif command -v pacman >/dev/null 2>&1; then
+            [[ "$(pacman -Q cuda-12.9)" == 'cuda-12.9 12.9.2-1' ]] || {
+              echo "::error::Expected Arch cuda-12.9 12.9.2-1"; exit 3;
+            }
+          elif [[ "${CANDLE_CUDA_TOOLKIT_RELEASE:-}" != '12.9.2' ]]; then
+            echo "::error::Set CANDLE_CUDA_TOOLKIT_RELEASE=12.9.2 on non-Arch runners"; exit 3
+          fi
+      - name: Verify and provision machine-matched Stage2F promoted ASD policy
+        shell: bash
+        env:
+          POLICY_B64: ${{ secrets.CANDLE_ASD_STAGE2F_POLICY_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          policy="${RUNNER_TEMP}/stage2f-production.v2.asd"
+          if [[ -n "${POLICY_B64:-}" ]]; then
+            printf '%s' "${POLICY_B64}" | base64 --decode > "${policy}"
+          elif [[ -n "${CANDLE_ASD_EXACT_POLICY:-}" && -r "${CANDLE_ASD_EXACT_POLICY}" ]]; then
+            cp -- "${CANDLE_ASD_EXACT_POLICY}" "${policy}"
+          else
+            echo "::error::Supply the pinned Stage2F promoted .asd wire via repository secret CANDLE_ASD_STAGE2F_POLICY_B64, or provision CANDLE_ASD_EXACT_POLICY in the self-hosted runner environment. No machine-local path belongs in Git history."
+            exit 3
+          fi
+          test -s "${policy}"
+          actual_sha="$(sha256sum "${policy}" | cut -d' ' -f1)"
+          [[ "${actual_sha}" == "${EXPECTED_ASD_POLICY_SHA256}" ]] || {
+            echo "::error::Stage2F wire SHA-256 does not match the pinned production release"
+            exit 3
+          }
+          [[ "$(head -n1 "${policy}")" == 'ASD-EXACT-POLICY-V2' ]] || {
+            echo "::error::ASD wire must be Stage2F ASD-EXACT-POLICY-V2"; exit 3
+          }
+          promoted="$(awk -F'|' '$1=="decision" && $3=="promoted"{n++} END{print n+0}' "${policy}")"
+          total="$(awk -F'|' '$1=="decision"{n++} END{print n+0}' "${policy}")"
+          [[ "${promoted}" == 12 && "${total}" == 12 ]] || {
+            echo "::error::Stage2F production requires exactly 12 promoted decisions"; exit 3
+          }
+          actual_uuid="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n1 | tr -d '[:space:]\r')"
+          policy_uuid="$(sed -n 's/^target.gpu_uuid=//p' "${policy}")"
+          [[ "${actual_uuid}" == GPU-* && "${policy_uuid}" == "${actual_uuid}" ]] || {
+            echo "::error::Stage2F policy is not bound to this exact physical GPU"; exit 3
+          }
+          {
+            echo "CANDLE_ASD_EXACT_POLICY=${policy}"
+            echo 'CANDLE_ASD_VALIDATION=1'
+            echo "CANDLE_ASD_TARGET_GPU_UUID=${actual_uuid}"
+            echo "CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID=${actual_uuid}"
+            echo "ASD_POLICY_SHA256_VALIDATED=${actual_sha}"
+          } >> "${GITHUB_ENV}"
+          echo "Verified all 12 promoted Stage2F decisions, exact policy checksum and local GPU UUID" \
+            >> "${GITHUB_STEP_SUMMARY}"
+      - name: Execute all six feature suites on one physical Pascal GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/candle-six-gpu"
+          mkdir -p "${report}/logs"
+          [[ "$(git rev-parse HEAD)" == "${SHA}" ]] || exit 3
+          test -s candle-integration/standalone-six.json
+          [[ "$(sha256sum candle-integration/standalone-six.json | cut -d' ' -f1)" == "${MANIFEST}" ]] || exit 3
+          nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv,noheader > "${report}/device.txt"
+          capability="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d '[:space:]')"
+          [[ "${capability}" == '6.1' ]] || { echo "::error::GPU is not SM61"; exit 3; }
+          nvcc --version > "${report}/nvcc.txt"
+          cp "${RUNNER_TEMP}/integrated-cpu-lock/Cargo.lock" Cargo.lock
+          lock="$(sha256sum Cargo.lock | cut -d' ' -f1)"
+          [[ "${lock}" == "${LOCK}" ]] || exit 3
+
+          features="cuda cuda-legacy-bf16 cuda-legacy-fp8 cuda-legacy-fp4 cudnn"
+          # BF16: seven real CUDA tests.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test cuda_legacy_bf16_tests -- --nocapture > "${report}/logs/bf16.log" 2>&1
+          for t in elementwise reduction transformer_ops memory_ops indexing matmul conv; do
+            grep -Fq "test cuda_legacy_bf16_${t}_runtime ... ok" "${report}/logs/bf16.log"
+          done
+          # FP8: all four CUDA-specific regression tests.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test fp8_legacy_tests -- --nocapture > "${report}/logs/fp8.log" 2>&1
+          for t in legacy_fp8_cast_roundtrip_cuda legacy_fp8_unary_ops_cuda \
+                   legacy_fp8_binary_ops_cuda legacy_fp8_reduces_after_widening_cuda; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/fp8.log"
+          done
+          # FP4: decode, DP4A and both MoE/prefill parity paths.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test mxfp4_tests -- --nocapture > "${report}/logs/fp4.log" 2>&1
+          for t in cuda_dequantize_matches_cpu cuda_mxfp4_dp4a_batch_1_to_8 \
+                   cuda_mxfp4_prefill_parity cuda_mxfp4_indexed_moe_parity; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/fp4.log"
+          done
+          # The software NVFP4 opt-in must also execute and match its GPU oracle.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --lib cuda_nvfp4_legacy_lut_probe -- --nocapture > "${report}/logs/nvfp4-lut.log" 2>&1
+          grep -Eq 'test .*cuda_nvfp4_legacy_lut_probe \.\.\. ok' "${report}/logs/nvfp4-lut.log"
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --lib cuda_nvfp4_sm61_compute_parity -- --nocapture \
+            > "${report}/logs/nvfp4-parity.log" 2>&1
+          grep -Eq 'test .*cuda_nvfp4_sm61_compute_parity \.\.\. ok' "${report}/logs/nvfp4-parity.log"
+          # cuDNN and native CUDA on the exact same integrated code.
+          cargo test -p candle-core --locked --no-default-features --features cuda \
+            --test conv_tests -- --nocapture > "${report}/logs/conv-native.log" 2>&1
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test conv_tests -- --nocapture > "${report}/logs/conv-cudnn.log" 2>&1
+          for t in conv1d_gpu conv2d_gpu; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/conv-native.log"
+            grep -Fq "test ${t} ... ok" "${report}/logs/conv-cudnn.log"
+          done
+          cargo test -p candle-core --locked --no-default-features --features "${features}" --lib \
+            synthetic_quarantine_routes_generic_conv1d_conv2d -- --nocapture \
+            > "${report}/logs/cudnn-quarantine.log" 2>&1
+          grep -Eq 'test .*synthetic_quarantine_routes_generic_conv1d_conv2d ... ok' \
+            "${report}/logs/cudnn-quarantine.log"
+          # MoE: independent FP32 reference, top-k2 prefill and weighted decode.
+          test -s candle-nn/tests/moe_simt_sm61.rs
+          cargo test -p candle-nn --locked --no-default-features --features "cuda cudnn" \
+            --test moe_simt_sm61 -- --nocapture > "${report}/logs/moe.log" 2>&1
+          for t in sm61_simt_prefill_topk2_fp16 sm61_simt_decode_weighted_fp16; do
+            grep -Fq "test ${t} ... ok" "${report}/logs/moe.log"
+          done
+          # ASD: run core grouped reference suites + explicit GPU dispatch
+          # parity, negative-domain probes and integration performance gates.
+          cargo test -p candle-core --locked --no-default-features --features "${features}" \
+            --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
+            -- --nocapture --test-threads=1 > "${report}/logs/asd-core.log" 2>&1 || {
+              echo "::error::Grouped ASD core tests failed; last 100 log lines:"
+              tail -n 100 "${report}/logs/asd-core.log"
+              exit 1
+            }
+          # Historical CT1D raw dispatch requires an explicit runtime opt-in.
+          # Set it only for this A/B benchmark: the current/reference phase
+          # disables ASD itself and must remain the cuDNN baseline.
+          CANDLE_ASD_V2_CT1D_ENABLE=1 \
+            cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
+            --example grouped_conv_transpose_asd_validate -- --warmup 4 --iters 12 \
+            --inner 8 --max-drift-pct 20 --min-integrated-speedup-x 1.01 \
+            > "${report}/logs/asd-transpose.log" 2>&1 || {
+              echo "::error::ASD ConvTranspose benchmark failed; actual runtime trace:"
+              tail -n 110 "${report}/logs/asd-transpose.log"
+              exit 1
+            }
+          # The A/B timing is not valid unless the candidate actually launched
+          # raw CUDA, rather than measuring two cuDNN paths.
+          awk '
+            /^PROBE mode=asd_candidate / { candidate=1; next }
+            /^COMPLETION mode=asd_candidate / { candidate=0 }
+            candidate && /requested=auto sm=61 dim=1d groups=2 selected=raw reason=exact_asd/ { selected=1 }
+            candidate && /submitted_backend=raw launch_submission=success/ { submitted=1 }
+            END { exit !(selected && submitted) }
+          ' "${report}/logs/asd-transpose.log" || {
+            echo "::error::The candidate did not select and submit its exact raw CUDA backend"
+            tail -n 110 "${report}/logs/asd-transpose.log"
+            exit 1
+          }
+          grep -Fxq 'STATUS=PASS' "${report}/logs/asd-transpose.log"
+          cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
+            --example grouped_conv2d_asd_real_dispatch_validate -- \
+            --warmup-ms 250 --iters 8 --inner 8 --max-drift-pct 20 \
+            --min-integrated-speedup-x 1.01 > "${report}/logs/asd-conv2d.log" 2>&1
+          grep -Fxq 'STATUS=PASS' "${report}/logs/asd-conv2d.log"
+
+          cp candle-integration/standalone-six.json "${report}/sources.json"
+          jq -n --arg sha "${SHA}" --arg c "${CAMPAIGN}" --argjson ci "${CI}" \
+            --arg lock "${lock}" --arg manifest "${MANIFEST}" --arg cc "${capability}" \
+            --arg asd_policy "${ASD_POLICY_SHA256_VALIDATED}" --arg main "${MAIN}" \
+            --argjson auto_promote "${AUTO_PROMOTE}" \
+            --slurpfile sources "${report}/sources.json" '
+            {schema_version:2,branch:"standalone_six_integration",
+             candidate_sha:$sha,campaign:$c,ci_run_id:$ci,
+             upstream_sha:$main,
+             lock_sha256:$lock,manifest_sha256:$manifest,
+             gpu_compute_cap:$cc,gpu_executed:true,status:"GPU_PASSED",auto_promote:$auto_promote,
+             suite_coverage:"all_six",asd_policy_sha256:$asd_policy,
+             asd_policy_promoted_decisions:12,asd_policy_gpu_uuid_matches:true,
+             sources:$sources[0].features}
+          ' > "${report}/report.json"
+          echo "All six feature suites PASSED on physical SM61, exact SHA ${SHA}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-gpu
+          path: ${{ runner.temp }}/candle-six-gpu/
+          if-no-files-found: warn
+          retention-days: 90
+
+  promote:
+    needs: [prepare, standalone_cpu, integrated_cpu, integrated_cuda, gpu]
+    if: needs.gpu.result == 'success' && inputs.auto_promote == true
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      LOCK: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
+      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      MANIFEST_SHA: ${{ needs.prepare.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          pattern: standalone-${{ needs.prepare.outputs.campaign }}-*-cpu
+          path: ${{ runner.temp }}/six-cpu
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-integrated-cpu
+          path: ${{ runner.temp }}/six-integrated-cpu
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-cuda
+          path: ${{ runner.temp }}/six-cuda
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-gpu
+          path: ${{ runner.temp }}/six-gpu
+      - shell: bash
+        run: bash .ci-tools/.github/scripts/candle-six-atomic-promote.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-${{ needs.prepare.outputs.campaign }}-promotion
+          path: ${{ runner.temp }}/candle-six-promotion/
+          if-no-files-found: warn
+          retention-days: 90
