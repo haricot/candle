@@ -1,0 +1,22 @@
+{
+  "schema": "haricot.extended.v2.source-inventory.v1",
+  "base_sha": "ac983d16750a136a8563def01926ee83a7831d22",
+  "files": {
+    "ASD_V2_MIGRATION.md": "c31159bbd8acf79d7b6f911bc8a6d098f80fe19d1ceac74223b7026dc5819dd8",
+    "Cargo.toml": "b64ab6d1791c9d3287967ce9021ba0ca5df84bfd515aff0c4b28b72e6a5f6c65",
+    "src/adapters/body26.rs": "bc0402f7006f4ea553e07902d9fdd03218d6d75c7043e7132e9c62e5f6507713",
+    "src/adapters/coco17.rs": "7dfa16a58e07d217248438e5bebf62b2b40c26134756efba82ad366f04a2b22b",
+    "src/adapters/mod.rs": "97927e8c9207073997a662f9c15be2e289990bba6b27846cc14c300a4af44666",
+    "src/config.rs": "ac4aaab2de96594adb301647d50cdea7340e289e11c8341bb6300b211b886843",
+    "src/layers.rs": "19cca114c110199b35c4b9702b15025f7f136c49d6c680b4c83a5ecc29f8d19b",
+    "src/lib.rs": "250b4952e60ec200cf93688725445b52382ada6ab90ecc6bbf55a85e83f59a3f",
+    "src/main.rs": "741d1b2379848eb623d7db9a8ca340e261b93f1f820a23bad110456af5679ed7",
+    "src/math3d.rs": "7dc57a98216ae70a180e8d3bac5461d3fcd0d4d88bd6aa9e99b208d62af92323",
+    "src/model.rs": "4a286e306af4fe95ae6c4dcec3a77b4e55cae42c27a933ec8816181dafbfc415",
+    "src/motion_frame.rs": "c4d3a80eb072c9ff5580c647d68aa5943ae7293a09e627ca4c05b6139d16a45f",
+    "src/normalize.rs": "934fad1414fe84137d7532f3fe93e98fe846516782a58bc219ec0fccf0dbd90b",
+    "src/types.rs": "bd6b6f6952b5e0d3a6cf5279066d384344bd4184a7ab0f60431526680e1c73ac",
+    "tools/export_wham_stage1.py": "576ce91e32386ababf754973ff32c854f293fc141102a559ce02bd498b2a0b1b",
+    "tools/make_pytorch_reference.py": "c6212d85825271b80fe4ad637c1404c7f7f812ec70e476275ee60c0f7e9b2d6c"
+  }
+}
