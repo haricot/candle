@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "feature": "motionbricks",
+  "base_sha": "ac983d16750a136a8563def01926ee83a7831d22",
+  "source_imported": false,
+  "validation_state": "SOURCE_REQUIRED",
+  "no_model_assets_in_repo": true,
+  "requires_local_source_archive": "haricot-wham-lite-candle-v0.3.4-intermediate-parity-r1.zip",
+  "validation_profile": "fixed16-no-text-all-root-constraints"
+}
