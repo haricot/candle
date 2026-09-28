@@ -1129,6 +1129,7 @@ mod test {
         Ok(())
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     #[test]
     fn cuda_nvfp4_legacy_lut_probe() -> Result<()> {
         let dev = CudaDevice::new(0)?;
@@ -1179,6 +1180,7 @@ mod test {
         Ok(())
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn nvfp4_test_reference(
         packed: &[u8],
         scales: &[u8],
@@ -1218,6 +1220,7 @@ mod test {
         out
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn e4m3fn_to_f32_test(x: u8) -> f32 {
         let sign = (x >> 7) & 1;
         let exp = (x >> 3) & 0x0f;
@@ -1240,6 +1243,7 @@ mod test {
         }
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn f32_to_e4m3fn_nearest_test(x: f32) -> u8 {
         if x.is_nan() {
             return 0x7f;
@@ -1268,6 +1272,7 @@ mod test {
         best
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn nearest_e2m1_test(x: f32) -> u8 {
         const E2M1: [f32; 16] = [
             0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
@@ -1284,6 +1289,7 @@ mod test {
         best as u8
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn nvfp4_quantize_experimental_test(xs: &[f32]) -> (Vec<u8>, Vec<u8>, f32) {
         assert!(xs.len().is_multiple_of(16));
 
@@ -1326,6 +1332,7 @@ mod test {
         (packed, scales, global_scale)
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn assert_nvfp4_close(expected: &[f32], got: &[f32], label: &str) {
         assert_eq!(expected.len(), got.len(), "{label}: length mismatch");
         let mut max_abs = 0f32;
@@ -1351,6 +1358,7 @@ mod test {
         assert!(cosine >= 0.99999, "{label}: cosine={cosine}");
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn nvfp4_metrics(reference: &[f32], got: &[f32]) -> (f32, f32, f64) {
         assert_eq!(reference.len(), got.len());
         let mut max_abs = 0f32;
@@ -1371,6 +1379,7 @@ mod test {
         (max_abs, mean_abs, cosine)
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     fn dequantize_cuda_q8_1_reference(
         bytes: &[u8],
         rows: usize,
@@ -1397,6 +1406,7 @@ mod test {
         out
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     #[test]
     fn cuda_nvfp4_sm61_compute_parity() -> Result<()> {
         let dev = CudaDevice::new(0)?;
@@ -1631,6 +1641,7 @@ mod test {
         Ok(())
     }
 
+    #[cfg(feature = "cuda-legacy-fp4")]
     #[test]
     #[ignore = "release benchmark: NVFP4 4096x4096 on the same workload as mxfp4_sm61_benchmark_gate"]
     fn cuda_nvfp4_sm61_benchmark_4096() -> Result<()> {

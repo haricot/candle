@@ -10,17 +10,23 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
+    println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP4");
 
     // Build for PTX
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ptx_path = out_dir.join("ptx.rs");
-    let bindings = KernelBuilder::new()
+    let mut builder = KernelBuilder::new()
         .source_dir("src") // Scan src/ for .cu files
         .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"]) // Exclude statically compiled kernels from ptx build
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
-        .arg("-O3")
-        .build_ptx()?;
+        .arg("-O3");
+    // Only compile the experimental software NVFP4 kernels when opted in.
+    // Always compile the normal GGUF MXFP4 path (including SM61 DP4A).
+    if env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP4").is_some() {
+        builder = builder.arg("-DCANDLE_CUDA_LEGACY_FP4=1");
+    }
+    let bindings = builder.build_ptx()?;
 
     bindings.write(&ptx_path)?;
 

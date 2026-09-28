@@ -1230,6 +1230,7 @@ DEQUANTIZE(q5_1)
 DEQUANTIZE(q8_0)
 
 // ---------------------------------------------------------------------------
+#if defined(CANDLE_CUDA_LEGACY_FP4)
 // Experimental NVFP4 legacy-CUDA decoder.
 //
 // Kept separate from GgmlDType on purpose: NVFP4 has a two-tensor layout
@@ -1966,6 +1967,8 @@ extern "C" __global__ void nvfp4_indexed_moe_q8_1(
         dst[((size_t) batch_idx * topk + topk_idx) * n + row] = tmp;
     }
 }
+
+#endif // CANDLE_CUDA_LEGACY_FP4 (experimental software NVFP4 only)
 
 template<int qk, int qr, dequantize_kernel_t dequantize_kernel>
 static __device__ void get_rows_q(
