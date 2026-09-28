@@ -1,0 +1,97 @@
+name: Candle Standalone Integration
+# This is independent of the frozen six-feature integration and promotion.
+on:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: Unique immutable campaign ID
+        required: true
+        type: string
+      base_sha:
+        description: Optional exact 40-character fork main SHA
+        required: false
+        type: string
+      strategy:
+        description: Prepare each source on main, without rewriting standalone
+        required: true
+        type: choice
+        default: merge
+        options: [merge, rebase]
+      publish:
+        description: Publish one new integration candidate (never the source refs)
+        required: true
+        type: boolean
+        default: false
+      validation:
+        description: Prepare only, or also dispatch hosted CPU/CUDA compilation
+        required: true
+        type: choice
+        default: prepare_only
+        options: [prepare_only, cpu_cuda]
+permissions:
+  contents: read
+concurrency:
+  group: candle-standalone-integration
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
+      candidate_ref: ${{ steps.prepare.outputs.candidate_ref }}
+      campaign: ${{ steps.prepare.outputs.campaign }}
+      base_sha: ${{ steps.prepare.outputs.base_sha }}
+      published: ${{ steps.prepare.outputs.published }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build one integration from two detached standalone worktrees
+        id: prepare
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          STRATEGY: ${{ inputs.strategy }}
+          BASE_SHA_INPUT: ${{ inputs.base_sha }}
+          PUBLISH: ${{ inputs.publish }}
+        run: bash .github/scripts/candle-standalone-assemble.sh
+      - name: Preserve exact SHA manifest, feature diffs and conflict diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-standalone-${{ inputs.campaign }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-standalone-prepare/
+          if-no-files-found: warn
+          retention-days: 45
+  candidate_ci:
+    needs: prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true' && inputs.validation == 'cpu_cuda'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch independent CPU/CUDA validation of the final integrated SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.prepare.outputs.candidate_sha }}
+          REF: ${{ needs.prepare.outputs.candidate_ref }}
+          CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+          BASE: ${{ needs.prepare.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" \
+            --ref mirror_orch -f branch=standalone_fp48_integration \
+            -f "candidate_ref=$REF" -f "candidate_sha=$SHA" \
+            -f "upstream_sha=$BASE" -f "campaign=$CAMPAIGN" \
+            -f validation=cpu_cuda
+          echo "Dispatched hosted Candidate CI for aggregate $SHA" >> "$GITHUB_STEP_SUMMARY"
