@@ -21,6 +21,8 @@ case "$CHECK_BRANCH" in
   bf16_candle) features="candle-core/cuda-legacy-bf16,candle-nn/cuda" ;;
   fp8_candle) features="candle-core/cuda-legacy-fp8,candle-nn/cuda" ;;
   fp4_candle|moe_simt_f16_candle) features="candle-core/cuda,candle-nn/cuda" ;;
+  standalone_fp48_integration)
+    features="candle-core/cuda-legacy-fp8,candle-core/cuda-legacy-fp4,candle-nn/cuda" ;;
   cudnn_fallback_candle|asd_core)
     features="candle-core/cudnn,candle-nn/cudnn" ;;
   cuda_asd_runner_v2)
