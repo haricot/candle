@@ -2,9 +2,11 @@
   "schema_version": 1,
   "feature": "motionbricks",
   "base_sha": "ac983d16750a136a8563def01926ee83a7831d22",
-  "source_imported": false,
-  "validation_state": "SOURCE_REQUIRED",
-  "no_model_assets_in_repo": true,
-  "requires_local_source_archive": "haricot-wham-lite-candle-v0.3.4-intermediate-parity-r1.zip",
-  "validation_profile": "fixed16-no-text-all-root-constraints"
+  "source_imported": true,
+  "validation_state": "IMPORTED_NOT_COMPILED",
+  "package_path": "haricot-motionbricks-candle",
+  "weights_external": true,
+  "asd_v2_conv1d_promoted": false,
+  "model_parity_validated": false,
+  "source_archive_sha256": "a71a5661751c6cfc3be04bf8017e949455e5fa00b7e5ab6c6bd20c54cd84876e"
 }

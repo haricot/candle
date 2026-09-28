@@ -1,0 +1,25 @@
+{
+  "schema": "haricot.extended.v2.source-inventory.v1",
+  "base_sha": "ac983d16750a136a8563def01926ee83a7831d22",
+  "files": {
+    "ASD_V2_MIGRATION.md": "ea3660273c1f432370a0002583bc80a44e9869afbd8e3dc207f3e5e452f18551",
+    "Cargo.toml": "bc664c9f3425e3d3081a51737ab218056a4feff0f4372fb9cefee08eafed76b5",
+    "assets/motionbricks-runtime-v0.3.json": "dfbdf5e7ca30d9e0f1e72efe2e8ecb1660829bbef74bf7bc3bd27d25e9cd5e11",
+    "motionbricks_asd_r1_read_only.rs": "7e62a52f96ff5362d59311f57729fc4f05020b61f2285b4b2108a69640be1db6",
+    "src/bin/export-motionbricks-runtime.rs": "5be66906d517278a2f78a57d82a80c74470dc9d229ef94afccca929415634cbb",
+    "src/bin/haricot-motion-parity.rs": "741725750ca3ab5f5dc97b893161567d20583408eab24680c8942fa1b28d83e5",
+    "src/bin/haricot-motionbricks-runtime.rs": "914eabfbd4a6e8c6124913efd723d69a96450ba0654a679a5830124014fc2a60",
+    "src/g1.rs": "1e67b52cae24bf2c3af3edec5047e0837ab55b851ee2f3d27ed4dc49329a8273",
+    "src/lib.rs": "1d34c1ecc78c6be76db57df662be6632d0c5a4ef6d07314a29a5e311d51e4e27",
+    "src/math3d.rs": "7dc57a98216ae70a180e8d3bac5461d3fcd0d4d88bd6aa9e99b208d62af92323",
+    "src/motion_frame.rs": "33cf578eb089a70e98f29ce0f6650d87dcb2b7c04a98db611394e22697b4afcc",
+    "src/motionbricks.rs": "6c63bf257c25ee81915b3a5ba50246e58bf3826a0dcb648536d03aaba5329877",
+    "src/motionbricks_conv_parity.rs": "397438e8ea66606e3fc896ac965aa54ac82d854439c554221955b60b579cc919",
+    "src/motionbricks_pipeline.rs": "e70a7dc0f0bb2082a136932996fa84d8cd2615d131cff9061549f23c735347f4",
+    "src/motionbricks_runtime.rs": "678fd4d741e16a3cf214f4ebbddd03892f472d039f7e9e001b32cda7ba649a18",
+    "src/parity.rs": "4b4724915c6fd62434f59329a6b33d54a09fa135a45f28b161f5f1da99723b0b",
+    "tools/export_motionbricks_g1_assets.py": "0bb122a70f2574dcadf2b16da3ea7c5fc59f6279267ed4b178a81609ec9eee91",
+    "tools/make_motionbricks_official_reference.py": "19b5a26e9709461715fb38fa87e8aeff75aed39bbd82294080ca19f8e0d7ea0e",
+    "tools/make_motionbricks_runtime_reference.py": "b30314a426a06279ac772ece79cb9588a6d67d73c0e7641df663a94965085c13"
+  }
+}

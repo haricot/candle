@@ -1,0 +1,40 @@
+{
+  "schema": "haricot-motionbricks-runtime.v0.3",
+  "source": {
+    "repository": "NVlabs/GR00T-WholeBodyControl",
+    "revision": "087f9ac01d46f6d8e4d0b73c01ae64799f292a38"
+  },
+  "profile": {
+    "batch": 1,
+    "tokens": 16,
+    "frames_per_token": 4,
+    "frames": 64,
+    "text_embeddings": false
+  },
+  "pose": {
+    "n_embd": 1024,
+    "n_head": 16,
+    "n_layers": 16,
+    "dim_feedforward": 2048,
+    "pose_heads": 8,
+    "codes_per_head": 10,
+    "code_dim": 256
+  },
+  "root": {
+    "n_embd": 512,
+    "n_head": 16,
+    "shared_layers": 3,
+    "root_token_layers": 3,
+    "dim_feedforward": 2048
+  },
+  "decoder": {
+    "width": 512,
+    "depth": 4,
+    "down_t": 2,
+    "dilation_growth_rate": 3,
+    "activation": "relu",
+    "norm": null,
+    "conv1d_groups": 1,
+    "upsample": "nearest"
+  }
+}
