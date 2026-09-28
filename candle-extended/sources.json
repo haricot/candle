@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "stage": "STAGING_ONLY",
+  "stage": "IMPORTED_AWAITING_HOSTED_COMPILATION",
   "base_sha": "ac983d16750a136a8563def01926ee83a7831d22",
   "ready_for_merge": false,
   "ready_for_gpu": false,
@@ -18,20 +18,22 @@
     {
       "feature": "wham_lite",
       "branch": "wham_lite_candle",
-      "sha": "26f66481b0d82077092113866d70ffeb0214cfbb",
-      "source_imported": false,
+      "sha": "261eaf084d2e3fab140933ada5f88fe3b10efdde",
+      "source_imported": true,
       "cpu_compiled": false,
       "cuda_compiled": false,
-      "model_parity_validated": false
+      "model_parity_validated": false,
+      "asd_v2_optimizations_promoted": false
     },
     {
       "feature": "motionbricks",
       "branch": "motionbricks_candle",
-      "sha": "bd59f206698d3a8108570343a31d82edb6343fb5",
-      "source_imported": false,
+      "sha": "a5d60c5aea6167d5c86130ee2153aaf0ffafd326",
+      "source_imported": true,
       "cpu_compiled": false,
       "cuda_compiled": false,
-      "model_parity_validated": false
+      "model_parity_validated": false,
+      "asd_v2_optimizations_promoted": false
     }
   ]
 }
