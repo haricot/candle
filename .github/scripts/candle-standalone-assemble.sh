@@ -172,8 +172,21 @@ sha="$(git -C "$aggregate" rev-parse HEAD)"
 echo "candidate_sha=$sha" >> "$GITHUB_OUTPUT"
 echo "candidate_ref=$target" >> "$GITHUB_OUTPUT"
 echo "manifest_sha256=$(sha256sum "$report/standalone-six.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-jq -cns '[inputs | {feature,source_sha,prepared_sha,preparation_ref}] | {include:.}' \
+# -s with -n feeds inputs as a slurped array; stream individual NDJSON
+# records instead so each matrix item is an individual standalone feature.
+jq -cn '[inputs | {feature,source_sha,prepared_sha,preparation_ref}] | {include:.}' \
   < "$report/sources.ndjson" > "$report/matrix.json"
+jq -e --argjson expected "${#features[@]}" \
+  '(.include | length) == $expected and
+   ([.include[].feature] | unique | length) == $expected and
+   all(.include[];
+     (.feature | type) == "string" and
+     (.source_sha | test("^[a-f0-9]{40}$")) and
+     (.prepared_sha | test("^[a-f0-9]{40}$")) and
+     (.preparation_ref | startswith("prepare/")))' \
+  "$report/matrix.json" >/dev/null || {
+    echo "::error::Incomplete or duplicate six-standalone CPU matrix"; exit 3;
+  }
 echo "matrix=$(cat "$report/matrix.json")" >> "$GITHUB_OUTPUT"
 if [[ "$PUBLISH" != true ]]; then
   echo "published=false" >> "$GITHUB_OUTPUT"
