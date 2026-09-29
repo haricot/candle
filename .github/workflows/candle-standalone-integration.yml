@@ -6,6 +6,7 @@ on:
       - .github/workflows/candle-standalone-integration.yml
       - .github/scripts/candle-standalone-assemble.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
+      - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
       - .github/resolutions/**
       - .github/scripts/candle-six-cpu.sh
       - .github/scripts/candle-six-atomic-promote.sh

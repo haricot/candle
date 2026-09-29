@@ -108,10 +108,19 @@ for feature in "${features[@]}"; do
     # A reviewed BF16→FP8 four-file union exists ONLY for the exact Git
     # stage blobs recorded by the earlier six-source preview. Unknown paths
     # or changed preimages must never inherit this resolution.
+    resolved=false
     if [[ "$feature" == fp8_candle ]] &&
       bash .github/scripts/candle-resolve-bf16-fp8.sh "$aggregate" \
         "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" "$report"; then
-      echo "Replayed exact-stage BF16+FP8 resolution from this reviewed PR" \
+      resolved=true
+    elif [[ "$feature" == fp4_candle ]] &&
+      bash .github/scripts/candle-resolve-bf16-fp8-fp4.sh "$aggregate" \
+        "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" \
+        "${pinned[fp4_candle]}" "$report"; then
+      resolved=true
+    fi
+    if [[ "$resolved" == true ]]; then
+      echo "Replayed exact-stage $feature resolution from reviewed source blobs" \
         >> "$GITHUB_STEP_SUMMARY"
     else
       git -C "$aggregate" ls-files -u > "$report/conflicts/integrate-$feature-index.txt"
