@@ -12,9 +12,9 @@ pub mod ggml_file;
 pub mod gguf_file;
 pub mod imatrix_file;
 pub mod k_quants;
-pub mod nvfp4;
 #[cfg(feature = "metal")]
 pub mod metal;
+pub mod nvfp4;
 pub mod repack;
 #[cfg(target_arch = "x86_64")]
 pub(crate) mod repack_x86;
