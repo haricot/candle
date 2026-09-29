@@ -124,6 +124,12 @@ for feature in "${features[@]}"; do
         "${pinned[fp4_candle]}" "${pinned[cudnn_fallback_candle]}" \
         "${pinned[moe_simt_f16_candle]}" "$report"; then
       resolved=true
+    elif [[ "$feature" == asd_core ]] &&
+      bash .github/scripts/candle-resolve-six-asd.sh "$aggregate" \
+        "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" \
+        "${pinned[fp4_candle]}" "${pinned[cudnn_fallback_candle]}" \
+        "${pinned[moe_simt_f16_candle]}" "${pinned[asd_core]}" "$report"; then
+      resolved=true
     fi
     if [[ "$resolved" == true ]]; then
       echo "Replayed exact-stage $feature resolution from reviewed source blobs" \
