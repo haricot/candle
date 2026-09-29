@@ -32,6 +32,17 @@ if git ls-remote --exit-code --heads origin "refs/heads/$target" >/dev/null 2>&1
   echo "::error::Candidate ref already exists; use a new campaign"; exit 3
 fi
 mapfile -t features < <(jq -r '.features[].feature' "$cfg")
+if [[ "${PUBLISH}" == true && "${AUTO_PROMOTE:-false}" == true ]]; then
+  # Fail before allocating a GPU if the future atomic promotion could only
+  # succeed by rewriting an open PR's head (including BF16 test-only PR #8).
+  open="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" | jq -s 'add')"
+  for feature in bf16_candle fp8_candle fp4_candle cudnn_fallback_candle moe_simt_f16_candle asd_core; do
+    if jq -e --arg f "$feature" 'any(.[]; .head.ref==$f)' <<<"$open" >/dev/null; then
+      echo "::error::Open PR on $feature blocks post-GPU atomic promotion; close test-only PR #8 when ready, without merging it to main."
+      exit 3
+    fi
+  done
+fi
 declare -A pinned oldtarget prepared
 for feature in "${features[@]}"; do
   source="${feature}_standalone"
@@ -94,10 +105,28 @@ for feature in "${features[@]}"; do
   if ! git -C "$aggregate" merge --no-ff --no-edit \
     -m "integrate($feature): prepared ${prepared[$feature]}" \
     "${prepared[$feature]}" > "$report/logs/integrate-$feature.log" 2>&1; then
-    git -C "$aggregate" ls-files -u > "$report/conflicts/integrate-$feature-index.txt"
-    git -C "$aggregate" diff --name-only --diff-filter=U > "$report/conflicts/integrate-$feature-files.txt"
-    git -C "$aggregate" status --short > "$report/conflicts/integrate-$feature-status.txt"
-    echo "::error::Unresolved integration conflict at $feature; nothing published"; exit 1
+    # A reviewed BF16→FP8 four-file union exists ONLY for the exact Git
+    # stage blobs recorded by the earlier six-source preview. Unknown paths
+    # or changed preimages must never inherit this resolution.
+    if [[ "$feature" == fp8_candle ]] &&
+      bash .github/scripts/candle-resolve-bf16-fp8.sh "$aggregate" \
+        "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" "$report"; then
+      echo "Replayed exact-stage BF16+FP8 resolution from this reviewed PR" \
+        >> "$GITHUB_STEP_SUMMARY"
+    else
+      git -C "$aggregate" ls-files -u > "$report/conflicts/integrate-$feature-index.txt"
+      git -C "$aggregate" diff --name-only --diff-filter=U > "$report/conflicts/integrate-$feature-files.txt"
+      git -C "$aggregate" status --short > "$report/conflicts/integrate-$feature-status.txt"
+      # Preserve all three Git conflict stages for a single auditable review.
+      while IFS= read -r -d '' conflict; do
+        for stage in 1 2 3; do
+          dest="$report/conflicts/integrate-$feature/stage-$stage/$conflict"
+          mkdir -p "$(dirname "$dest")"
+          git -C "$aggregate" show ":$stage:$conflict" > "$dest" 2>/dev/null || rm -f "$dest"
+        done
+      done < <(git -C "$aggregate" diff --name-only --diff-filter=U -z)
+      echo "::error::Novel integration conflict at $feature; no refs published"; exit 1
+    fi
   fi
 done
 for feature in "${features[@]}"; do

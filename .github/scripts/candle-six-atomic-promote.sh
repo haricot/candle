@@ -62,22 +62,16 @@ jq -e --arg sha "$SHA" --arg manifest "$MANIFEST_SHA" --arg lock "$LOCK" '
   .asd_policy_promoted_decisions==12 and
   .asd_policy_gpu_uuid_matches==true
 ' "$RUNNER_TEMP/six-gpu/report.json" >/dev/null || exit 3
-# PR #8 is only a test vehicle; never merge it into main. An unexpected
-# different open PR on a functional alias must block alias publication.
-open_prs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100")"
+# PR #8 is a BF16 test vehicle. Moving its HEAD during atomic promotion
+# would silently rewrite the open PR's test target. Do not do so: the owner
+# may close the test-only PR (never merge into main) when tests are complete.
+open_prs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+  | jq -s 'add')"
 for feature in bf16_candle fp8_candle fp4_candle cudnn_fallback_candle moe_simt_f16_candle asd_core; do
-  if [[ "$feature" == bf16_candle ]]; then
-    jq -e --arg f "$feature" '
-      all(.[]|select(.head.ref==$f); .number==8 and .base.ref=="main" and
-      .merged_at==null)
-    ' <<<"$open_prs" >/dev/null || exit 3
-  else
-    jq -e --arg f "$feature" '
-      [.[]|select(.head.ref==$f)]|length==0
-    ' <<<"$open_prs" >/dev/null || {
-      echo "::error::Unexpected open PR on $feature"; exit 3
+  jq -e --arg f "$feature" '[.[]|select(.head.ref==$f)]|length==0' \
+    <<<"$open_prs" >/dev/null || {
+      echo "::error::Open PR on $feature; close the test-only PR #8 when ready. Never rewrite an open PR head."; exit 3;
     }
-  fi
 done
 [[ "$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v3 | cut -f1)" == "$oldintegration" ]] || exit 3
 # Archive the PREVIOUS public and standalone refs under uniquely campaign-scoped

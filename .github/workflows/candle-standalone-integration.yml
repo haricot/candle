@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/candle-standalone-integration.yml
       - .github/scripts/candle-standalone-assemble.sh
+      - .github/scripts/candle-resolve-bf16-fp8.sh
+      - .github/resolutions/**
       - .github/scripts/candle-six-cpu.sh
       - .github/scripts/candle-six-atomic-promote.sh
       - .github/standalone-six-sources.json
@@ -67,6 +69,7 @@ jobs:
           STRATEGY: ${{ inputs.strategy || 'rebase' }}
           BASE_SHA_INPUT: ${{ inputs.base_sha }}
           PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || false }}
+          AUTO_PROMOTE: ${{ inputs.auto_promote || false }}
         run: bash .github/scripts/candle-standalone-assemble.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
