@@ -44,3 +44,11 @@ metal-debug-labels = ["metal", "candle/metal-debug-labels"]
 [[bench]]
 name = "bench_main"
 harness = false
+
+[[example]]
+name = "r2c_c3_production_dw5x5"
+required-features = ["cuda"]
+
+[[example]]
+name = "r4_c2_production_activation"
+required-features = ["cuda"]

@@ -4,6 +4,9 @@
 use candle::{CpuStorage, DType, Layout, Module, Result, Shape, Tensor, D};
 use rayon::prelude::*;
 
+mod asd_fusion;
+pub use asd_fusion::{conv2d_bias_silu, dw5x5_bias_silu_exact};
+
 /// Applies the softmax function to the input tensor, rescaling the element so that elements on
 /// a slice of fixed index on dimension `dim` are between 0 and 1 and sum to 1.
 ///
