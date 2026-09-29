@@ -1,0 +1,139 @@
+name: Candle Six — ASD DW5x5 Evidence-Backed GPU Resume
+# Resume one exact failed physical SM61 campaign. No generic CPU/CUDA repeats,
+# no broad GPU suite repeats, no automatic retry after another drift HOLD.
+on:
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/six-asd-drift-resume-launch.json
+permissions:
+  contents: read
+concurrency:
+  group: candle-standalone-integration
+  cancel-in-progress: false
+jobs:
+  resume_gpu:
+    if: github.ref == 'refs/heads/mirror_orch' && github.event_name == 'push'
+    runs-on: [self-hosted, linux, x64, cuda, sm61]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout the identical previously compiled integration candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: e44869d909dc536b9a1f37cf89bfba3d46fc1985
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout pinned resume scripts and evidence inventory
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - name: Reuse exact physical GPU suite logs from completed failed job
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-six-sm61-v3-r3-20260929-gpu
+          run-id: 36556360212
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-gpu
+      - name: Reuse exact combined CPU PASS and Cargo.lock
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-six-sm61-v3-r3-20260929-integrated-cpu
+          run-id: 36556360212
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-integrated-cpu
+      - name: Reuse exact hosted CUDA SM61 compile PASS
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-six-sm61-v3-r3-20260929-cuda
+          run-id: 36556360212
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-cuda
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - name: Verify exact evidence and remeasure only ASD DW5x5 at the original drift limit
+        shell: bash
+        env:
+          POLICY_B64: ${{ secrets.CANDLE_ASD_STAGE2F_POLICY_B64 }}
+          CUDA_COMPUTE_CAP: '61'
+          CARGO_INCREMENTAL: '0'
+          CARGO_TERM_COLOR: never
+        run: bash .ci-tools/.github/scripts/candle-six-gpu-drift-resume.sh
+      - if: always()
+        name: Preserve original and new physical GPU proof, including unsuccessful remeasurements
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-six-sm61-v3-r3-20260929-gpu-resumed-${{ github.run_id }}
+          path: ${{ runner.temp }}/six-gpu/
+          if-no-files-found: warn
+          retention-days: 90
+  promote:
+    needs: resume_gpu
+    if: needs.resume_gpu.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CAMPAIGN: six-sm61-v3-r3-20260929
+      SHA: e44869d909dc536b9a1f37cf89bfba3d46fc1985
+      LOCK: 653c6c9c59bf8789a2f44af9b4d2cf4057d51a99836ac7ab0d5c02d3e0257d6b
+      MANIFEST_SHA: 47176fd95cf3e2e2182b42263dae2b11124b3c4ebac250c483d5774060322f86
+    steps:
+      - name: Checkout the exact six-way validated integration commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: e44869d909dc536b9a1f37cf89bfba3d46fc1985
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout atomic promotion script from this reviewed orchestration commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - name: Recover all six SHA-pinned standalone CPU PASS receipts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          pattern: standalone-six-sm61-v3-r3-20260929-*-cpu
+          run-id: 36556360212
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-cpu
+      - name: Recover exact combined CPU PASS receipt
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-six-sm61-v3-r3-20260929-integrated-cpu
+          run-id: 36556360212
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-integrated-cpu
+      - name: Recover exact hosted CUDA SM61 PASS receipt
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-six-sm61-v3-r3-20260929-cuda
+          run-id: 36556360212
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-cuda
+      - name: Download the fresh remeasurement plus verified original GPU logs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: six-six-sm61-v3-r3-20260929-gpu-resumed-${{ github.run_id }}
+          path: ${{ runner.temp }}/six-gpu
+      - name: Promote six independent source commits and one integration atomically
+        shell: bash
+        run: bash .ci-tools/.github/scripts/candle-six-atomic-promote.sh
+      - if: always()
+        name: Preserve atomic CAS and previous-ref archive receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-six-sm61-v3-r3-20260929-resumed-promotion-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-six-promotion/
+          if-no-files-found: warn
+          retention-days: 90
