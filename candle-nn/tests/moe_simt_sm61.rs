@@ -1,7 +1,7 @@
 //! Runtime regression for SM61 SIMT FP16 grouped MoE.
 #![cfg(feature = "cuda")]
 
-use candle_core::{DType, Device, Result, Tensor};
+use candle::{DType, Device, Result, Tensor};
 use candle_nn::moe::moe_gemm;
 
 const K: usize = 16;
