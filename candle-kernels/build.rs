@@ -1,3 +1,5 @@
+mod asd_exact_build_adapter_v2;
+
 use cudaforge::{detect_compute_cap, KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
@@ -8,6 +10,18 @@ const LEGACY_FP8_FEATURE: &str = "CARGO_FEATURE_CUDA_LEGACY_FP8";
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=asd_exact_build_adapter_v2.rs");
+    println!("cargo::rerun-if-changed=asd_exact_v2_dispatch_template.rs");
+    println!("cargo::rerun-if-changed=src/sm61_exact_grouped");
+    println!("cargo::rerun-if-env-changed=CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID");
+    for var in [
+        "CUDA_COMPUTE_CAP",
+        "CANDLE_ASD_EXACT_POLICY",
+        "CANDLE_ASD_VALIDATION",
+        "CANDLE_ASD_TARGET_GPU_UUID",
+    ] {
+        println!("cargo::rerun-if-env-changed={var}");
+    }
     println!("cargo::rerun-if-changed=src");
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
@@ -38,13 +52,30 @@ fn main() -> Result<()> {
     if legacy_fp8 {
         ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
     }
-    // Software NVFP4 is opt-in. MXFP4 remains on the standard GGUF path.
+    // Preserve the standalone opt-in software NVFP4 path; normal MXFP4 remains available.
     if env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP4").is_some() {
         ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP4=1");
     }
 
     let bindings = ptx_builder.build_ptx()?;
     bindings.write(&ptx_path)?;
+    // Exact SM61 kernels are kept in a separately generated PTX module.
+    // This avoids pulling legacy BF16/FP8 compilation flags into asd_core.
+    let sm61_ptx = KernelBuilder::new()
+        .source_files(vec![
+            "src/sm61_exact_grouped/sm61_exact_grouped_k00.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k01.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k02.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k03.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k04.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k05.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k06.cu",
+        ])
+        .arg("--expt-relaxed-constexpr")
+        .arg("-std=c++17")
+        .arg("-O3")
+        .build_ptx()?;
+    sm61_ptx.write(&out_dir.join("sm61_ptx.rs"))?;
 
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
@@ -68,7 +99,8 @@ fn main() -> Result<()> {
         moe_sources.push("src/moe/moe_align.cu");
     }
 
-    // The previously GPU-validated pre-Volta policy omits static WMMA objects.
+    // Preserve the corrected shared baseline: Pascal cannot execute WMMA.
+    // SIMT grouped MoE is introduced by the separately pinned MoE source.
     if compute_cap < 70 {
         moe_sources.retain(|source| {
             !matches!(*source, "src/moe/moe_wmma.cu" | "src/moe/moe_wmma_gguf.cu")
@@ -86,12 +118,38 @@ fn main() -> Result<()> {
         moe_builder = moe_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
     }
 
-    // SM61 has no WMMA objects; SIMT exports the required compatibility stub.
+    // On pre-Volta SM61 there are no WMMA translation units; provide the
+    // fallback FFI stub from the SIMT MoE unit without touching BF16 flags.
     if compute_cap < 70 {
         moe_builder = moe_builder.arg("-DNO_WMMA_KERNEL");
     }
 
     // BF16 WMMA fragments require Ampere.
+    let evidence_uuid = env::var("CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID").ok();
+    std::fs::write(
+        out_dir.join("sm61_exact_grouped_scope.rs"),
+        format!(
+            "pub const TARGET_SCOPE: &str = \"device\";\npub const EVIDENCE_GPU_UUID: Option<&str> = {};\n",
+            evidence_uuid
+                .as_deref()
+                .map(|v| format!("Some({v:?})"))
+                .unwrap_or_else(|| "None".to_owned())
+        ),
+    )?;
+    std::fs::write(
+        out_dir.join("cuda_build_info.rs"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
+    )?;
+    let validation_requested = matches!(
+        env::var("CANDLE_ASD_VALIDATION").ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    );
+    if validation_requested && env::var_os("CANDLE_ASD_EXACT_POLICY").is_none() {
+        panic!("CANDLE_ASD_VALIDATION requires CANDLE_ASD_EXACT_POLICY");
+    }
+    let asd_build_sm = u32::try_from(compute_cap).expect("CUDA compute capability must fit in u32");
+    asd_exact_build_adapter_v2::materialize_for_candle_build(asd_build_sm)
+        .unwrap_or_else(|err| panic!("failed to materialize ASD V2 policy: {err}"));
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }

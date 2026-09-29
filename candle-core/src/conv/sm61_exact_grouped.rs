@@ -1,0 +1,330 @@
+//! Stage 2E-B executor catalogue only. Exact geometry and promotion state live in V2.
+use super::{ParamsConv1D, ParamsConvTranspose1D, ParamsConvTranspose2D};
+use crate::backend::BackendStorage;
+use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S, WrapErr};
+use crate::{DType, Layout, Result};
+use cudarc::driver::{LaunchConfig, PushKernelArg};
+
+#[derive(Clone, Copy)]
+struct KernelImpl {
+    implementation_id: &'static str,
+    candidate_id: &'static str,
+    entry: &'static str,
+    output_count: usize,
+    grid_x: u32,
+    block_x: u32,
+}
+const IMPLEMENTATIONS: &[KernelImpl] = &[
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256",
+        candidate_id: "ct1d-s32-g2-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g2_u1_b256",
+        output_count: 8192,
+        grid_x: 32,
+        block_x: 256,
+    },
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g4-u1-b256",
+        candidate_id: "ct1d-s32-g4-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g4_u1_b256",
+        output_count: 8192,
+        grid_x: 32,
+        block_x: 256,
+    },
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g8-u1-b256",
+        candidate_id: "ct1d-s32-g8-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g8_u1_b256",
+        output_count: 8192,
+        grid_x: 32,
+        block_x: 256,
+    },
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g16-u1-b256",
+        candidate_id: "ct1d-s32-g16-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g16_u1_b256",
+        output_count: 8192,
+        grid_x: 32,
+        block_x: 256,
+    },
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.ct2d-s32-g16-u4-b128",
+        candidate_id: "ct2d-s32-g16-u4-b128",
+        entry: "flow_v0322_ct2d_s32_g16_u4_b128",
+        output_count: 524288,
+        grid_x: 4096,
+        block_x: 128,
+    },
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.ct2d-s32-g32-u4-b64",
+        candidate_id: "ct2d-s32-g32-u4-b64",
+        entry: "flow_v0322_ct2d_s32_g32_u4_b64",
+        output_count: 524288,
+        grid_x: 8192,
+        block_x: 64,
+    },
+    KernelImpl {
+        implementation_id: "candle.sm61-exact-grouped.gc1d-l128-g8-u1-b256",
+        candidate_id: "gc1d-l128-g8-u1-b256",
+        entry: "flow_v0322_gc1d_l128_g8_u1_b256",
+        output_count: 8192,
+        grid_x: 32,
+        block_x: 256,
+    },
+];
+fn env_truthy(n: &str) -> bool {
+    matches!(
+        std::env::var(n).ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+fn layout_ok(l: &Layout) -> bool {
+    l.is_contiguous() && l.start_offset() == 0
+}
+fn eligible(
+    input: &CudaStorage,
+    input_l: &Layout,
+    kernel: &CudaStorage,
+    kernel_l: &Layout,
+) -> bool {
+    candle_kernels::CUDA_BUILD_COMPUTE_CAP == 61
+        && input
+            .device
+            .cuda_stream()
+            .context()
+            .compute_capability()
+            .ok()
+            == Some((6, 1))
+        && input.dtype() == DType::F32
+        && kernel.dtype() == DType::F32
+        && layout_ok(input_l)
+        && layout_ok(kernel_l)
+        && input.device.id() == kernel.device.id()
+}
+fn actual_uuid(input: &CudaStorage) -> Option<String> {
+    let u = input.device.cuda_stream().context().uuid().ok()?;
+    let hex = u
+        .bytes
+        .iter()
+        .map(|b| format!("{:02x}", *b as u8))
+        .collect::<String>();
+    if hex.len() != 32 {
+        return None;
+    }
+    Some(format!(
+        "GPU-{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
+}
+fn launch_selected(id: &str, input: &CudaStorage, kernel: &CudaStorage) -> Result<CudaStorage> {
+    let d = IMPLEMENTATIONS
+        .iter()
+        .find(|x| x.implementation_id == id)
+        .ok_or_else(|| crate::Error::Msg(format!("unknown Stage2E implementation {id}")))?;
+    let ptx = candle_kernels::sm61_exact_grouped_ptx(d.candidate_id)
+        .ok_or_else(|| crate::Error::Msg(format!("missing PTX {}", d.candidate_id)))?;
+    let dev = input.device.clone();
+    let func = dev.get_or_load_custom_func(d.entry, d.candidate_id, ptx)?;
+    let out = unsafe { dev.alloc::<f32>(d.output_count)? };
+    let cfg = LaunchConfig {
+        grid_dim: (d.grid_x, 1, 1),
+        block_dim: (d.block_x, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    let slice = match (&input.slice, &kernel.slice) {
+        (S::F32(x), S::F32(w)) => {
+            let mut b = func.builder();
+            b.arg(x).arg(w).arg(&out);
+            unsafe { b.launch(cfg) }.w()?;
+            S::F32(out)
+        }
+        _ => crate::bail!("Stage2E exact executor dtype mismatch"),
+    };
+    if env_truthy("CANDLE_SM61_EXACT_GROUPED_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
+        eprintln!("[candle sm61 exact-grouped] submitted_backend=raw_exact launch_submission=success implementation={} candidate={} proof_status=historical_evidence_bound",d.implementation_id,d.candidate_id)
+    }
+    Ok(CudaStorage { slice, device: dev })
+}
+fn ct_request_allows_auto() -> bool {
+    if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
+        || std::env::var_os("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL").is_some()
+    {
+        return false;
+    }
+    !matches!(
+        std::env::var("CANDLE_GROUPED_TRANSPOSE_DISPATCH")
+            .ok()
+            .as_deref(),
+        Some("raw") | Some("cudnn")
+    )
+}
+fn call(
+    op: candle_kernels::asd_exact::ExactOperation,
+    dim: u8,
+    b: usize,
+    ci: usize,
+    co: usize,
+    s0: usize,
+    s1: usize,
+    w: &[usize],
+    g: usize,
+    k: usize,
+    st: usize,
+    pad: usize,
+    opad: usize,
+    dil: usize,
+    input_l: &Layout,
+    kernel_l: &Layout,
+) -> candle_kernels::asd_exact::ExactOperationCall {
+    candle_kernels::asd_exact::ExactOperationCall {
+        op,
+        dim,
+        batch: b,
+        c_in: ci,
+        c_out: co,
+        spatial0: s0,
+        spatial1: s1,
+        weight_rank: w.len(),
+        weight0: w.first().copied().unwrap_or(0),
+        weight1: w.get(1).copied().unwrap_or(0),
+        weight2: w.get(2).copied().unwrap_or(0),
+        weight3: w.get(3).copied().unwrap_or(0),
+        groups: g,
+        kernel: k,
+        stride: st,
+        padding: pad,
+        output_padding: opad,
+        dilation: dil,
+        dtype: "f32",
+        input_contiguous: input_l.is_contiguous(),
+        input_start_offset: input_l.start_offset(),
+        weight_contiguous: kernel_l.is_contiguous(),
+        weight_start_offset: kernel_l.start_offset(),
+    }
+}
+fn selected(
+    input: &CudaStorage,
+    c: candle_kernels::asd_exact::ExactOperationCall,
+) -> Option<candle_kernels::asd_exact::ExactAsdMatch> {
+    let uuid = actual_uuid(input)?;
+    match candle_kernels::asd_exact::lookup(c, Some(&uuid)) {
+        Some(candle_kernels::asd_exact::ExactMatch::Proven(m))
+            if m.implementation_id
+                .starts_with("candle.sm61-exact-grouped.") =>
+        {
+            Some(m)
+        }
+        _ => None,
+    }
+}
+fn trace_selected(m: candle_kernels::asd_exact::ExactAsdMatch) {
+    if env_truthy("CANDLE_SM61_EXACT_GROUPED_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
+        eprintln!("[candle asd-v2] selected_backend={} reason=exact_asd asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={}",m.selected_backend,m.policy_id,m.decision_id,m.state,m.implementation_id,m.evidence_sha256)
+    }
+}
+pub(super) fn try_launch_conv1d(
+    input: &CudaStorage,
+    input_l: &Layout,
+    kernel: &CudaStorage,
+    kernel_l: &Layout,
+    p: &ParamsConv1D,
+) -> Result<Option<CudaStorage>> {
+    if !eligible(input, input_l, kernel, kernel_l) {
+        return Ok(None);
+    }
+    let c = call(
+        candle_kernels::asd_exact::ExactOperation::Conv1d,
+        1,
+        p.b_size,
+        p.c_in,
+        p.c_out,
+        p.l_in,
+        0,
+        kernel_l.dims(),
+        p.groups,
+        p.k_size,
+        p.stride,
+        p.padding,
+        0,
+        p.dilation,
+        input_l,
+        kernel_l,
+    );
+    let Some(m) = selected(input, c) else {
+        return Ok(None);
+    };
+    trace_selected(m);
+    Ok(Some(launch_selected(m.implementation_id, input, kernel)?))
+}
+pub(super) fn try_launch_ct1d(
+    input: &CudaStorage,
+    input_l: &Layout,
+    kernel: &CudaStorage,
+    kernel_l: &Layout,
+    p: &ParamsConvTranspose1D,
+) -> Result<Option<CudaStorage>> {
+    if !ct_request_allows_auto() || !eligible(input, input_l, kernel, kernel_l) {
+        return Ok(None);
+    }
+    let c = call(
+        candle_kernels::asd_exact::ExactOperation::ConvTranspose1d,
+        1,
+        p.b_size,
+        p.c_in,
+        p.c_out,
+        p.l_in,
+        0,
+        kernel_l.dims(),
+        p.groups,
+        p.k_size,
+        p.stride,
+        p.padding,
+        p.output_padding,
+        p.dilation,
+        input_l,
+        kernel_l,
+    );
+    let Some(m) = selected(input, c) else {
+        return Ok(None);
+    };
+    trace_selected(m);
+    Ok(Some(launch_selected(m.implementation_id, input, kernel)?))
+}
+pub(super) fn try_launch_ct2d(
+    input: &CudaStorage,
+    input_l: &Layout,
+    kernel: &CudaStorage,
+    kernel_l: &Layout,
+    p: &ParamsConvTranspose2D,
+) -> Result<Option<CudaStorage>> {
+    if !ct_request_allows_auto() || !eligible(input, input_l, kernel, kernel_l) {
+        return Ok(None);
+    }
+    let c = call(
+        candle_kernels::asd_exact::ExactOperation::ConvTranspose2d,
+        2,
+        p.b_size,
+        p.c_in,
+        p.c_out,
+        p.i_h,
+        p.i_w,
+        kernel_l.dims(),
+        p.groups,
+        p.k_h,
+        p.stride,
+        p.padding,
+        p.output_padding,
+        p.dilation,
+        input_l,
+        kernel_l,
+    );
+    let Some(m) = selected(input, c) else {
+        return Ok(None);
+    };
+    trace_selected(m);
+    Ok(Some(launch_selected(m.implementation_id, input, kernel)?))
+}
