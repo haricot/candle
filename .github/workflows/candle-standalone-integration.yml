@@ -1,5 +1,9 @@
 name: Candle Standalone Six — Rebase, Test, Publish
 on:
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/standalone-six-launch.json
   pull_request:
     branches: [mirror_orch]
     paths:
@@ -60,20 +64,57 @@ jobs:
       manifest_sha256: ${{ steps.worktrees.outputs.manifest_sha256 }}
       matrix: ${{ steps.worktrees.outputs.matrix }}
       published: ${{ steps.worktrees.outputs.published }}
+      auto_promote: ${{ steps.launch.outputs.auto_promote || inputs.auto_promote || false }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify one-time pinned push request
+        id: launch
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=.github/standalone-six-launch.json
+          cfg=.github/standalone-six-sources.json
+          jq -e --slurpfile cfg "$cfg" '
+            . as $request |
+            .schema_version==1 and
+            .purpose=="one-time-six-standalone-v3-gpu-campaign" and
+            (.campaign|test("^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")) and
+            (.base_sha|test("^[a-f0-9]{40}$")) and
+            (.strategy=="rebase" or .strategy=="merge") and
+            .publish==true and .auto_promote==true and
+            (.expected_sources|length)==6 and
+            all($cfg[0].features[]; . as $f |
+              $request.expected_sources[$f.feature]==$f.initial_source_sha)
+          ' "$manifest" >/dev/null || {
+            echo "::error::Invalid or stale six-source launch request"; exit 3;
+          }
+          base="$(jq -r .base_sha "$manifest")"
+          [[ "$(git ls-remote --heads origin refs/heads/main | cut -f1)" == "$base" ]] || {
+            echo "::error::main moved; refuse stale launch"; exit 3;
+          }
+          while IFS=$'\t' read -r feature expected; do
+            source_ref="$feature""_standalone"
+            [[ "$(git ls-remote --heads origin "refs/heads/$source_ref" | cut -f1)" == "$expected" ]] || {
+              echo "::error::Source moved: $feature"; exit 3;
+            }
+          done < <(jq -r '.expected_sources|to_entries[]|[.key,.value]|@tsv' "$manifest")
+          for field in campaign base_sha strategy publish auto_promote; do
+            echo "$field=$(jq -r ".$field" "$manifest")" >> "$GITHUB_OUTPUT"
+          done
+          echo "Verified six pinned source refs for single V3 campaign" >> "$GITHUB_STEP_SUMMARY"
       - name: Freeze six source refs and prepare six worktrees plus one integration
         id: worktrees
         env:
           GH_TOKEN: ${{ github.token }}
-          CAMPAIGN: ${{ inputs.campaign || format('pr-{0}-{1}', github.event.pull_request.number, github.run_id) }}
-          STRATEGY: ${{ inputs.strategy || 'rebase' }}
-          BASE_SHA_INPUT: ${{ inputs.base_sha }}
-          PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || false }}
-          AUTO_PROMOTE: ${{ inputs.auto_promote || false }}
+          CAMPAIGN: ${{ steps.launch.outputs.campaign || inputs.campaign || format('pr-{0}-{1}', github.event.pull_request.number, github.run_id) }}
+          STRATEGY: ${{ steps.launch.outputs.strategy || inputs.strategy || 'rebase' }}
+          BASE_SHA_INPUT: ${{ steps.launch.outputs.base_sha || inputs.base_sha }}
+          PUBLISH: ${{ steps.launch.outputs.publish || (github.event_name == 'workflow_dispatch' && inputs.publish) || false }}
+          AUTO_PROMOTE: ${{ steps.launch.outputs.auto_promote || inputs.auto_promote || false }}
         run: bash .github/scripts/candle-standalone-assemble.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -229,7 +270,7 @@ jobs:
       CI: ${{ github.run_id }}
       LOCK: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
       MANIFEST: ${{ needs.prepare.outputs.manifest_sha256 }}
-      AUTO_PROMOTE: ${{ inputs.auto_promote }}
+      AUTO_PROMOTE: ${{ needs.prepare.outputs.auto_promote }}
       EXPECTED_ASD_POLICY_SHA256: 912c8b0c88fc8b3e07a25a79f5b9f0d10eef1b8193271ee8fafb4db1f9e9615f
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -460,7 +501,7 @@ jobs:
 
   promote:
     needs: [prepare, standalone_cpu, integrated_cpu, integrated_cuda, gpu]
-    if: needs.gpu.result == 'success' && inputs.auto_promote == true
+    if: needs.gpu.result == 'success' && needs.prepare.outputs.auto_promote == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
