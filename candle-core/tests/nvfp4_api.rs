@@ -135,9 +135,10 @@ fn dense_api_decode_prefill_and_strided_inputs() -> Result<()> {
         (0..4 * k)
             .map(|i| ((i as f32) * 0.01).cos())
             .collect::<Vec<_>>(),
-        (4, k),
+        (k, 4),
         &device,
-    )?;
+    )?
+    .transpose(0, 1)?;
     let slice = input.narrow(0, 1, 2)?;
     let expected_input = slice
         .to_device(&Device::Cpu)?
