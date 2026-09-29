@@ -1,0 +1,40 @@
+name: Candle Six — Verified Temporary Ref Cleanup
+on:
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/six-temporary-cleanup-launch.json
+permissions:
+  contents: read
+concurrency:
+  group: candle-six-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    if: github.repository == 'haricot/candle'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact reviewed mirror_orch cleanup workflow
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Archive prior candidates, then atomically delete only 23 pinned temporary refs
+        shell: bash
+        run: bash .github/scripts/candle-six-temporary-cleanup.sh
+      - name: Preserve archive and deletion audit receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: six-temporary-cleanup-${{ github.run_id }}
+          path: ${{ runner.temp }}/six-temporary-cleanup/
+          if-no-files-found: warn
+          retention-days: 90
