@@ -45,7 +45,7 @@ fn pad(p: usize, q: usize) -> usize {
     ceil_div(p, q) * q
 }
 
-fn quantize_q8_1(
+pub(super) fn quantize_q8_1(
     src: &CudaView<f32>,
     dst: &mut CudaSlice<u8>,
     k: usize,
