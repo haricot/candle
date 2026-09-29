@@ -52,22 +52,15 @@ impl NvFp4Weights {
         let (experts, n, k) = match dims {
             [n, k] => (1usize, *n, *k),
             [experts, n, k] => (*experts, *n, *k),
-            _ => crate::bail!(
-                "NVFP4 weights need [n, k] or [experts, n, k], got {dims:?}"
-            ),
+            _ => crate::bail!("NVFP4 weights need [n, k] or [experts, n, k], got {dims:?}"),
         };
 
         if experts == 0 || n == 0 || k == 0 || k % 32 != 0 {
-            crate::bail!(
-                "NVFP4 requires nonzero experts/rows and k divisible by 32, got {dims:?}"
-            )
+            crate::bail!("NVFP4 requires nonzero experts/rows and k divisible by 32, got {dims:?}")
         }
         // Existing kernels pass dimensions as signed 32-bit arguments and
         // pad the Q8_1 activation stride to a multiple of 512.
-        if experts > i32::MAX as usize
-            || n > i32::MAX as usize
-            || k > i32::MAX as usize - 511
-        {
+        if experts > i32::MAX as usize || n > i32::MAX as usize || k > i32::MAX as usize - 511 {
             crate::bail!("NVFP4 dimensions exceed the legacy CUDA kernel limits: {dims:?}")
         }
         let count = experts
@@ -161,7 +154,10 @@ impl NvFp4Cuda {
             crate::bail!("NVFP4 input and weights must be on the same CUDA device")
         }
         if !matches!(xs.dtype(), DType::F32 | DType::F16 | DType::BF16) {
-            crate::bail!("NVFP4 expects F32, F16 or BF16 activations, got {:?}", xs.dtype())
+            crate::bail!(
+                "NVFP4 expects F32, F16 or BF16 activations, got {:?}",
+                xs.dtype()
+            )
         }
         let xs = xs.to_dtype(DType::F32)?.contiguous()?;
         let (storage, layout) = xs.storage_and_layout();
@@ -176,8 +172,8 @@ impl NvFp4Cuda {
         let end = start
             .checked_add(len)
             .ok_or_else(|| crate::Error::Msg("NVFP4 activation offset overflow".into()))?;
-        let padded_k = k.div_ceil(super::cuda::MATRIX_ROW_PADDING)
-            * super::cuda::MATRIX_ROW_PADDING;
+        let padded_k =
+            k.div_ceil(super::cuda::MATRIX_ROW_PADDING) * super::cuda::MATRIX_ROW_PADDING;
         let row_bytes = padded_k / 32 * 36; // Q8_1: 32 int8 + two fp16 scales
         let total_bytes = batch
             .checked_mul(row_bytes)
@@ -200,7 +196,10 @@ impl NvFp4Cuda {
     /// Non-contiguous inputs are materialized before Q8_1 quantization.
     pub fn forward(&self, xs: &Tensor) -> Result<Tensor> {
         let [n, k] = self.shape.dims() else {
-            crate::bail!("NVFP4 dense forward needs [n, k] weights, got {:?}", self.shape)
+            crate::bail!(
+                "NVFP4 dense forward needs [n, k] weights, got {:?}",
+                self.shape
+            )
         };
         if xs.rank() < 2 || xs.dims().last() != Some(k) {
             crate::bail!(
@@ -216,8 +215,8 @@ impl NvFp4Cuda {
             crate::bail!("NVFP4 dense batch must be in 1..=65535, got {batch}")
         }
         let activation_q8 = self.quantize_input(xs, batch, *k)?;
-        let k_padded = k.div_ceil(super::cuda::MATRIX_ROW_PADDING)
-            * super::cuda::MATRIX_ROW_PADDING;
+        let k_padded =
+            k.div_ceil(super::cuda::MATRIX_ROW_PADDING) * super::cuda::MATRIX_ROW_PADDING;
         let dst = self.device.alloc_zeros::<f32>(
             n.checked_mul(batch)
                 .ok_or_else(|| crate::Error::Msg("NVFP4 output size overflow".into()))?,
@@ -278,13 +277,19 @@ impl NvFp4Cuda {
             crate::bail!("NVFP4 indexed MoE needs [experts, n, k] weights")
         };
         let [batch, in_k] = xs.dims() else {
-            crate::bail!("NVFP4 indexed MoE expects input [batch, k], got {:?}", xs.shape())
+            crate::bail!(
+                "NVFP4 indexed MoE expects input [batch, k], got {:?}",
+                xs.shape()
+            )
         };
         if *batch == 0 || *batch > 65535 || in_k != k {
             crate::bail!("NVFP4 indexed MoE invalid input shape {:?}", xs.shape())
         }
         let [idx_batch, topk] = ids.dims() else {
-            crate::bail!("NVFP4 indexed MoE expects indices [batch, topk], got {:?}", ids.shape())
+            crate::bail!(
+                "NVFP4 indexed MoE expects indices [batch, topk], got {:?}",
+                ids.shape()
+            )
         };
         if idx_batch != batch || *topk == 0 || *topk > 65535 || ids.dtype() != DType::U32 {
             crate::bail!("NVFP4 indexed MoE requires nonempty U32 [batch, topk] indices")
@@ -312,8 +317,8 @@ impl NvFp4Cuda {
         let start = ids_layout.start_offset();
         let ids_view = ids_slice.slice(start..start + checked_ids.len());
         let q8 = self.quantize_input(xs, *batch, *k)?;
-        let k_padded = k.div_ceil(super::cuda::MATRIX_ROW_PADDING)
-            * super::cuda::MATRIX_ROW_PADDING;
+        let k_padded =
+            k.div_ceil(super::cuda::MATRIX_ROW_PADDING) * super::cuda::MATRIX_ROW_PADDING;
         let out_count = batch
             .checked_mul(*topk)
             .and_then(|v| v.checked_mul(*n))
@@ -334,7 +339,14 @@ impl NvFp4Cuda {
         builder.arg(&q8);
         builder.arg(&ids_view);
         builder.arg(&dst);
-        barg!(builder, *n as i32, *k as i32, *batch as i32, *topk as i32, k_padded as i32);
+        barg!(
+            builder,
+            *n as i32,
+            *k as i32,
+            *batch as i32,
+            *topk as i32,
+            k_padded as i32
+        );
         unsafe { builder.launch(cfg) }.w()?;
         Ok(from_storage(
             Storage::Cuda(CudaStorage::wrap_cuda_slice(dst, self.device.clone())),
