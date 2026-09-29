@@ -90,7 +90,7 @@ jobs:
             .publish==true and .auto_promote==true and
             (.expected_sources|length)==6 and
             (.reuse_cpu_run_id|type=="number") and .reuse_cpu_run_id>0 and
-            .reuse_cpu_campaign=="six-sm61-v3-r1-20260929" and
+            .reuse_cpu_campaign=="six-sm61-v3-r2-20260929" and
             ([.reuse_cpu_features[]]|sort)==
               (["bf16_candle","fp8_candle","fp4_candle","cudnn_fallback_candle","asd_core"]|sort) and
             all($cfg[0].features[]; . as $f |

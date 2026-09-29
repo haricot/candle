@@ -79,6 +79,25 @@ for feature in "${features[@]}"; do
     git -C "$work" status --short > "$report/conflicts/$feature-status.txt"
     echo "::error::Standalone merge conflict in $feature"; exit 1
   fi
+  # Exact, isolated MoE CUDA-test import fix: the workspace dependency is
+  # named 'candle', not 'candle_core'. Commit only inside detached preparation;
+  # the permanent standalone ref remains unchanged until GPU-gated promotion.
+  if [[ "$feature" == moe_simt_f16_candle ]]; then
+    [[ "$sha" == 8707865a92e2801a0ccb22727bc82c3db6a5bb8b ]] || {
+      echo "::error::MoE source changed; review required"; exit 3;
+    }
+    test_path="$work/candle-nn/tests/moe_simt_sm61.rs"
+    [[ "$(git -C "$work" hash-object "$test_path")" == adc429b1cbe13ca71f6940f303e99c12dc0421c0 ]] || {
+      echo "::error::MoE CUDA test preimage changed; refuse automatic patch"; exit 3;
+    }
+    sed -i 's/^use candle_core::{DType, Device, Result, Tensor};$/use candle::{DType, Device, Result, Tensor};/' "$test_path"
+    [[ "$(grep -Fc 'use candle::{DType, Device, Result, Tensor};' "$test_path")" == 1 ]] || exit 3
+    git -C "$work" diff --check
+    git -C "$work" add -- candle-nn/tests/moe_simt_sm61.rs
+    git -C "$work" commit -m "fix(moe): use workspace candle crate name in CUDA SM61 regression test" \
+      > "$report/logs/moe-sm61-import-fix.log" 2>&1
+    echo "Applied exact MoE source-only test fix on detached candidate" >> "$GITHUB_STEP_SUMMARY"
+  fi
   prepared[$feature]="$(git -C "$work" rev-parse HEAD)"
   git merge-base --is-ancestor "$base" "${prepared[$feature]}" || exit 3
   git diff --binary "$base" "${prepared[$feature]}" > "$report/diffs/$feature.patch"
