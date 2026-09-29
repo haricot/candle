@@ -106,10 +106,17 @@ fn dense_api_decode_prefill_and_strided_inputs() -> Result<()> {
             batch,
         );
         let xs = Tensor::from_vec(input, (batch, k), &device)?;
-        let got = gpu.forward(&xs)?.to_device(&Device::Cpu)?.flatten_all()?.to_vec1::<f32>()?;
+        let got = gpu
+            .forward(&xs)?
+            .to_device(&Device::Cpu)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
         assert_eq!(got.len(), expected.len());
         for (index, (&a, &b)) in got.iter().zip(expected.iter()).enumerate() {
-            assert!((a - b).abs() < 0.15, "batch={batch}, elem={index}: {a} != {b}");
+            assert!(
+                (a - b).abs() < 0.15,
+                "batch={batch}, elem={index}: {a} != {b}"
+            );
         }
     }
 
@@ -125,17 +132,31 @@ fn dense_api_decode_prefill_and_strided_inputs() -> Result<()> {
     assert!(gpu.forward(&xs).is_err());
     // Non-contiguous view with a valid trailing k, including a nonzero offset.
     let input = Tensor::from_vec(
-        (0..4 * k).map(|i| ((i as f32) * 0.01).cos()).collect::<Vec<_>>(),
+        (0..4 * k)
+            .map(|i| ((i as f32) * 0.01).cos())
+            .collect::<Vec<_>>(),
         (4, k),
         &device,
     )?;
     let slice = input.narrow(0, 1, 2)?;
-    let expected_input = slice.to_device(&Device::Cpu)?.flatten_all()?.to_vec1::<f32>()?;
+    let expected_input = slice
+        .to_device(&Device::Cpu)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let expected = reference_dense(
-        weights.packed_e2m1(), weights.scales_e4m3(), weights.global_scale(),
-        n, k, &expected_input, 2,
+        weights.packed_e2m1(),
+        weights.scales_e4m3(),
+        weights.global_scale(),
+        n,
+        k,
+        &expected_input,
+        2,
     );
-    let got = gpu.forward(&slice)?.to_device(&Device::Cpu)?.flatten_all()?.to_vec1::<f32>()?;
+    let got = gpu
+        .forward(&slice)?
+        .to_device(&Device::Cpu)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     for (&a, &b) in got.iter().zip(expected.iter()) {
         assert!((a - b).abs() < 0.15, "narrowed input: {a} != {b}");
     }
@@ -158,7 +179,8 @@ fn indexed_moe_api_validates_ids_and_matches_reference() -> Result<()> {
     let xs = Tensor::from_vec(input.clone(), (batch, k), &device)?;
     let ids = [0u32, 2, 1, 0];
     let idx = Tensor::from_slice(&ids, (batch, topk), &device)?;
-    let got = gpu.indexed_moe(&xs, &idx)?
+    let got = gpu
+        .indexed_moe(&xs, &idx)?
         .to_device(&Device::Cpu)?
         .flatten_all()?
         .to_vec1::<f32>()?;
