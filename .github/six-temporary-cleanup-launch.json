@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "operation": "archive-r1-r2-and-prune-temporary-six-source-refs",
+  "approved_promotion_run_id": 36571847341,
+  "scope": [
+    "prepare/six-sm61-v3-r1-20260929/*",
+    "prepare/six-sm61-v3-r2-20260929/*",
+    "prepare/six-sm61-v3-r3-20260929/*",
+    "integration/candidate/six-sm61-v3-r1-20260929",
+    "integration/candidate/six-sm61-v3-r2-20260929",
+    "integration/candidate/six-sm61-v3-r3-20260929",
+    "ci/standalone-worktree-candidate-v1",
+    "ci/six-asd-drift-resume-v1"
+  ],
+  "new_archive_tags": {
+    "archive/standalone-six/six-sm61-v3-r1-20260929/integration-candidate": "0a746e22a0cd423bc344666092c08f833787e21b",
+    "archive/standalone-six/six-sm61-v3-r2-20260929/integration-candidate": "3b4347e12bfb3340462146b501ca865224854239"
+  },
+  "existing_archive_tag_count": 12,
+  "existing_promotion_tag_count": 7,
+  "protected": {
+    "main": "66a8cf184a5a519671454066b1b9efd446ec9f5c",
+    "cuda_asd_runner_v2": "ac983d16750a136a8563def01926ee83a7831d22",
+    "cuda_asd_runner_v3": "e44869d909dc536b9a1f37cf89bfba3d46fc1985",
+    "bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "bf16_candle_standalone": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "fp8_candle": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "fp8_candle_standalone": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "fp4_candle": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "fp4_candle_standalone": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "cudnn_fallback_candle": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "cudnn_fallback_candle_standalone": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "moe_simt_f16_candle": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+    "moe_simt_f16_candle_standalone": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+    "asd_core": "b0281c1339b43f52439d2e7ef02335bbc03f74a6",
+    "asd_core_standalone": "b0281c1339b43f52439d2e7ef02335bbc03f74a6"
+  },
+  "deletions": {
+    "prepare/six-sm61-v3-r1-20260929/bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "prepare/six-sm61-v3-r1-20260929/fp8_candle": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "prepare/six-sm61-v3-r1-20260929/fp4_candle": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "prepare/six-sm61-v3-r1-20260929/cudnn_fallback_candle": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "prepare/six-sm61-v3-r1-20260929/moe_simt_f16_candle": "8707865a92e2801a0ccb22727bc82c3db6a5bb8b",
+    "prepare/six-sm61-v3-r1-20260929/asd_core": "b0281c1339b43f52439d2e7ef02335bbc03f74a6",
+    "prepare/six-sm61-v3-r2-20260929/bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "prepare/six-sm61-v3-r2-20260929/fp8_candle": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "prepare/six-sm61-v3-r2-20260929/fp4_candle": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "prepare/six-sm61-v3-r2-20260929/cudnn_fallback_candle": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "prepare/six-sm61-v3-r2-20260929/moe_simt_f16_candle": "8707865a92e2801a0ccb22727bc82c3db6a5bb8b",
+    "prepare/six-sm61-v3-r2-20260929/asd_core": "b0281c1339b43f52439d2e7ef02335bbc03f74a6",
+    "prepare/six-sm61-v3-r3-20260929/bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "prepare/six-sm61-v3-r3-20260929/fp8_candle": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "prepare/six-sm61-v3-r3-20260929/fp4_candle": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "prepare/six-sm61-v3-r3-20260929/cudnn_fallback_candle": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "prepare/six-sm61-v3-r3-20260929/moe_simt_f16_candle": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+    "prepare/six-sm61-v3-r3-20260929/asd_core": "b0281c1339b43f52439d2e7ef02335bbc03f74a6",
+    "integration/candidate/six-sm61-v3-r1-20260929": "0a746e22a0cd423bc344666092c08f833787e21b",
+    "integration/candidate/six-sm61-v3-r2-20260929": "3b4347e12bfb3340462146b501ca865224854239",
+    "integration/candidate/six-sm61-v3-r3-20260929": "e44869d909dc536b9a1f37cf89bfba3d46fc1985",
+    "ci/standalone-worktree-candidate-v1": "0f6c4a7503576328dabe6a87d7f3f2cbbc2c4990",
+    "ci/six-asd-drift-resume-v1": "43d4a4192c6a8b0038722cee2167bc987df7f888"
+  }
+}
