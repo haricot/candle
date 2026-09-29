@@ -23,7 +23,6 @@ on:
           - moe_simt_f16_candle
           - asd_core
           - cuda_asd_runner_v2
-          - standalone_fp48_integration
       campaign:
         description: Preparation campaign ID
         required: true
@@ -73,7 +72,7 @@ jobs:
           [[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
           [[ "$CHECK_CAMPAIGN" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
           case "$CHECK_BRANCH" in
-            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|asd_core|cuda_asd_runner_v2|standalone_fp48_integration) ;;
+            bf16_candle|fp8_candle|fp4_candle|cudnn_fallback_candle|moe_simt_f16_candle|asd_core|cuda_asd_runner_v2) ;;
             *) echo "::error::Unsupported branch"; exit 2 ;;
           esac
           # Standalone FP8/FP4 feature refs are directly descended from main;
@@ -120,193 +119,6 @@ jobs:
             done < <(jq -r '.sources[] | [.feature,.source_sha] | @tsv' candle-integration/sources.json)
             echo "Six original feature commits are ancestors of the integrated SHA" >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [[ "$CHECK_BRANCH" == standalone_fp48_integration ]]; then
-            [[ "$CANDIDATE_REF" == "integration/standalone-$CHECK_CAMPAIGN-fp8-fp4" ]] || exit 3
-            manifest=candle-integration/standalone-sources.json
-            test -s "$manifest" || exit 3
-            jq -e --arg base "$UPSTREAM_SHA" --arg campaign "$CHECK_CAMPAIGN" '
-              .schema_version==1 and .kind=="standalone-fp8-fp4" and
-              .base_sha==$base and .campaign==$campaign and
-              (.strategy=="merge" or .strategy=="rebase") and
-              ([.features[].feature]|sort)==(["fp8_candle","fp4_candle"]|sort) and
-              all(.features[]; (.source_ref==(.feature+"_standalone")) and
-                (.source_sha|test("^[a-f0-9]{40}$")) and
-                (.prepared_sha|test("^[a-f0-9]{40}$")))
-            ' "$manifest" >/dev/null || {
-              echo "::error::Standalone integration manifest mismatch"; exit 3;
-            }
-            while IFS=
-
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          components: rustfmt
-
-      - name: Check format, compile CPU, and record exact Cargo.lock
-        id: check
-        shell: bash
-        run: |
-          set -uo pipefail
-          report="$RUNNER_TEMP/candle-candidate-cpu"
-          mkdir -p "$report"
-          fmt_rc=0; lock_rc=0; check_rc=0; test_rc=0
-          cargo fmt --all -- --check > "$report/fmt.log" 2>&1 || fmt_rc=$?
-          if [[ ! -f Cargo.lock ]]; then
-            cargo generate-lockfile > "$report/lock.log" 2>&1 || lock_rc=$?
-          else
-            echo "Using candidate Cargo.lock" > "$report/lock.log"
-          fi
-          if ((lock_rc == 0)); then
-            cargo check -p candle-core -p candle-nn --no-default-features --locked \
-              > "$report/cpu-check.log" 2>&1 || check_rc=$?
-            if [[ ( "$CHECK_BRANCH" == asd_core || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$check_rc" -eq 0 ]]; then
-              cargo test -p candle-core --no-default-features --locked \
-                --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
-                > "$report/grouped-cpu-tests.log" 2>&1 || test_rc=$?
-            fi
-            if [[ ( "$CHECK_BRANCH" == fp4_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || "$CHECK_BRANCH" == standalone_fp48_integration ) && "$check_rc" -eq 0 ]]; then
-              cargo test -p candle-core --no-default-features --locked \
-                --test mxfp4_tests --test nvfp4_experiment \
-                > "$report/fp4-reference-tests.log" 2>&1 || test_rc=$?
-            fi
-            if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$check_rc" -eq 0 ]]; then
-              # The selector is pure Rust; compile and execute its unit tests
-              # without loading CUDA libraries or requiring a hosted GPU.
-              rustc --edition=2021 --test candle-kernels/src/moe_selection.rs \
-                -o "$RUNNER_TEMP/moe-selection-tests" \
-                > "$report/moe-selection-tests.log" 2>&1 || test_rc=$?
-              if ((test_rc == 0)); then
-                "$RUNNER_TEMP/moe-selection-tests" --nocapture \
-                  >> "$report/moe-selection-tests.log" 2>&1 || test_rc=$?
-              fi
-            fi
-          fi
-          lock_sha=""
-          if [[ -f Cargo.lock ]]; then
-            cp Cargo.lock "$report/Cargo.lock"
-            lock_sha="$(sha256sum Cargo.lock | cut -d' ' -f1)"
-          fi
-          status=CPU_FAILED
-          if ((fmt_rc == 0 && lock_rc == 0 && check_rc == 0 && test_rc == 0)); then
-            status=CPU_PASSED
-            echo "lock_sha256=$lock_sha" >> "$GITHUB_OUTPUT"
-          fi
-          jq -n \
-            --arg branch "$CHECK_BRANCH" --arg campaign "$CHECK_CAMPAIGN" \
-            --arg sha "$CANDIDATE_SHA" --arg upstream "$UPSTREAM_SHA" \
-            --arg status "$status" --arg lock "$lock_sha" \
-            --argjson fmt "$fmt_rc" --argjson lock_rc "$lock_rc" \
-            --argjson cpu "$check_rc" --argjson tests "$test_rc" \
-            '{branch:$branch,campaign:$campaign,candidate_sha:$sha,upstream_sha:$upstream,
-              status:$status,lock_sha256:$lock,exit_codes:{fmt:$fmt,lock:$lock_rc,
-              cpu:$cpu,grouped_cpu_tests:$tests,targeted_tests:$tests}}' > "$report/report.json"
-          {
-            echo "CPU: $status / $CHECK_BRANCH / $CANDIDATE_SHA"
-            echo "Exit codes: fmt=$fmt_rc, lock=$lock_rc, cpu=$check_rc, targeted_tests=$test_rc"
-            echo "Cargo.lock SHA-256: $lock_sha"
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$status" != CPU_PASSED ]]; then
-            echo "::error::Candidate CPU gate failed: fmt=$fmt_rc, lock=$lock_rc, cpu=$check_rc, targeted_tests=$test_rc"
-            for item in fmt lock cpu-check grouped-cpu-tests fp4-reference-tests moe-selection-tests; do
-              log="$report/$item.log"
-              [[ -s "$log" ]] || continue
-              echo "::group::$item.log (last 35 lines)"
-              tail -n 35 "$log"
-              echo "::endgroup::"
-            done
-          fi
-          [[ "$status" == CPU_PASSED ]]
-
-      - name: Upload CPU proof
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 / Node 24
-        with:
-          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
-          path: ${{ runner.temp }}/candle-candidate-cpu/
-          if-no-files-found: warn
-          retention-days: 21
-
-  cuda_compile:
-    name: CUDA 12.9 SM61 compile / ${{ inputs.branch }}
-    needs: cpu
-    if: needs.cpu.result == 'success' && inputs.validation == 'cpu_cuda'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    env:
-      CUDA_COMPUTE_CAP: "61"
-      CARGO_INCREMENTAL: "0"
-      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-      CANDIDATE_REF: ${{ inputs.candidate_ref }}
-      CHECK_BRANCH: ${{ inputs.branch }}
-      CHECK_CAMPAIGN: ${{ inputs.campaign }}
-      LOCK_SHA256: ${{ needs.cpu.outputs.lock_sha256 }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # Node24
-        with:
-          ref: ${{ inputs.candidate_sha }}
-          persist-credentials: false
-
-      # The candidate is the original immutable six-source SHA. Fetch only
-      # the container recipe and compile harness from this workflow's
-      # orchestration commit, so the source candidate does not move.
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ github.sha }}
-          path: .ci-tools
-          persist-credentials: false
-
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # Node24
-        with:
-          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cpu
-          path: ${{ runner.temp }}/candidate-cpu-proof
-
-      - name: Build Ubuntu 26.04 CUDA 12.9.2 compiler container
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker build --pull \
-            --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
-            --tag candle-cuda1292-u2604:candidate \
-            .ci-tools/.github/container
-          docker image inspect candle-cuda1292-u2604:candidate --format '{{.Id}}'
-
-      - name: CUDA compilation without executing GPU kernels
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/cuda-cargo"
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --security-opt=no-new-privileges \
-            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:rw" \
-            --volume "$RUNNER_TEMP:$RUNNER_TEMP:rw" \
-            --workdir "$GITHUB_WORKSPACE" \
-            --env "HOME=$RUNNER_TEMP/cuda-home" \
-            --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
-            --env "RUSTUP_HOME=/opt/rustup" \
-            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
-            --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
-            --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH --env CHECK_CAMPAIGN --env LOCK_SHA256 \
-            candle-cuda1292-u2604:candidate \
-            bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
-
-      - name: Upload CUDA compilation proof
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # Node24
-        with:
-          name: candidate-${{ inputs.campaign }}-${{ inputs.branch }}-cuda
-          path: ${{ runner.temp }}/candle-candidate-cuda/
-          if-no-files-found: warn
-          retention-days: 21
-\t' read -r feature prepared; do
-              git merge-base --is-ancestor "$prepared" HEAD || {
-                echo "::error::Missing prepared $feature $prepared"; exit 3;
-              }
-            done < <(jq -r '.features[]|[.feature,.prepared_sha]|@tsv' "$manifest")
-            echo "Two exact standalone sources and prepared ancestries verified" >> "$GITHUB_STEP_SUMMARY"
-          fi
           echo "Candidate $CANDIDATE_REF @ $CANDIDATE_SHA, upstream $UPSTREAM_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -336,7 +148,7 @@ jobs:
                 --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
                 > "$report/grouped-cpu-tests.log" 2>&1 || test_rc=$?
             fi
-            if [[ ( "$CHECK_BRANCH" == fp4_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || "$CHECK_BRANCH" == standalone_fp48_integration ) && "$check_rc" -eq 0 ]]; then
+            if [[ ( "$CHECK_BRANCH" == fp4_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 ) && "$check_rc" -eq 0 ]]; then
               cargo test -p candle-core --no-default-features --locked \
                 --test mxfp4_tests --test nvfp4_experiment \
                 > "$report/fp4-reference-tests.log" 2>&1 || test_rc=$?
