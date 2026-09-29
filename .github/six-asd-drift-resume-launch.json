@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "purpose": "start-one-physical-sm61-dw5x5-only-resume",
+  "original_gpu_run_id": 36556360212,
+  "original_gpu_job_id": 109372414549,
+  "original_gpu_artifact_id": 11032135466,
+  "candidate_sha": "e44869d909dc536b9a1f37cf89bfba3d46fc1985",
+  "campaign": "six-sm61-v3-r3-20260929",
+  "evidence_manifest_path": ".github/six-asd-drift-resume.json",
+  "measure": {
+    "warmup_ms": 1000,
+    "iters": 40,
+    "inner": 32,
+    "max_drift_pct": 20
+  },
+  "reuse_previous_physical_passes": true,
+  "no_repeated_full_gpu_suites": true,
+  "promote_only_if_four_case_status_pass": true
+}
