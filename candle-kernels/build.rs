@@ -18,6 +18,7 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP4");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
+    println!("cargo:rustc-env=CANDLE_CUDA_COMPUTE_CAP={compute_cap}");
     let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
     let legacy_fp8 = compute_cap < 89 && env::var_os(LEGACY_FP8_FEATURE).is_some();
 
@@ -47,6 +48,7 @@ fn main() -> Result<()> {
 
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
+        "src/moe/moe_simt_f16.cu",
         "src/moe/moe_wmma.cu",
         "src/moe/moe_wmma_gguf.cu",
         "src/mmvq_gguf.cu",
@@ -84,7 +86,10 @@ fn main() -> Result<()> {
         moe_builder = moe_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
     }
 
-
+    // SM61 has no WMMA objects; SIMT exports the required compatibility stub.
+    if compute_cap < 70 {
+        moe_builder = moe_builder.arg("-DNO_WMMA_KERNEL");
+    }
 
     // BF16 WMMA fragments require Ampere.
     if compute_cap < 80 {
