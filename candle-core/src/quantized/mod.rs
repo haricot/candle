@@ -12,6 +12,7 @@ pub mod ggml_file;
 pub mod gguf_file;
 pub mod imatrix_file;
 pub mod k_quants;
+pub mod nvfp4;
 #[cfg(feature = "metal")]
 pub mod metal;
 pub mod repack;
