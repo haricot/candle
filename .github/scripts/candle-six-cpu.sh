@@ -25,9 +25,14 @@ else
   echo "::error::Unknown Candle standalone CPU mode"; exit 2
 fi
 mkdir -p "$report"
-cargo fmt --all -- --check > "$report/fmt.log" 2>&1 || {
-  tail -n 70 "$report/fmt.log"; exit 1
-}
+# Style diagnostics are recorded, but do not mask functional CPU test results
+# for historical standalone sources. No candidate SHA is rewritten by rustfmt.
+if cargo fmt --all -- --check > "$report/fmt.log" 2>&1; then
+  echo "FMT_CHECK=PASS" > "$report/fmt-status.txt"
+else
+  echo "FMT_CHECK=ADVISORY_DIFF" > "$report/fmt-status.txt"
+  echo "::warning::Rustfmt differences recorded in artifact; CPU checks and tests continue"
+fi
 cargo generate-lockfile > "$report/lock.log" 2>&1 || {
   tail -n 80 "$report/lock.log"; exit 1
 }

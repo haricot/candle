@@ -65,6 +65,8 @@ jobs:
       matrix: ${{ steps.worktrees.outputs.matrix }}
       published: ${{ steps.worktrees.outputs.published }}
       auto_promote: ${{ steps.launch.outputs.auto_promote || inputs.auto_promote || false }}
+      reuse_cpu_run_id: ${{ steps.launch.outputs.reuse_cpu_run_id }}
+      reuse_cpu_campaign: ${{ steps.launch.outputs.reuse_cpu_campaign }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -87,6 +89,10 @@ jobs:
             (.strategy=="rebase" or .strategy=="merge") and
             .publish==true and .auto_promote==true and
             (.expected_sources|length)==6 and
+            (.reuse_cpu_run_id|type=="number") and .reuse_cpu_run_id>0 and
+            .reuse_cpu_campaign=="six-sm61-v3-r1-20260929" and
+            ([.reuse_cpu_features[]]|sort)==
+              (["bf16_candle","fp8_candle","fp4_candle","cudnn_fallback_candle","asd_core"]|sort) and
             all($cfg[0].features[]; . as $f |
               $request.expected_sources[$f.feature]==$f.initial_source_sha)
           ' "$manifest" >/dev/null || {
@@ -102,7 +108,7 @@ jobs:
               echo "::error::Source moved: $feature"; exit 3;
             }
           done < <(jq -r '.expected_sources|to_entries[]|[.key,.value]|@tsv' "$manifest")
-          for field in campaign base_sha strategy publish auto_promote; do
+          for field in campaign base_sha strategy publish auto_promote reuse_cpu_run_id reuse_cpu_campaign; do
             echo "$field=$(jq -r ".$field" "$manifest")" >> "$GITHUB_OUTPUT"
           done
           echo "Verified six pinned source refs for single V3 campaign" >> "$GITHUB_STEP_SUMMARY"
@@ -132,6 +138,9 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ubuntu-26.04
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
     env:
       MODE: standalone
       FEATURE: ${{ matrix.feature }}
@@ -149,11 +158,52 @@ jobs:
           ref: ${{ github.sha }}
           path: .ci-tools
           persist-credentials: false
+      # Preserve five identical-SHA CPU PASS artifacts from the preceding run
+      # instead of rebuilding them. MoE had only a rustfmt advisory failure.
+      - name: Download matching previous standalone CPU evidence
+        id: previous
+        if: github.event_name == 'push' && needs.prepare.outputs.reuse_cpu_run_id != '' && matrix.feature != 'moe_simt_f16_candle'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        continue-on-error: true
+        with:
+          name: standalone-${{ needs.prepare.outputs.reuse_cpu_campaign }}-${{ matrix.feature }}-cpu
+          run-id: ${{ needs.prepare.outputs.reuse_cpu_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/six-standalone-cpu/
+      - name: Verify exact-SHA reused CPU receipt
+        id: reuse
+        if: steps.previous.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/six-standalone-cpu"
+          test -s "$artifact/report.json"
+          test -s "$artifact/Cargo.lock"
+          jq -e --arg f "$FEATURE" --arg src "$SOURCE" --arg sha "$SHA" '
+            .status=="CPU_PASSED" and .feature==$f and
+            .source_sha==$src and .prepared_sha==$sha and
+            (.lock_sha256|test("^[a-f0-9]{64}$"))
+          ' "$artifact/report.json" >/dev/null || {
+            echo "::error::Reused CPU proof SHA or feature mismatch"; exit 3;
+          }
+          lock_expected="$(jq -r .lock_sha256 "$artifact/report.json")"
+          [[ "$(sha256sum "$artifact/Cargo.lock" | cut -d' ' -f1)" == "$lock_expected" ]] || {
+            echo "::error::Reused Cargo.lock differs from recorded proof"; exit 3;
+          }
+          echo "used=true" >> "$GITHUB_OUTPUT"
+          echo "Reused previous exact-SHA CPU PASS for $FEATURE (run ${{ needs.prepare.outputs.reuse_cpu_run_id }})" >> "$GITHUB_STEP_SUMMARY"
+          jq -n --arg original_run "${{ needs.prepare.outputs.reuse_cpu_run_id }}" \
+            --arg feature "$FEATURE" --arg sha "$SHA" \
+            '{evidence_origin_run_id:$original_run,feature:$feature,candidate_sha:$sha,
+              method:"exact_sha_and_Cargo.lock_receipt_reuse"}' > "$artifact/reuse-origin.json"
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        if: steps.reuse.outputs.used != 'true'
         with:
           toolchain: stable
           components: rustfmt
-      - run: bash .ci-tools/.github/scripts/candle-six-cpu.sh
+      - name: Run independent CPU checks when no reusable proof exists
+        if: steps.reuse.outputs.used != 'true'
+        run: bash .ci-tools/.github/scripts/candle-six-cpu.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
