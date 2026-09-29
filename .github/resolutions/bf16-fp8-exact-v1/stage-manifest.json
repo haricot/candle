@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "source_bf16": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+  "source_fp8": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+  "files": {
+    "candle-core/Cargo.toml": {
+      "base": "b04c0b4e4dc158bccc6b72ab9d70e3f17914c673",
+      "ours": "7f4214da98ac43b283abc99d49cccfbb1cde4888",
+      "theirs": "ab77fe13389b710a3e6dea82ba398a846565e620"
+    },
+    "candle-kernels/Cargo.toml": {
+      "base": "d59f9ee086139937cae9783bd08ff0642489c761",
+      "ours": "4132dfa48541cf3505c16a3ea233c355f0addd44",
+      "theirs": "9515b520d6bdfd650b6543c1ae4a2589c3319274"
+    },
+    "candle-kernels/build.rs": {
+      "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
+      "ours": "06fe2c89873383663b89f6ce9f7d85550813daad",
+      "theirs": "e8e21da5ad3f2f3103088a5dedebc8d983a607c3"
+    },
+    "candle-kernels/src/binary.cu": {
+      "base": "b4fa4b1a3f0379348ff48247db8443d7099f2cd9",
+      "ours": "0d1f01a11822ce5ff5fbccf8525e00484c739671",
+      "theirs": "51a33cce5fb9ef54d4e0e71bfab9be073b3b5093"
+    }
+  }
+}
