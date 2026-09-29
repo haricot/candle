@@ -41,7 +41,8 @@ permissions:
   contents: read
 concurrency:
   group: candle-six-standalone-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'production' }}
-  cancel-in-progress: false
+  # Superseded PR previews cancel each other; never cancel an active production GPU campaign.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   prepare:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/mirror_orch'
