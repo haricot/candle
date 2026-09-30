@@ -1,3 +1,5 @@
+mod asd_exact_build_adapter_v2;
+
 use cudaforge::{KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
@@ -6,6 +8,18 @@ const CUTILE_FEATURE: &str = "CARGO_FEATURE_CUTILE";
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=asd_exact_build_adapter_v2.rs");
+    println!("cargo::rerun-if-changed=asd_exact_v2_dispatch_template.rs");
+    println!("cargo::rerun-if-changed=src/sm61_exact_grouped");
+    println!("cargo::rerun-if-env-changed=CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID");
+    for var in [
+        "CUDA_COMPUTE_CAP",
+        "CANDLE_ASD_EXACT_POLICY",
+        "CANDLE_ASD_VALIDATION",
+        "CANDLE_ASD_TARGET_GPU_UUID",
+    ] {
+        println!("cargo::rerun-if-env-changed={var}");
+    }
     println!("cargo::rerun-if-changed=src");
     println!("cargo::rerun-if-changed=src/compatibility.cuh");
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
@@ -23,6 +37,24 @@ fn main() -> Result<()> {
         .build_ptx()?;
 
     bindings.write(&ptx_path)?;
+
+    // Exact SM61 kernels are kept in a separately generated PTX module.
+    // This avoids pulling legacy BF16/FP8 compilation flags into asd_core.
+    let sm61_ptx = KernelBuilder::new()
+        .source_files(vec![
+            "src/sm61_exact_grouped/sm61_exact_grouped_k00.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k01.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k02.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k03.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k04.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k05.cu",
+            "src/sm61_exact_grouped/sm61_exact_grouped_k06.cu",
+        ])
+        .arg("--expt-relaxed-constexpr")
+        .arg("-std=c++17")
+        .arg("-O3")
+        .build_ptx()?;
+    sm61_ptx.write(&out_dir.join("sm61_ptx.rs"))?;
 
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
@@ -56,6 +88,30 @@ fn main() -> Result<()> {
     let compute_cap = cudaforge::detect_compute_cap()
         .map(|arch| arch.base())
         .unwrap_or(80);
+    let evidence_uuid = env::var("CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID").ok();
+    std::fs::write(
+        out_dir.join("sm61_exact_grouped_scope.rs"),
+        format!(
+            "pub const TARGET_SCOPE: &str = \"device\";\npub const EVIDENCE_GPU_UUID: Option<&str> = {};\n",
+            evidence_uuid
+                .as_deref()
+                .map(|v| format!("Some({v:?})"))
+                .unwrap_or_else(|| "None".to_owned())
+        ),
+    )?;
+    std::fs::write(
+        out_dir.join("cuda_build_info.rs"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
+    )?;
+    let validation_requested = matches!(
+        env::var("CANDLE_ASD_VALIDATION").ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    );
+    if validation_requested && env::var_os("CANDLE_ASD_EXACT_POLICY").is_none() {
+        panic!("CANDLE_ASD_VALIDATION requires CANDLE_ASD_EXACT_POLICY");
+    }
+    asd_exact_build_adapter_v2::materialize_for_candle_build(compute_cap)
+        .unwrap_or_else(|err| panic!("failed to materialize ASD V2 policy: {err}"));
     if compute_cap < 80 {
         moe_builder = moe_builder.arg("-DNO_BF16_KERNEL");
     }
