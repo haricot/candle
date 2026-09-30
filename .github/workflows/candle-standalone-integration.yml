@@ -85,7 +85,7 @@ jobs:
             . as $r |
             .schema_version==1 and
             .purpose=="start-six-canonical-main-integration" and
-            .campaign=="six-canonical-main-5ba5d5b4-r1-20260930" and
+            .campaign=="six-canonical-main-5ba5d5b4-r2-20260930" and
             .strategy=="exact-delta" and
             .base_sha=="5ba5d5b468b5b1df40e82dd3d556987bedeea041" and
             .publish==true and .auto_promote==true and
