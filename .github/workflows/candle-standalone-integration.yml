@@ -85,7 +85,7 @@ jobs:
             . as $r |
             .schema_version==1 and
             .purpose=="start-six-canonical-main-integration" and
-            .campaign=="six-canonical-main-5ba5d5b4-r2-20260930" and
+            .campaign=="six-canonical-main-5ba5d5b4-r3-20260930" and
             .strategy=="exact-delta" and
             .base_sha=="5ba5d5b468b5b1df40e82dd3d556987bedeea041" and
             .publish==true and .auto_promote==true and
@@ -487,8 +487,12 @@ jobs:
           grep -Fxq 'STATUS=PASS' "${report}/logs/asd-transpose.log"
           cargo run -p candle-core --locked --release --no-default-features --features "${features}" \
             --example grouped_conv2d_asd_real_dispatch_validate -- \
-            --warmup-ms 250 --iters 8 --inner 8 --max-drift-pct 20 \
-            --min-integrated-speedup-x 1.01 > "${report}/logs/asd-conv2d.log" 2>&1
+            --warmup-ms 1000 --iters 40 --inner 32 --max-drift-pct 20 \
+            --min-integrated-speedup-x 1.01 > "${report}/logs/asd-conv2d.log" 2>&1 || {
+              echo "::error::ASD Conv2D DW5x5 benchmark failed; actual runtime trace:"
+              tail -n 160 "${report}/logs/asd-conv2d.log"
+              exit 1
+            }
           grep -Fxq 'STATUS=PASS' "${report}/logs/asd-conv2d.log"
 
           cp candle-integration/standalone-six.json "${report}/sources.json"
