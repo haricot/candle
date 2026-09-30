@@ -139,6 +139,11 @@ for feature in "${features[@]}"; do
         "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" \
         "${pinned[fp4_candle]}" "$report"; then
       resolved=true
+    elif [[ "$feature" == cudnn_fallback_candle ]] &&
+      bash .github/scripts/candle-resolve-bf16-fp8-fp4-cudnn.sh "$aggregate" \
+        "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" \
+        "${pinned[fp4_candle]}" "${pinned[cudnn_fallback_candle]}" "$report"; then
+      resolved=true
     elif [[ "$feature" == moe_simt_f16_candle ]] &&
       bash .github/scripts/candle-resolve-bf16-fp8-fp4-moe.sh "$aggregate" \
         "${pinned[bf16_candle]}" "${pinned[fp8_candle]}" \

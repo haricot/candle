@@ -7,6 +7,7 @@ on:
       - .github/scripts/candle-standalone-assemble.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
+      - .github/scripts/candle-resolve-bf16-fp8-fp4-cudnn.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4-moe.sh
       - .github/scripts/candle-resolve-six-asd.sh
       - .github/resolutions/**
