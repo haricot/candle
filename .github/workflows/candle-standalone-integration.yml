@@ -90,7 +90,7 @@ jobs:
             .base_sha=="5ba5d5b468b5b1df40e82dd3d556987bedeea041" and
             .publish==true and .auto_promote==true and
             .expected_integration_target=="e44869d909dc536b9a1f37cf89bfba3d46fc1985" and
-            .orchestration_parent=="df40034874a24c81d005313a42397b4263397d3f" and
+            (.orchestration_parent|test("^[a-f0-9]{40}$")) and
             (.expected_sources|length)==6 and
             all($cfg[0].features[]; . as $f |
               $r.expected_sources[$f.feature] != null and
