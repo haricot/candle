@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "purpose": "start-six-canonical-main-integration",
+  "campaign": "six-canonical-main-5ba5d5b4-r1-20260930",
+  "strategy": "exact-delta",
+  "base_sha": "5ba5d5b468b5b1df40e82dd3d556987bedeea041",
+  "publish": true,
+  "auto_promote": true,
+  "orchestration_parent": "df40034874a24c81d005313a42397b4263397d3f",
+  "expected_integration_target": "e44869d909dc536b9a1f37cf89bfba3d46fc1985",
+  "expected_sources": {
+    "bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "fp8_candle": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "fp4_candle": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "cudnn_fallback_candle": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "moe_simt_f16_candle": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+    "asd_core": "b0281c1339b43f52439d2e7ef02335bbc03f74a6"
+  },
+  "requested_integrated_gates": [
+    "cargo test -p candle-core --no-default-features --locked --test mxfp4_tests --test nvfp4_experiment",
+    "cargo check -p candle-core --features cuda --tests --locked",
+    "cargo check -p candle-core --features \"cuda cuda-legacy-fp4\" --tests --locked"
+  ],
+  "physical_gpu": "single SM61 job only after six CPU + integrated CPU + hosted CUDA PASS"
+}

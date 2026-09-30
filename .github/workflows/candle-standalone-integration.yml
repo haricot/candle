@@ -1,5 +1,11 @@
 name: Candle Feature Six — Exact Delta, Test, Publish
 on:
+  # One-shot production launch. The manifest pins main, all six canonical
+  # source SHAs and the previous integrated v3 before any temporary ref exists.
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/six-canonical-campaign-launch.json
   pull_request:
     branches: [mirror_orch]
     paths:
@@ -61,21 +67,67 @@ jobs:
       manifest_sha256: ${{ steps.worktrees.outputs.manifest_sha256 }}
       matrix: ${{ steps.worktrees.outputs.matrix }}
       published: ${{ steps.worktrees.outputs.published }}
-      auto_promote: ${{ inputs.auto_promote || false }}
+      auto_promote: ${{ steps.launch.outputs.auto_promote || inputs.auto_promote || false }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Validate pinned one-shot canonical campaign
+        id: launch
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=.github/six-canonical-campaign-launch.json
+          config=.github/standalone-six-sources.json
+          jq -e --slurpfile cfg "$config" '
+            . as $r |
+            .schema_version==1 and
+            .purpose=="start-six-canonical-main-integration" and
+            .campaign=="six-canonical-main-5ba5d5b4-r1-20260930" and
+            .strategy=="exact-delta" and
+            .base_sha=="5ba5d5b468b5b1df40e82dd3d556987bedeea041" and
+            .publish==true and .auto_promote==true and
+            .expected_integration_target=="e44869d909dc536b9a1f37cf89bfba3d46fc1985" and
+            .orchestration_parent=="df40034874a24c81d005313a42397b4263397d3f" and
+            (.expected_sources|length)==6 and
+            all($cfg[0].features[]; . as $f |
+              $r.expected_sources[$f.feature] != null and
+              $f.source_ref==$f.feature and $f.target_ref==$f.feature)
+          ' "$manifest" >/dev/null || {
+            echo "::error::Invalid or stale canonical campaign launch manifest"; exit 3;
+          }
+          [[ "$(git rev-parse HEAD^)" == "$(jq -r .orchestration_parent "$manifest")" ]] || {
+            echo "::error::Unexpected orchestration parent; refuse replay"; exit 3;
+          }
+          base="$(jq -r .base_sha "$manifest")"
+          [[ "$(git ls-remote --heads origin refs/heads/main | cut -f1)" == "$base" ]] || {
+            echo "::error::main moved after launch approval"; exit 3;
+          }
+          while IFS=$'\t' read -r feature expected; do
+            live="$(git ls-remote --heads origin "refs/heads/$feature" | cut -f1)"
+            [[ "$live" == "$expected" ]] || {
+              echo "::error::Canonical source moved: $feature=$live expected=$expected"; exit 3;
+            }
+          done < <(jq -r '.expected_sources|to_entries[]|[.key,.value]|@tsv' "$manifest")
+          old_v3="$(jq -r .expected_integration_target "$manifest")"
+          [[ "$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v3 | cut -f1)" == "$old_v3" ]] || {
+            echo "::error::cuda_asd_runner_v3 moved before campaign"; exit 3;
+          }
+          for field in campaign strategy base_sha publish auto_promote; do
+            echo "$field=$(jq -r ".$field" "$manifest")" >> "$GITHUB_OUTPUT"
+          done
+          echo "Pinned canonical campaign accepted: six sources + main + previous v3 verified" >> "$GITHUB_STEP_SUMMARY"
       - name: Freeze six source refs and prepare six worktrees plus one integration
         id: worktrees
         env:
           GH_TOKEN: ${{ github.token }}
-          CAMPAIGN: ${{ inputs.campaign || format('pr-{0}-{1}', github.event.pull_request.number, github.run_id) }}
-          STRATEGY: ${{ inputs.strategy || 'exact-delta' }}
-          BASE_SHA_INPUT: ${{ inputs.base_sha }}
-          PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || false }}
-          AUTO_PROMOTE: ${{ inputs.auto_promote || false }}
+          CAMPAIGN: ${{ steps.launch.outputs.campaign || inputs.campaign || format('pr-{0}-{1}', github.event.pull_request.number, github.run_id) }}
+          STRATEGY: ${{ steps.launch.outputs.strategy || inputs.strategy || 'exact-delta' }}
+          BASE_SHA_INPUT: ${{ steps.launch.outputs.base_sha || inputs.base_sha }}
+          PUBLISH: ${{ steps.launch.outputs.publish || (github.event_name == 'workflow_dispatch' && inputs.publish) || false }}
+          AUTO_PROMOTE: ${{ steps.launch.outputs.auto_promote || inputs.auto_promote || false }}
         run: bash .github/scripts/candle-standalone-assemble.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
