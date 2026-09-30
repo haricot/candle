@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Rebase six canonical feature branches in detached worktrees, then merge into a seventh.
+# Replay each canonical feature's exact final tree delta onto main, then merge the six prepared commits.
 # Only temporary refs may be published here. Permanent feature refs are GPU-gated.
 set -euo pipefail
 umask 077
 : "${CAMPAIGN:?}" "${STRATEGY:?}" "${PUBLISH:?}" "${GITHUB_REPOSITORY:?}"
 [[ "$CAMPAIGN" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || exit 2
-[[ "$STRATEGY" == rebase || "$STRATEGY" == merge ]] || exit 2
+[[ "$STRATEGY" == exact-delta || "$STRATEGY" == merge ]] || exit 2
 [[ "$PUBLISH" == true || "$PUBLISH" == false ]] || exit 2
 cfg=.github/standalone-six-sources.json
-jq -e '.schema_version==3 and .kind=="six-canonical-feature-main-rebase" and
+jq -e '.schema_version==3 and .kind=="six-canonical-feature-main-exact-delta" and
   .integration_target=="cuda_asd_runner_v3" and
   [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
     "cudnn_fallback_candle","moe_simt_f16_candle","asd_core"] and
@@ -59,42 +59,64 @@ oldintegration="$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v3 | c
 for feature in "${features[@]}"; do
   sha="${pinned[$feature]}"
   work="$scratch/$feature"
-  git worktree add --detach "$work" "$sha" > "$report/logs/$feature-worktree.log" 2>&1
-  git -C "$work" config rerere.enabled true
-  git -C "$work" config rerere.autoupdate false
   common="$(git merge-base "$base" "$sha")"
-  if [[ "$STRATEGY" == rebase ]]; then
-    if ! git -C "$work" rebase --rebase-merges --onto "$base" "$common" \
+  source_patch="$report/diffs/$feature-source.patch"
+  prepared_patch="$report/diffs/$feature.patch"
+  git diff --binary --full-index "$common" "$sha" > "$source_patch"
+  source_patch_sha="$(sha256sum "$source_patch" | cut -d' ' -f1)"
+
+  if [[ "$STRATEGY" == exact-delta ]]; then
+    git worktree add --detach "$work" "$base" > "$report/logs/$feature-worktree.log" 2>&1
+    git -C "$work" config rerere.enabled false
+    if ! git -C "$work" apply --3way --index "$source_patch" \
        > "$report/logs/$feature-update.log" 2>&1; then
       git -C "$work" ls-files -u > "$report/conflicts/$feature-index.txt"
       git -C "$work" diff --name-only --diff-filter=U > "$report/conflicts/$feature-files.txt"
       git -C "$work" status --short > "$report/conflicts/$feature-status.txt"
-      echo "::error::Feature rebase conflict in $feature"; exit 1
+      echo "::error::Exact feature delta conflicts with current main for $feature"; exit 1
     fi
-  elif ! git -C "$work" merge --no-ff --no-edit -m "prepare($feature): main $base" "$base" \
+    git -C "$work" diff --cached --check
+    git -C "$work" diff --cached --quiet && {
+      echo "::error::Exact feature delta unexpectedly became empty for $feature"; exit 3;
+    }
+    git -C "$work" commit -m "prepare($feature): exact source delta $sha on main $base" \
+      >> "$report/logs/$feature-update.log" 2>&1
+  else
+    git worktree add --detach "$work" "$sha" > "$report/logs/$feature-worktree.log" 2>&1
+    git -C "$work" config rerere.enabled true
+    git -C "$work" config rerere.autoupdate false
+    if ! git -C "$work" merge --no-ff --no-edit -m "prepare($feature): main $base" "$base" \
        > "$report/logs/$feature-update.log" 2>&1; then
-    git -C "$work" ls-files -u > "$report/conflicts/$feature-index.txt"
-    git -C "$work" diff --name-only --diff-filter=U > "$report/conflicts/$feature-files.txt"
-    git -C "$work" status --short > "$report/conflicts/$feature-status.txt"
-    echo "::error::Feature merge conflict in $feature"; exit 1
+      git -C "$work" ls-files -u > "$report/conflicts/$feature-index.txt"
+      git -C "$work" diff --name-only --diff-filter=U > "$report/conflicts/$feature-files.txt"
+      git -C "$work" status --short > "$report/conflicts/$feature-status.txt"
+      echo "::error::Feature merge conflict in $feature"; exit 1
+    fi
   fi
+
   prepared[$feature]="$(git -C "$work" rev-parse HEAD)"
   git merge-base --is-ancestor "$base" "${prepared[$feature]}" || exit 3
-  git diff --binary "$base" "${prepared[$feature]}" > "$report/diffs/$feature.patch"
-  if [[ "$STRATEGY" == rebase ]]; then
-    git range-diff "$common..$sha" "$base..${prepared[$feature]}" \
-      > "$report/diffs/$feature-range-diff.txt" || :
+  git diff --binary --full-index "$base" "${prepared[$feature]}" > "$prepared_patch"
+  prepared_patch_sha="$(sha256sum "$prepared_patch" | cut -d' ' -f1)"
+  if [[ "$STRATEGY" == exact-delta ]] && ! cmp -s "$source_patch" "$prepared_patch"; then
+    diff -u "$source_patch" "$prepared_patch" > "$report/diffs/$feature-delta-mismatch.diff" || :
+    echo "::error::Prepared $feature changed the canonical feature delta; manual review required"; exit 3
   fi
+
   jq -cn --arg feature "$feature" --arg source_ref "$feature" \
     --arg target_ref "$feature" --arg source_sha "$sha" \
     --arg old_target_sha "${oldtarget[$feature]}" \
     --arg prepared_sha "${prepared[$feature]}" \
     --arg preparation_ref "prepare/$CAMPAIGN/$feature" \
     --arg common_base_sha "$common" \
+    --arg source_patch_sha256 "$source_patch_sha" \
+    --arg prepared_patch_sha256 "$prepared_patch_sha" \
     '{feature:$feature,source_ref:$source_ref,target_ref:$target_ref,
       source_sha:$source_sha,old_target_sha:$old_target_sha,
       prepared_sha:$prepared_sha,preparation_ref:$preparation_ref,
-      common_base_sha:$common_base_sha}' >> "$report/sources.ndjson"
+      common_base_sha:$common_base_sha,
+      source_patch_sha256:$source_patch_sha256,
+      prepared_patch_sha256:$prepared_patch_sha256}' >> "$report/sources.ndjson"
 done
 aggregate="$scratch/integration"
 git worktree add --detach "$aggregate" "$base" > "$report/logs/integration-worktree.log" 2>&1

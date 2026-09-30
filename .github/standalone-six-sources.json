@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
-  "kind": "six-canonical-feature-main-rebase",
+  "kind": "six-canonical-feature-main-exact-delta",
   "integration_target": "cuda_asd_runner_v3",
   "source_main_ref": "main",
-  "strategy_default": "rebase",
+  "strategy_default": "exact-delta",
   "max_one_physical_gpu_campaign": true,
   "features": [
     {
@@ -74,5 +74,6 @@
     "backup_previous_feature_refs": true,
     "permanent_branch_updates": 7,
     "never_push_to_main": true
-  }
+  },
+  "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed"
 }

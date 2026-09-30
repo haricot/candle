@@ -1,4 +1,4 @@
-name: Candle Feature Six — Rebase, Test, Publish
+name: Candle Feature Six — Exact Delta, Test, Publish
 on:
   pull_request:
     branches: [mirror_orch]
@@ -20,11 +20,11 @@ on:
         type: string
         required: true
       strategy:
-        description: Update detached canonical feature worktrees against pinned fork main
+        description: Replay exact canonical feature deltas on pinned fork main
         type: choice
         required: true
-        default: rebase
-        options: [rebase, merge]
+        default: exact-delta
+        options: [exact-delta, merge]
       base_sha:
         description: Optional exact fork main SHA
         type: string
@@ -71,7 +71,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CAMPAIGN: ${{ inputs.campaign || format('pr-{0}-{1}', github.event.pull_request.number, github.run_id) }}
-          STRATEGY: ${{ inputs.strategy || 'rebase' }}
+          STRATEGY: ${{ inputs.strategy || 'exact-delta' }}
           BASE_SHA_INPUT: ${{ inputs.base_sha }}
           PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || false }}
           AUTO_PROMOTE: ${{ inputs.auto_promote || false }}
