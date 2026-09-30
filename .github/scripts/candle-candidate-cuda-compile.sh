@@ -42,6 +42,27 @@ cargo check -p candle-core -p candle-nn --lib --tests \
   --no-default-features --features "$features" --locked \
   > "$report/cuda-check.log" 2>&1 || build_rc=$?
 
+if [[ "$CHECK_BRANCH" == standalone_six_integration && "$build_rc" -eq 0 ]]; then
+  cuda_tests_rc=0
+  cargo check -p candle-core --features cuda --tests --locked \
+    > "$report/cuda-tests-default.log" 2>&1 || cuda_tests_rc=$?
+  if ((cuda_tests_rc != 0)); then
+    echo "::error::Integrated candle-core CUDA --tests check failed"
+    tail -n 100 "$report/cuda-tests-default.log"
+    build_rc=$cuda_tests_rc
+  fi
+fi
+if [[ "$CHECK_BRANCH" == standalone_six_integration && "$build_rc" -eq 0 ]]; then
+  fp4_tests_rc=0
+  cargo check -p candle-core --features "cuda cuda-legacy-fp4" --tests --locked \
+    > "$report/cuda-tests-legacy-fp4.log" 2>&1 || fp4_tests_rc=$?
+  if ((fp4_tests_rc != 0)); then
+    echo "::error::Integrated candle-core CUDA+legacy-FP4 --tests check failed"
+    tail -n 100 "$report/cuda-tests-legacy-fp4.log"
+    build_rc=$fp4_tests_rc
+  fi
+fi
+
 
 # Isolated FP4 deliberately leaves the normal GGUF MXFP4 paths enabled.
 # Also compile the explicitly opted-in NVFP4 software kernels/tests under SM61
