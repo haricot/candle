@@ -9,7 +9,7 @@ manifest="$root/stage-manifest.json"
    "$source_fp8" == 121f14beb269754ff9edcb3a33e77c38844d5c26 &&
    "$source_fp4" == 2976961e97f0aff7a353e45b209653c392f2c657 &&
    "$source_cudnn" == 84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f &&
-   "$source_moe" == 8707865a92e2801a0ccb22727bc82c3db6a5bb8b &&
+   "$source_moe" == 1c62e23cf6c986826ef12c9d544ee9356972d59b &&
    "$source_asd" == b0281c1339b43f52439d2e7ef02335bbc03f74a6 ]] || exit 3
 jq -e --arg b "$source_bf16" --arg f "$source_fp8" --arg p "$source_fp4" --arg c "$source_cudnn" --arg m "$source_moe" --arg a "$source_asd" \
   '.schema_version==1 and .source_bf16==$b and .source_fp8==$f and

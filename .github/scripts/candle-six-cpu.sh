@@ -12,7 +12,7 @@ elif [[ "$MODE" == integrated ]]; then
   manifest=candle-integration/standalone-six.json
   [[ "$(sha256sum "$manifest" | cut -d' ' -f1)" == "$MANIFEST_SHA" ]] || exit 3
   jq -e --arg c "$CAMPAIGN" '
-    .schema_version==2 and .kind=="standalone-six" and .campaign==$c and
+    .schema_version==3 and .kind=="canonical-feature-six" and .campaign==$c and
     [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
       "cudnn_fallback_candle","moe_simt_f16_candle","asd_core"]
   ' "$manifest" >/dev/null || exit 3
@@ -45,6 +45,10 @@ cargo check -p candle-core -p candle-nn --no-default-features --locked \
 if [[ "$MODE" == integrated ]]; then
   cargo test -p candle-core --no-default-features --locked \
     --test mxfp4_tests --test nvfp4_experiment \
+    > "$report/fp4-reference-tests.log" 2>&1 || {
+      tail -n 110 "$report/fp4-reference-tests.log"; exit 1
+    }
+  cargo test -p candle-core --no-default-features --locked \
     --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
     -- --test-threads=1 > "$report/cpu-tests.log" 2>&1 || {
       tail -n 110 "$report/cpu-tests.log"; exit 1
