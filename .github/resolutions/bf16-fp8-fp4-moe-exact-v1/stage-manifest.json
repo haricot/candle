@@ -7,9 +7,10 @@
   "source_moe": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
   "files": {
     "candle-kernels/build.rs": {
-      "base": "633228c15e23cb11285f7439dd4873d702bd20ce",
+      "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
       "ours": "45f00b3e4d1d9b01fce8a59be77f0bebfe7aeb44",
       "theirs": "c3a6e15fdec835b1e984993a86b396a5de9f083d"
     }
-  }
+  },
+  "review_note": "exact-delta preparation restores clean main as the merge base; reviewed ours/theirs/postimage unchanged"
 }
