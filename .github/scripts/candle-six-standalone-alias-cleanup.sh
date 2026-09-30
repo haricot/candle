@@ -24,8 +24,8 @@ while IFS=$'\t' read -r canonical sha duplicate dsha; do
   fi
   leases+=("--force-with-lease=refs/heads/$duplicate:$sha")
   deletes+=(":refs/heads/$duplicate")
-done < <(jq -r '.canonical_feature_refs|to_entries[] as $c |
-  [$c.key,$c.value,($c.key+"_standalone"),(.duplicate_refs[$c.key+"_standalone"])]|@tsv' "$cfg")
+done < <(jq -r '. as $root | .canonical_feature_refs|to_entries[] as $c |
+  [$c.key,$c.value,($c.key+"_standalone"),($root.duplicate_refs[$c.key+"_standalone"])]|@tsv' "$cfg")
 [[ "${#deletes[@]}" -eq 6 ]] || exit 3
 git push --atomic "${leases[@]}" origin "${deletes[@]}" > "$report/delete.log" 2>&1 || {
   tail -n 80 "$report/delete.log"; exit 1;
@@ -33,8 +33,8 @@ git push --atomic "${leases[@]}" origin "${deletes[@]}" > "$report/delete.log" 2
 while IFS=$'\t' read -r canonical sha duplicate dsha; do
   [[ "$(git ls-remote --heads origin "refs/heads/$canonical" | cut -f1)" == "$sha" ]] || exit 3
   [[ -z "$(git ls-remote --heads origin "refs/heads/$duplicate")" ]] || exit 3
-done < <(jq -r '.canonical_feature_refs|to_entries[] as $c |
-  [$c.key,$c.value,($c.key+"_standalone"),(.duplicate_refs[$c.key+"_standalone"])]|@tsv' "$cfg")
+done < <(jq -r '. as $root | .canonical_feature_refs|to_entries[] as $c |
+  [$c.key,$c.value,($c.key+"_standalone"),($root.duplicate_refs[$c.key+"_standalone"])]|@tsv' "$cfg")
 jq -n --slurpfile c "$cfg" --arg run "$GITHUB_RUN_ID"   '{status:"STANDALONE_ALIASES_DELETED",run_id:$run,
     deleted_refs:($c[0].duplicate_refs|keys),
     preserved_canonical_refs:$c[0].canonical_feature_refs}' > "$report/report.json"

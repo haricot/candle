@@ -20,5 +20,8 @@
     "asd_core_standalone": "b0281c1339b43f52439d2e7ef02335bbc03f74a6"
   },
   "require_no_open_pr_references": true,
-  "atomic_delete": true
+  "atomic_delete": true,
+  "attempt": 2,
+  "previous_failed_run_id": 36722069916,
+  "fix": "preserve root object while joining canonical_feature_refs to duplicate_refs"
 }
