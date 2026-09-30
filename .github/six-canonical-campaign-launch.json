@@ -6,7 +6,7 @@
   "base_sha": "5ba5d5b468b5b1df40e82dd3d556987bedeea041",
   "publish": true,
   "auto_promote": true,
-  "orchestration_parent": "df40034874a24c81d005313a42397b4263397d3f",
+  "orchestration_parent": "2a31427e3bf673275c8a5306e1a37960a24e58cb",
   "expected_integration_target": "e44869d909dc536b9a1f37cf89bfba3d46fc1985",
   "expected_sources": {
     "bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
@@ -21,5 +21,7 @@
     "cargo check -p candle-core --features cuda --tests --locked",
     "cargo check -p candle-core --features \"cuda cuda-legacy-fp4\" --tests --locked"
   ],
-  "physical_gpu": "single SM61 job only after six CPU + integrated CPU + hosted CUDA PASS"
+  "physical_gpu": "single SM61 job only after six CPU + integrated CPU + hosted CUDA PASS",
+  "attempt": 2,
+  "trigger_method": "contents-api update of launch manifest after workflow guard install"
 }
