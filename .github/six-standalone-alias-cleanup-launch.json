@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "operation": "delete-six-duplicate-standalone-aliases",
+  "merged_pr": 17,
+  "mirror_orch_parent": "a81fbd63483e47f5731d8e11349cdea3b74eed03",
+  "canonical_feature_refs": {
+    "bf16_candle": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "fp8_candle": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "fp4_candle": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "cudnn_fallback_candle": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "moe_simt_f16_candle": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+    "asd_core": "b0281c1339b43f52439d2e7ef02335bbc03f74a6"
+  },
+  "duplicate_refs": {
+    "bf16_candle_standalone": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+    "fp8_candle_standalone": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+    "fp4_candle_standalone": "2976961e97f0aff7a353e45b209653c392f2c657",
+    "cudnn_fallback_candle_standalone": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+    "moe_simt_f16_candle_standalone": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+    "asd_core_standalone": "b0281c1339b43f52439d2e7ef02335bbc03f74a6"
+  },
+  "require_no_open_pr_references": true,
+  "atomic_delete": true
+}
