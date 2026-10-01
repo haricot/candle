@@ -186,6 +186,20 @@ fn main() -> Result<()> {
         .iter()
         .all(|run| required(run, "speedup_pass").ok() == Some("true"));
 
+    for (idx, run) in runs.iter().enumerate() {
+        println!(
+            "RUN run={} status={} decision={} parity={} drift={} speedup={} p90_non_regression={} speedup_x={}",
+            idx + 1,
+            required(run, "status")?,
+            required(run, "decision")?,
+            required(run, "parity_pass")?,
+            required(run, "drift_pass")?,
+            required(run, "speedup_pass")?,
+            required(run, "p90_non_regression")?,
+            required(run, "speedup_x")?,
+        );
+    }
+
     let consensus_valid = all_harness_pass && all_parity && all_drift;
     let promote = consensus_valid
         && all_candidate_promote
@@ -219,6 +233,10 @@ fn main() -> Result<()> {
         speedups[0], speedups[1], speedups[2]
     );
     println!("consensus_speedup_x={consensus_speedup_x:.6}");
+    println!(
+        "CONSENSUS_GATES all_harness_pass={} all_parity={} all_drift={} all_p90_non_regression={} all_speedup_pass={}",
+        all_harness_pass, all_parity, all_drift, all_p90, all_speedup
+    );
     println!("STATUS={status}");
     println!("DECISION={decision}");
     println!("consensus_evidence_sha256={consensus_sha256}");
