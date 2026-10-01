@@ -1,17 +1,25 @@
-//! ASD V3 step 1: resolve promoted implementation ids through CUDA module providers.
+//! ASD V3 CUDA module resolution.
 //!
-//! External modules are intentionally opt-in. Set CANDLE_ASD_MODULE_DIR to a directory
-//! containing <implementation_id>.cubin or <implementation_id>.ptx. CUBIN wins when
-//! both exist. Missing external artifacts fall back to the embedded SM61 PTX catalogue.
+//! External modules are opt-in through CANDLE_ASD_MODULE_DIR. For an implementation
+//! id `foo`, the provider looks for `foo.cubin` first and then `foo.ptx`.
+//! A sibling `foo.manifest` can bind the selected file to its SHA-256, ABI,
+//! architecture, implementation id and entry symbol. Missing manifests remain
+//! usable for tuner experiments but are reported as unverified.
 
 use super::{CudaDevice, CudaFunc};
 use crate::cuda_backend::WrapErr;
 use crate::{Error, Result};
 use cudarc::driver::LaunchConfig;
 use cudarc::nvrtc::Ptx;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
+
+const MODULE_MANIFEST_HEADER: &str = "ASD-CUDA-MODULE-V1";
+const MODULE_ABI_VERSION: u32 = 1;
+const MODULE_ARCH: &str = "sm61";
 
 #[derive(Clone, Copy, Debug)]
 struct AsdKernelSpec {
@@ -82,19 +90,326 @@ const IMPLEMENTATIONS: &[AsdKernelSpec] = &[
     },
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExternalModuleKind {
+    Cubin,
+    Ptx,
+}
+
+impl ExternalModuleKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cubin => "cubin",
+            Self::Ptx => "ptx",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct FileFingerprint {
+    path: PathBuf,
+    len: u64,
+    modified_ns: u128,
+}
+
+fn modified_ns(metadata: &std::fs::Metadata) -> u128 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0)
+}
+
+fn fingerprint(path: &Path, metadata: &std::fs::Metadata) -> FileFingerprint {
+    FileFingerprint {
+        path: path.to_path_buf(),
+        len: metadata.len(),
+        modified_ns: modified_ns(metadata),
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CachedExternalArtifact {
+    path: PathBuf,
+    bytes: Arc<Vec<u8>>,
+    sha256: String,
+}
+
+static ARTIFACT_CACHE: OnceLock<Mutex<HashMap<FileFingerprint, CachedExternalArtifact>>> =
+    OnceLock::new();
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn load_cached_artifact(path: &Path) -> Result<CachedExternalArtifact> {
+    let before = std::fs::metadata(path).map_err(|err| {
+        Error::Msg(format!(
+            "failed to stat external ASD CUDA module {}: {err}",
+            path.display()
+        ))
+    })?;
+    let key = fingerprint(path, &before);
+    let cache = ARTIFACT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(cached) = cache.lock().unwrap().get(&key).cloned() {
+        return Ok(cached);
+    }
+
+    let bytes = std::fs::read(path).map_err(|err| {
+        Error::Msg(format!(
+            "failed to read external ASD CUDA module {}: {err}",
+            path.display()
+        ))
+    })?;
+    let after = std::fs::metadata(path).map_err(|err| {
+        Error::Msg(format!(
+            "failed to restat external ASD CUDA module {}: {err}",
+            path.display()
+        ))
+    })?;
+    if fingerprint(path, &after) != key {
+        return Err(Error::Msg(format!(
+            "external ASD CUDA module changed while being read: {}",
+            path.display()
+        )));
+    }
+
+    let cached = CachedExternalArtifact {
+        path: path.to_path_buf(),
+        sha256: sha256_hex(&bytes),
+        bytes: Arc::new(bytes),
+    };
+    let mut cache = cache.lock().unwrap();
+    cache.retain(|existing, _| existing.path != path);
+    cache.insert(key, cached.clone());
+    Ok(cached)
+}
+
+#[derive(Clone, Debug)]
+struct ExternalModuleManifest {
+    abi_version: u32,
+    implementation_id: String,
+    architecture: String,
+    artifact_kind: String,
+    entry: String,
+    artifact_sha256: String,
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn parse_manifest(source: &str, path: &Path) -> Result<ExternalModuleManifest> {
+    let mut lines = source.lines();
+    if lines.next() != Some(MODULE_MANIFEST_HEADER) {
+        return Err(Error::Msg(format!(
+            "invalid ASD CUDA module manifest header in {}",
+            path.display()
+        )));
+    }
+
+    let mut fields = HashMap::<String, String>::new();
+    for (index, raw) in lines.enumerate() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return Err(Error::Msg(format!(
+                "invalid ASD CUDA module manifest line {} in {}",
+                index + 2,
+                path.display()
+            )));
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if !matches!(
+            key,
+            "abi_version"
+                | "implementation_id"
+                | "architecture"
+                | "artifact_kind"
+                | "entry"
+                | "artifact_sha256"
+        ) {
+            return Err(Error::Msg(format!(
+                "unknown ASD CUDA module manifest key {key:?} in {}",
+                path.display()
+            )));
+        }
+        if value.is_empty() {
+            return Err(Error::Msg(format!(
+                "empty ASD CUDA module manifest value for {key} in {}",
+                path.display()
+            )));
+        }
+        if fields.insert(key.to_owned(), value.to_owned()).is_some() {
+            return Err(Error::Msg(format!(
+                "duplicate ASD CUDA module manifest key {key:?} in {}",
+                path.display()
+            )));
+        }
+    }
+
+    let required = |key: &str| -> Result<String> {
+        fields.get(key).cloned().ok_or_else(|| {
+            Error::Msg(format!(
+                "missing ASD CUDA module manifest key {key:?} in {}",
+                path.display()
+            ))
+        })
+    };
+
+    let abi_version = required("abi_version")?.parse::<u32>().map_err(|err| {
+        Error::Msg(format!(
+            "invalid abi_version in ASD CUDA module manifest {}: {err}",
+            path.display()
+        ))
+    })?;
+    let artifact_sha256 = required("artifact_sha256")?;
+    if !is_sha256(&artifact_sha256) {
+        return Err(Error::Msg(format!(
+            "artifact_sha256 must be 64 lowercase hex characters in {}",
+            path.display()
+        )));
+    }
+
+    Ok(ExternalModuleManifest {
+        abi_version,
+        implementation_id: required("implementation_id")?,
+        architecture: required("architecture")?,
+        artifact_kind: required("artifact_kind")?,
+        entry: required("entry")?,
+        artifact_sha256,
+    })
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct ManifestCacheKey {
+    fingerprint: FileFingerprint,
+    artifact_sha256: String,
+}
+
+static MANIFEST_CACHE: OnceLock<Mutex<HashMap<ManifestCacheKey, ExternalModuleManifest>>> =
+    OnceLock::new();
+
+fn validate_manifest(
+    artifact: &CachedExternalArtifact,
+    kind: ExternalModuleKind,
+    spec: &'static AsdKernelSpec,
+) -> Result<bool> {
+    let manifest_path = artifact.path.with_extension("manifest");
+    let metadata = match std::fs::metadata(&manifest_path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => {
+            return Err(Error::Msg(format!(
+                "failed to stat ASD CUDA module manifest {}: {err}",
+                manifest_path.display()
+            )))
+        }
+    };
+
+    let key = ManifestCacheKey {
+        fingerprint: fingerprint(&manifest_path, &metadata),
+        artifact_sha256: artifact.sha256.clone(),
+    };
+    let cache = MANIFEST_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let manifest = if let Some(manifest) = cache.lock().unwrap().get(&key).cloned() {
+        manifest
+    } else {
+        let source = std::fs::read_to_string(&manifest_path).map_err(|err| {
+            Error::Msg(format!(
+                "failed to read ASD CUDA module manifest {}: {err}",
+                manifest_path.display()
+            ))
+        })?;
+        let after = std::fs::metadata(&manifest_path).map_err(|err| {
+            Error::Msg(format!(
+                "failed to restat ASD CUDA module manifest {}: {err}",
+                manifest_path.display()
+            ))
+        })?;
+        if fingerprint(&manifest_path, &after) != key.fingerprint {
+            return Err(Error::Msg(format!(
+                "ASD CUDA module manifest changed while being read: {}",
+                manifest_path.display()
+            )));
+        }
+        let manifest = parse_manifest(&source, &manifest_path)?;
+        let mut cache = cache.lock().unwrap();
+        cache.retain(|existing, _| existing.fingerprint.path != manifest_path);
+        cache.insert(key, manifest.clone());
+        manifest
+    };
+
+    if manifest.abi_version != MODULE_ABI_VERSION {
+        return Err(Error::Msg(format!(
+            "ASD CUDA module ABI mismatch for {}: manifest={} runtime={}",
+            artifact.path.display(),
+            manifest.abi_version,
+            MODULE_ABI_VERSION
+        )));
+    }
+    if manifest.implementation_id != spec.implementation_id {
+        return Err(Error::Msg(format!(
+            "ASD CUDA module implementation mismatch for {}: manifest={} expected={}",
+            artifact.path.display(),
+            manifest.implementation_id,
+            spec.implementation_id
+        )));
+    }
+    if manifest.architecture != MODULE_ARCH {
+        return Err(Error::Msg(format!(
+            "ASD CUDA module architecture mismatch for {}: manifest={} expected={}",
+            artifact.path.display(),
+            manifest.architecture,
+            MODULE_ARCH
+        )));
+    }
+    if manifest.artifact_kind != kind.as_str() {
+        return Err(Error::Msg(format!(
+            "ASD CUDA module kind mismatch for {}: manifest={} expected={}",
+            artifact.path.display(),
+            manifest.artifact_kind,
+            kind.as_str()
+        )));
+    }
+    if manifest.entry != spec.entry {
+        return Err(Error::Msg(format!(
+            "ASD CUDA module entry mismatch for {}: manifest={} expected={}",
+            artifact.path.display(),
+            manifest.entry,
+            spec.entry
+        )));
+    }
+    if manifest.artifact_sha256 != artifact.sha256 {
+        return Err(Error::Msg(format!(
+            "ASD CUDA module SHA-256 mismatch for {}: manifest={} actual={}",
+            artifact.path.display(),
+            manifest.artifact_sha256,
+            artifact.sha256
+        )));
+    }
+
+    Ok(true)
+}
+
 #[derive(Debug)]
 enum AsdModuleSource {
     BuiltinPtx(&'static str),
     External {
-        path: PathBuf,
+        artifact: CachedExternalArtifact,
         kind: ExternalModuleKind,
+        manifest_verified: bool,
     },
-}
-
-#[derive(Clone, Copy, Debug)]
-enum ExternalModuleKind {
-    Cubin,
-    Ptx,
 }
 
 trait AsdModuleProvider {
@@ -128,8 +443,22 @@ impl ExternalCudaModuleProvider {
     }
 
     fn candidate_path(&self, implementation_id: &str, extension: &str) -> PathBuf {
-        self.root
-            .join(format!("{implementation_id}.{extension}"))
+        self.root.join(format!("{implementation_id}.{extension}"))
+    }
+
+    fn source(
+        &self,
+        path: PathBuf,
+        kind: ExternalModuleKind,
+        spec: &'static AsdKernelSpec,
+    ) -> Result<AsdModuleSource> {
+        let artifact = load_cached_artifact(&path)?;
+        let manifest_verified = validate_manifest(&artifact, kind, spec)?;
+        Ok(AsdModuleSource::External {
+            artifact,
+            kind,
+            manifest_verified,
+        })
     }
 }
 
@@ -137,18 +466,14 @@ impl AsdModuleProvider for ExternalCudaModuleProvider {
     fn resolve(&self, spec: &'static AsdKernelSpec) -> Result<Option<AsdModuleSource>> {
         let cubin = self.candidate_path(spec.implementation_id, "cubin");
         if cubin.is_file() {
-            return Ok(Some(AsdModuleSource::External {
-                path: cubin,
-                kind: ExternalModuleKind::Cubin,
-            }));
+            return self
+                .source(cubin, ExternalModuleKind::Cubin, spec)
+                .map(Some);
         }
 
         let ptx = self.candidate_path(spec.implementation_id, "ptx");
         if ptx.is_file() {
-            return Ok(Some(AsdModuleSource::External {
-                path: ptx,
-                kind: ExternalModuleKind::Ptx,
-            }));
+            return self.source(ptx, ExternalModuleKind::Ptx, spec).map(Some);
         }
 
         Ok(None)
@@ -219,7 +544,9 @@ impl AsdCudaImplementation<'_> {
                 self.spec.candidate_id,
                 ptx,
             ),
-            AsdModuleSource::External { path, kind } => self.load_external(path, *kind),
+            AsdModuleSource::External { artifact, kind, .. } => {
+                self.load_external(artifact, *kind)
+            }
         }
     }
 
@@ -256,32 +583,32 @@ impl AsdCudaImplementation<'_> {
     pub(crate) fn proof_status(&self) -> &'static str {
         match &self.source {
             AsdModuleSource::BuiltinPtx(_) => "historical_evidence_bound",
-            AsdModuleSource::External { .. } => "external_artifact_unverified",
+            AsdModuleSource::External {
+                manifest_verified: true,
+                ..
+            } => "external_artifact_verified",
+            AsdModuleSource::External {
+                manifest_verified: false,
+                ..
+            } => "external_artifact_unverified",
         }
     }
 
-    fn load_external(&self, path: &Path, kind: ExternalModuleKind) -> Result<CudaFunc> {
-        let metadata = std::fs::metadata(path).map_err(|err| {
-            Error::Msg(format!(
-                "failed to stat external ASD CUDA module {}: {err}",
-                path.display()
-            ))
-        })?;
-        let modified_ns = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
+    pub(crate) fn artifact_sha256(&self) -> Option<&str> {
+        match &self.source {
+            AsdModuleSource::BuiltinPtx(_) => None,
+            AsdModuleSource::External { artifact, .. } => Some(&artifact.sha256),
+        }
+    }
 
-        let mut hasher = DefaultHasher::new();
-        path.hash(&mut hasher);
-        metadata.len().hash(&mut hasher);
-        modified_ns.hash(&mut hasher);
+    fn load_external(
+        &self,
+        artifact: &CachedExternalArtifact,
+        kind: ExternalModuleKind,
+    ) -> Result<CudaFunc> {
         let cache_key = format!(
-            "asd-external:{}:{:016x}",
-            self.spec.implementation_id,
-            hasher.finish()
+            "asd-external:{}:{}",
+            self.spec.implementation_id, artifact.sha256
         );
 
         if let Some(module) = self
@@ -300,20 +627,12 @@ impl AsdCudaImplementation<'_> {
         }
 
         let image = match kind {
-            ExternalModuleKind::Cubin => {
-                let bytes = std::fs::read(path).map_err(|err| {
-                    Error::Msg(format!(
-                        "failed to read external ASD CUBIN {}: {err}",
-                        path.display()
-                    ))
-                })?;
-                Ptx::from_binary(bytes)
-            }
+            ExternalModuleKind::Cubin => Ptx::from_binary(artifact.bytes.as_ref().clone()),
             ExternalModuleKind::Ptx => {
-                let source = std::fs::read_to_string(path).map_err(|err| {
+                let source = String::from_utf8(artifact.bytes.as_ref().clone()).map_err(|err| {
                     Error::Msg(format!(
-                        "failed to read external ASD PTX {}: {err}",
-                        path.display()
+                        "external ASD PTX is not UTF-8 ({}): {err}",
+                        artifact.path.display()
                     ))
                 })?;
                 Ptx::from_src(source)
@@ -355,5 +674,22 @@ mod tests {
                 spec.implementation_id
             );
         }
+    }
+
+    #[test]
+    fn parses_strict_v1_manifest() {
+        let source = format!(
+            "{MODULE_MANIFEST_HEADER}\nabi_version=1\nimplementation_id={}\narchitecture=sm61\nartifact_kind=cubin\nentry={}\nartifact_sha256={}\n",
+            IMPLEMENTATIONS[0].implementation_id,
+            IMPLEMENTATIONS[0].entry,
+            "a".repeat(64),
+        );
+        let parsed = parse_manifest(&source, Path::new("test.manifest")).unwrap();
+        assert_eq!(parsed.abi_version, 1);
+        assert_eq!(parsed.implementation_id, IMPLEMENTATIONS[0].implementation_id);
+        assert_eq!(parsed.architecture, "sm61");
+        assert_eq!(parsed.artifact_kind, "cubin");
+        assert_eq!(parsed.entry, IMPLEMENTATIONS[0].entry);
+        assert_eq!(parsed.artifact_sha256, "a".repeat(64));
     }
 }
