@@ -253,6 +253,13 @@ impl AsdCudaImplementation<'_> {
         }
     }
 
+    pub(crate) fn proof_status(&self) -> &'static str {
+        match &self.source {
+            AsdModuleSource::BuiltinPtx(_) => "historical_evidence_bound",
+            AsdModuleSource::External { .. } => "external_artifact_unverified",
+        }
+    }
+
     fn load_external(&self, path: &Path, kind: ExternalModuleKind) -> Result<CudaFunc> {
         let metadata = std::fs::metadata(path).map_err(|err| {
             Error::Msg(format!(
