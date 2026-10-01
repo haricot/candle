@@ -1,0 +1,84 @@
+name: One-shot cleanup six-canonical r1-r3
+on:
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/workflows/one-shot-cleanup-six-r1-r3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: mirror_orch
+          fetch-depth: 1
+      - name: Delete exact obsolete branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t keep <<'EOF_KEEP'
+            bf16_candle
+            fp8_candle
+            fp4_candle
+            cudnn_fallback_candle
+            moe_simt_f16_candle
+            asd_core
+            cuda_asd_runner_v3
+            candle_asd_cuda
+            mirror_orch
+          EOF_KEEP
+          mapfile -t refs <<'EOF_REFS'
+            fp4_nvfp4_public_api
+            integration/candidate/six-canonical-main-5ba5d5b4-r1-20260930
+            integration/candidate/six-canonical-main-5ba5d5b4-r2-20260930
+            integration/candidate/six-canonical-main-5ba5d5b4-r3-20260930
+            prepare/six-canonical-main-5ba5d5b4-r1-20260930/asd_core
+            prepare/six-canonical-main-5ba5d5b4-r1-20260930/bf16_candle
+            prepare/six-canonical-main-5ba5d5b4-r1-20260930/cudnn_fallback_candle
+            prepare/six-canonical-main-5ba5d5b4-r1-20260930/fp4_candle
+            prepare/six-canonical-main-5ba5d5b4-r1-20260930/fp8_candle
+            prepare/six-canonical-main-5ba5d5b4-r1-20260930/moe_simt_f16_candle
+            prepare/six-canonical-main-5ba5d5b4-r2-20260930/asd_core
+            prepare/six-canonical-main-5ba5d5b4-r2-20260930/bf16_candle
+            prepare/six-canonical-main-5ba5d5b4-r2-20260930/cudnn_fallback_candle
+            prepare/six-canonical-main-5ba5d5b4-r2-20260930/fp4_candle
+            prepare/six-canonical-main-5ba5d5b4-r2-20260930/fp8_candle
+            prepare/six-canonical-main-5ba5d5b4-r2-20260930/moe_simt_f16_candle
+            prepare/six-canonical-main-5ba5d5b4-r3-20260930/asd_core
+            prepare/six-canonical-main-5ba5d5b4-r3-20260930/bf16_candle
+            prepare/six-canonical-main-5ba5d5b4-r3-20260930/cudnn_fallback_candle
+            prepare/six-canonical-main-5ba5d5b4-r3-20260930/fp4_candle
+            prepare/six-canonical-main-5ba5d5b4-r3-20260930/fp8_candle
+            prepare/six-canonical-main-5ba5d5b4-r3-20260930/moe_simt_f16_candle
+          EOF_REFS
+
+          for ref in "${refs[@]}"; do
+            for protected in "${keep[@]}"; do
+              [[ "$ref" != "$protected" ]] || {
+                echo "::error::Refuse to delete protected branch: $ref"
+                exit 3
+              }
+            done
+          done
+
+          for ref in "${refs[@]}"; do
+            if git ls-remote --exit-code --heads origin "refs/heads/$ref" >/dev/null 2>&1; then
+              echo "Deleting $ref"
+              git push origin --delete "$ref"
+            else
+              echo "Already absent: $ref"
+            fi
+          done
+
+          failed=0
+          for ref in "${refs[@]}"; do
+            if git ls-remote --exit-code --heads origin "refs/heads/$ref" >/dev/null 2>&1; then
+              echo "::error::Still present after cleanup: $ref"
+              failed=1
+            fi
+          done
+          (( failed == 0 ))
