@@ -1,4 +1,5 @@
 use candle_core::{Device, Result, Tensor};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 const IMPLEMENTATION_ID: &str =
@@ -30,6 +31,36 @@ fn call(x: &Tensor, w: &Tensor) -> Result<Tensor> {
 
 fn module_path(dir: &Path) -> PathBuf {
     dir.join(format!("{IMPLEMENTATION_ID}.cubin"))
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let bytes = std::fs::read(path).map_err(|err| {
+        candle_core::Error::Msg(format!("failed to read {}: {err}", path.display()))
+    })?;
+    Ok(Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+fn gpu_uuid(device: &Device) -> Result<String> {
+    let uuid = device.as_cuda_device()?.cuda_stream().context().uuid()?;
+    let hex = uuid
+        .bytes
+        .iter()
+        .map(|byte| format!("{:02x}", *byte as u8))
+        .collect::<String>();
+    if hex.len() != 32 {
+        candle_core::bail!("unexpected CUDA UUID length {}", hex.len())
+    }
+    Ok(format!(
+        "GPU-{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
 }
 
 fn max_abs_rel(lhs: &Tensor, rhs: &Tensor) -> Result<(f32, f32)> {
@@ -103,10 +134,31 @@ fn main() -> Result<()> {
     println!(
         "PARITY external_a1_vs_a2 max_abs={aa_abs:.8} max_rel={aa_rel:.8} pass={aa_pass}"
     );
-    println!(
-        "STATUS={}",
-        if ab_pass && aa_pass { "PASS" } else { "HOLD" }
+    let status = if ab_pass && aa_pass { "PASS" } else { "HOLD" };
+    println!("STATUS={status}");
+
+    let artifact_a_sha256 = sha256_file(&module_path(&dir_a))?;
+    let artifact_b_sha256 = sha256_file(&module_path(&dir_b))?;
+    let gpu_uuid = gpu_uuid(&device)?;
+    let evidence = format!(
+        "ASD-CUDA-VALIDATION-V1\nvalidation=external_hot_swap_parity\nimplementation_id={IMPLEMENTATION_ID}\narchitecture=sm61\ngpu_uuid={gpu_uuid}\nartifact_a_sha256={artifact_a_sha256}\nartifact_b_sha256={artifact_b_sha256}\nmax_abs_a_b={ab_abs:.8}\nmax_rel_a_b={ab_rel:.8}\nmax_abs_a_a2={aa_abs:.8}\nmax_rel_a_a2={aa_rel:.8}\nparity_a_b={ab_pass}\nparity_a_a2={aa_pass}\nstatus={status}\n"
     );
+    let evidence_sha256 = Sha256::digest(evidence.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    println!("validation_evidence_sha256={evidence_sha256}");
+
+    if let Some(path) = std::env::var_os("CANDLE_ASD_EVIDENCE_OUT") {
+        let path = PathBuf::from(path);
+        std::fs::write(&path, &evidence).map_err(|err| {
+            candle_core::Error::Msg(format!(
+                "failed to write validation evidence {}: {err}",
+                path.display()
+            ))
+        })?;
+        println!("validation_evidence_file={}", path.display());
+    }
 
     if !ab_pass || !aa_pass {
         candle_core::bail!("ASD V3 external hot-swap parity failed")
