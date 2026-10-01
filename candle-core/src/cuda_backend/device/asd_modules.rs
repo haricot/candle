@@ -240,7 +240,7 @@ impl AsdCudaImplementation<'_> {
     }
 
     pub(crate) fn provider_name(&self) -> &'static str {
-        match self.source {
+        match &self.source {
             AsdModuleSource::BuiltinPtx(_) => "builtin_ptx",
             AsdModuleSource::External {
                 kind: ExternalModuleKind::Cubin,
