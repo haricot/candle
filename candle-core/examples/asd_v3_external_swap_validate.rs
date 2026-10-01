@@ -44,7 +44,12 @@ fn sha256_file(path: &Path) -> Result<String> {
 }
 
 fn gpu_uuid(device: &Device) -> Result<String> {
-    let uuid = device.as_cuda_device()?.cuda_stream().context().uuid()?;
+    let uuid = device
+        .as_cuda_device()?
+        .cuda_stream()
+        .context()
+        .uuid()
+        .map_err(|err| candle_core::Error::Msg(format!("failed to read CUDA UUID: {err}")))?;
     let hex = uuid
         .bytes
         .iter()
