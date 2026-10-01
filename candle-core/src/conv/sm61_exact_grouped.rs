@@ -5,73 +5,6 @@ use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S, WrapErr};
 use crate::{DType, Layout, Result};
 use cudarc::driver::{LaunchConfig, PushKernelArg};
 
-#[derive(Clone, Copy)]
-struct KernelImpl {
-    implementation_id: &'static str,
-    candidate_id: &'static str,
-    entry: &'static str,
-    output_count: usize,
-    grid_x: u32,
-    block_x: u32,
-}
-const IMPLEMENTATIONS: &[KernelImpl] = &[
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256",
-        candidate_id: "ct1d-s32-g2-u1-b256",
-        entry: "flow_v0322_ct1d_s32_g2_u1_b256",
-        output_count: 8192,
-        grid_x: 32,
-        block_x: 256,
-    },
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g4-u1-b256",
-        candidate_id: "ct1d-s32-g4-u1-b256",
-        entry: "flow_v0322_ct1d_s32_g4_u1_b256",
-        output_count: 8192,
-        grid_x: 32,
-        block_x: 256,
-    },
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g8-u1-b256",
-        candidate_id: "ct1d-s32-g8-u1-b256",
-        entry: "flow_v0322_ct1d_s32_g8_u1_b256",
-        output_count: 8192,
-        grid_x: 32,
-        block_x: 256,
-    },
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g16-u1-b256",
-        candidate_id: "ct1d-s32-g16-u1-b256",
-        entry: "flow_v0322_ct1d_s32_g16_u1_b256",
-        output_count: 8192,
-        grid_x: 32,
-        block_x: 256,
-    },
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.ct2d-s32-g16-u4-b128",
-        candidate_id: "ct2d-s32-g16-u4-b128",
-        entry: "flow_v0322_ct2d_s32_g16_u4_b128",
-        output_count: 524288,
-        grid_x: 4096,
-        block_x: 128,
-    },
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.ct2d-s32-g32-u4-b64",
-        candidate_id: "ct2d-s32-g32-u4-b64",
-        entry: "flow_v0322_ct2d_s32_g32_u4_b64",
-        output_count: 524288,
-        grid_x: 8192,
-        block_x: 64,
-    },
-    KernelImpl {
-        implementation_id: "candle.sm61-exact-grouped.gc1d-l128-g8-u1-b256",
-        candidate_id: "gc1d-l128-g8-u1-b256",
-        entry: "flow_v0322_gc1d_l128_g8_u1_b256",
-        output_count: 8192,
-        grid_x: 32,
-        block_x: 256,
-    },
-];
 fn env_truthy(n: &str) -> bool {
     matches!(
         std::env::var(n).ok().as_deref(),
@@ -121,20 +54,11 @@ fn actual_uuid(input: &CudaStorage) -> Option<String> {
     ))
 }
 fn launch_selected(id: &str, input: &CudaStorage, kernel: &CudaStorage) -> Result<CudaStorage> {
-    let d = IMPLEMENTATIONS
-        .iter()
-        .find(|x| x.implementation_id == id)
-        .ok_or_else(|| crate::Error::Msg(format!("unknown Stage2E implementation {id}")))?;
-    let ptx = candle_kernels::sm61_exact_grouped_ptx(d.candidate_id)
-        .ok_or_else(|| crate::Error::Msg(format!("missing PTX {}", d.candidate_id)))?;
     let dev = input.device.clone();
-    let func = dev.get_or_load_custom_func(d.entry, d.candidate_id, ptx)?;
-    let out = unsafe { dev.alloc::<f32>(d.output_count)? };
-    let cfg = LaunchConfig {
-        grid_dim: (d.grid_x, 1, 1),
-        block_dim: (d.block_x, 1, 1),
-        shared_mem_bytes: 0,
-    };
+    let implementation = dev.asd_modules().resolve(id)?;
+    let func = implementation.function()?;
+    let out = unsafe { dev.alloc::<f32>(implementation.output_count())? };
+    let cfg = implementation.launch_config();
     let slice = match (&input.slice, &kernel.slice) {
         (S::F32(x), S::F32(w)) => {
             let mut b = func.builder();
@@ -145,7 +69,12 @@ fn launch_selected(id: &str, input: &CudaStorage, kernel: &CudaStorage) -> Resul
         _ => crate::bail!("Stage2E exact executor dtype mismatch"),
     };
     if env_truthy("CANDLE_SM61_EXACT_GROUPED_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
-        eprintln!("[candle sm61 exact-grouped] submitted_backend=raw_exact launch_submission=success implementation={} candidate={} proof_status=historical_evidence_bound",d.implementation_id,d.candidate_id)
+        eprintln!(
+            "[candle sm61 exact-grouped] submitted_backend=raw_exact launch_submission=success implementation={} candidate={} provider={} proof_status=historical_evidence_bound",
+            id,
+            implementation.candidate_id(),
+            implementation.provider_name(),
+        )
     }
     Ok(CudaStorage { slice, device: dev })
 }
