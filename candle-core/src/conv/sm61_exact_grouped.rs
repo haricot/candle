@@ -70,11 +70,12 @@ fn launch_selected(id: &str, input: &CudaStorage, kernel: &CudaStorage) -> Resul
     };
     if env_truthy("CANDLE_SM61_EXACT_GROUPED_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
         eprintln!(
-            "[candle sm61 exact-grouped] submitted_backend=raw_exact launch_submission=success implementation={} candidate={} provider={} proof_status={}",
+            "[candle sm61 exact-grouped] submitted_backend=raw_exact launch_submission=success implementation={} candidate={} provider={} proof_status={} artifact_sha256={}",
             id,
             implementation.candidate_id(),
             implementation.provider_name(),
             implementation.proof_status(),
+            implementation.artifact_sha256().unwrap_or("builtin"),
         )
     }
     Ok(CudaStorage { slice, device: dev })
