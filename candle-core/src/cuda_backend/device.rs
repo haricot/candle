@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 
+mod asd_modules;
+
 /// Unique identifier for cuda devices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DeviceId(usize);
@@ -287,6 +289,10 @@ impl CudaFunc {
 impl CudaDevice {
     pub fn cuda_stream(&self) -> Arc<cudarc::driver::CudaStream> {
         self.stream.clone()
+    }
+
+    pub(crate) fn asd_modules(&self) -> asd_modules::AsdModuleRegistry<'_> {
+        asd_modules::AsdModuleRegistry::new(self)
     }
 
     /// When turned on, all cuda tensors **created after calling this function** will
