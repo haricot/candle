@@ -72,8 +72,10 @@
     ],
     "update_canonical_feature_refs": true,
     "backup_previous_feature_refs": true,
-    "permanent_branch_updates": 7,
-    "never_push_to_main": true
+    "permanent_branch_updates": 8,
+    "never_push_to_main": true,
+    "update_integration_alias": true
   },
-  "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed"
+  "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed",
+  "integration_alias": "candle_asd_cuda"
 }
