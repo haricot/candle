@@ -155,7 +155,11 @@ fn load_cached_artifact(path: &Path) -> Result<CachedExternalArtifact> {
     })?;
     let key = fingerprint(path, &before);
     let cache = ARTIFACT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(cached) = cache.lock().unwrap().get(&key).cloned() {
+    let cached_artifact = {
+        let guard = cache.lock().unwrap();
+        guard.get(&key).cloned()
+    };
+    if let Some(cached) = cached_artifact {
         return Ok(cached);
     }
 
@@ -322,7 +326,11 @@ fn validate_manifest(
         artifact_sha256: artifact.sha256.clone(),
     };
     let cache = MANIFEST_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let manifest = if let Some(manifest) = cache.lock().unwrap().get(&key).cloned() {
+    let cached_manifest = {
+        let guard = cache.lock().unwrap();
+        guard.get(&key).cloned()
+    };
+    let manifest = if let Some(manifest) = cached_manifest {
         manifest
     } else {
         let source = std::fs::read_to_string(&manifest_path).map_err(|err| {
