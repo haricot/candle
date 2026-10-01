@@ -106,3 +106,8 @@ required-features = ["cuda", "cudnn"]
 [[example]]
 name = "asd_v3_module_provider_validate"
 required-features = ["cuda"]
+
+
+[[example]]
+name = "asd_v3_external_swap_validate"
+required-features = ["cuda"]
