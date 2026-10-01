@@ -3,7 +3,7 @@ use super::{ParamsConv1D, ParamsConvTranspose1D, ParamsConvTranspose2D};
 use crate::backend::BackendStorage;
 use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S, WrapErr};
 use crate::{DType, Layout, Result};
-use cudarc::driver::{LaunchConfig, PushKernelArg};
+use cudarc::driver::PushKernelArg;
 
 fn env_truthy(n: &str) -> bool {
     matches!(
