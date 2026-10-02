@@ -12,6 +12,8 @@ pub mod asd_exact {
     include!(concat!(env!("OUT_DIR"), "/asd_exact_dispatch.rs"));
 }
 
+pub mod asd_history;
+
 mod ptx {
     include!(concat!(env!("OUT_DIR"), "/ptx.rs"));
 }
