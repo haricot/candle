@@ -183,6 +183,24 @@ fn timed_warmup(
     Ok(())
 }
 
+fn settle_pair(
+    dir_a: &Path,
+    dir_b: &Path,
+    x: &Tensor,
+    w: &Tensor,
+    device: &Device,
+    warmup_ms: f64,
+    inner: usize,
+) -> Result<()> {
+    println!("=== NON-AUTHORITATIVE SETTLING ===");
+    println!("settling_policy=time_equivalent_pair");
+    timed_warmup("settle_a", dir_a, x, w, device, warmup_ms, inner)?;
+    timed_warmup("settle_b", dir_b, x, w, device, warmup_ms, inner)?;
+    device.synchronize()?;
+    println!("settling_complete=true");
+    Ok(())
+}
+
 fn measure(
     phase: &str,
     dir: &Path,
@@ -284,6 +302,7 @@ fn main() -> Result<()> {
     println!("artifact_b_sha256={artifact_b_sha256}");
     println!("warmup_policy=time_equivalent_per_backend");
     println!("warmup_ms={warmup_ms:.3}");
+    println!("settling_policy=time_equivalent_pair_non_authoritative");
     println!("timed_samples={iters}");
     println!("launches_per_sample={inner}");
     println!("max_drift_pct={max_drift_pct:.3}");
@@ -291,6 +310,9 @@ fn main() -> Result<()> {
     println!("sequence=a1,b1,a2,b2,a3,b3");
     println!("PARITY max_abs={max_abs:.8} max_rel={max_rel:.8} pass={parity_pass}");
 
+    settle_pair(&dir_a, &dir_b, &x, &w, &device, warmup_ms, inner)?;
+
+    println!("=== AUTHORITATIVE SEQUENCE ===");
     let a1 = measure("a1", &dir_a, &x, &w, &device, cfg)?;
     let b1 = measure("b1", &dir_b, &x, &w, &device, cfg)?;
     let a2 = measure("a2", &dir_a, &x, &w, &device, cfg)?;
@@ -341,7 +363,7 @@ fn main() -> Result<()> {
     };
 
     let evidence = format!(
-        "ASD-CUDA-PERFORMANCE-EVIDENCE-V1\nimplementation_id={IMPLEMENTATION_ID}\narchitecture=sm61\ngpu_uuid={gpu_uuid}\nartifact_a_sha256={artifact_a_sha256}\nartifact_b_sha256={artifact_b_sha256}\nparity_evidence_sha256={parity_evidence_sha256}\nwarmup_policy=time_equivalent_per_backend\nwarmup_ms={warmup_ms:.3}\ntimed_samples={iters}\nlaunches_per_sample={inner}\nsequence=a1,b1,a2,b2,a3,b3\nmax_abs={max_abs:.8}\nmax_rel={max_rel:.8}\nparity_pass={parity_pass}\na1_median_us={:.6}\nb1_median_us={:.6}\na2_median_us={:.6}\nb2_median_us={:.6}\na3_median_us={:.6}\nb3_median_us={:.6}\na_consensus_us={a_us:.6}\nb_consensus_us={b_us:.6}\na_p90_us={a_p90:.6}\nb_p90_us={b_p90:.6}\na_drift_pct={a_drift_pct:.3}\nb_drift_pct={b_drift_pct:.3}\nspeedup_x={speedup_x:.6}\nmin_speedup_x={min_speedup_x:.6}\ndrift_pass={drift_pass}\np90_non_regression={p90_pass}\nspeedup_pass={speedup_pass}\nstatus={status}\ndecision={decision}\n",
+        "ASD-CUDA-PERFORMANCE-EVIDENCE-V1\nimplementation_id={IMPLEMENTATION_ID}\narchitecture=sm61\ngpu_uuid={gpu_uuid}\nartifact_a_sha256={artifact_a_sha256}\nartifact_b_sha256={artifact_b_sha256}\nparity_evidence_sha256={parity_evidence_sha256}\nwarmup_policy=time_equivalent_per_backend\nwarmup_ms={warmup_ms:.3}\nsettling_policy=time_equivalent_pair_non_authoritative\nsettling_ms_per_artifact={warmup_ms:.3}\ntimed_samples={iters}\nlaunches_per_sample={inner}\nsequence=a1,b1,a2,b2,a3,b3\nmax_abs={max_abs:.8}\nmax_rel={max_rel:.8}\nparity_pass={parity_pass}\na1_median_us={:.6}\nb1_median_us={:.6}\na2_median_us={:.6}\nb2_median_us={:.6}\na3_median_us={:.6}\nb3_median_us={:.6}\na_consensus_us={a_us:.6}\nb_consensus_us={b_us:.6}\na_p90_us={a_p90:.6}\nb_p90_us={b_p90:.6}\na_drift_pct={a_drift_pct:.3}\nb_drift_pct={b_drift_pct:.3}\nspeedup_x={speedup_x:.6}\nmin_speedup_x={min_speedup_x:.6}\ndrift_pass={drift_pass}\np90_non_regression={p90_pass}\nspeedup_pass={speedup_pass}\nstatus={status}\ndecision={decision}\n",
         a1.median_us,
         b1.median_us,
         a2.median_us,
