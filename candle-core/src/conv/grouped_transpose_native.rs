@@ -91,6 +91,23 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
             input.dtype(),
         );
 
+        #[cfg(feature = "cuda")]
+        if decision.exact_requires_cudnn() {
+            #[cfg(feature = "cudnn")]
+            {
+                if !kernel_l.is_contiguous() {
+                    crate::bail!("ASD Exact Profile selected cuDNN for grouped ConvTranspose1D but kernel is not contiguous")
+                }
+                let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
+                    input, input_l, kernel, kernel_l, &self.0,
+                )?;
+                decision.trace_submission("cudnn");
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            #[cfg(not(feature = "cudnn"))]
+            crate::bail!("ASD Exact Profile selected cuDNN for grouped ConvTranspose1D but candle-core was built without the cudnn feature")
+        }
+
         #[cfg(feature = "cudnn")]
         if !decision.prefers_raw() && kernel_l.is_contiguous() {
             match super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
@@ -255,6 +272,23 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
             kernel_l,
             input.dtype(),
         );
+
+        #[cfg(feature = "cuda")]
+        if decision.exact_requires_cudnn() {
+            #[cfg(feature = "cudnn")]
+            {
+                if !kernel_l.is_contiguous() {
+                    crate::bail!("ASD Exact Profile selected cuDNN for grouped ConvTranspose2D but kernel is not contiguous")
+                }
+                let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
+                    input, input_l, kernel, kernel_l, &self.0,
+                )?;
+                decision.trace_submission("cudnn");
+                return Ok((out, Shape::from(self.0.out_dims())));
+            }
+            #[cfg(not(feature = "cudnn"))]
+            crate::bail!("ASD Exact Profile selected cuDNN for grouped ConvTranspose2D but candle-core was built without the cudnn feature")
+        }
 
         #[cfg(feature = "cudnn")]
         if !decision.prefers_raw() && kernel_l.is_contiguous() {
