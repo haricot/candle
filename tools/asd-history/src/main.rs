@@ -5,11 +5,16 @@ use asd_history::{history_for_decision, GAINS};
 
 fn print_gain(gain: &asd_history::HistoricalGain) {
     println!(
-        "HISTORICAL_STATE transition={} decision={} state={} speedup_x={:.6}",
+        "HISTORICAL_STATE transition={} decision={} state={} generation={} speedup_x={:.6}",
         gain.transition_id,
         gain.decision_id,
         gain.state.as_str(),
+        gain.generation,
         gain.speedup_x,
+    );
+    println!(
+        "  predecessor_transition={}",
+        gain.predecessor_transition_id.unwrap_or("none")
     );
     println!(
         "  from provider={} implementation={}",
@@ -45,7 +50,7 @@ fn main() {
 
     match decision {
         Some(decision_id) => {
-            let gains = history_for_decision(&decision_id).collect::<Vec<_>>();
+            let gains = history_for_decision(&decision_id);
             println!("decision_id={decision_id}");
             println!("transitions={}", gains.len());
             for gain in gains {
