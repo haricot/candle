@@ -379,7 +379,18 @@ fn main() -> Result<()> {
 
     if let Some(path) = std::env::var_os("CANDLE_ASD_PERF_EVIDENCE_OUT") {
         let path = PathBuf::from(path);
-        std::fs::write(&path, evidence).map_err(|err| {
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|err| {
+                candle_core::Error::Msg(format!(
+                    "refusing to overwrite performance evidence {}: {err}",
+                    path.display()
+                ))
+            })?;
+        file.write_all(evidence.as_bytes()).map_err(|err| {
             candle_core::Error::Msg(format!(
                 "failed to write performance evidence {}: {err}",
                 path.display()
