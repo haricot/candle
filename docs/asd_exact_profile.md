@@ -162,3 +162,42 @@ These gains describe different generations and MUST NOT be multiplied.
 Historical state is never consulted by production dispatch, profile lookup,
 promotion gates, or Flow-Adaptive scheduling. It is retained as human/tooling
 memory so future work can see the reason and magnitude behind an exact decision.
+
+
+### Historical lineage ordering
+
+Historical transitions carry an explicit zero-based `generation` and an
+optional `predecessor_transition_id`. `history_for_decision(...)` sorts by
+generation before returning entries, so chronology does not depend on the
+physical order of the static table.
+
+For the C384 DW5x5 decision:
+
+```text
+generation=0
+legacy chunk-per-group + cat
+  -> cuDNN grouped Conv2D
+  speedup=402.470x
+  earlier_observed=445.265x
+
+generation=1
+predecessor=dw5x5-c384-legacy-chunked-to-cudnn-grouped
+cuDNN grouped Conv2D
+  -> raw CUDA exact DW5x5
+  speedup=38.313419x
+```
+
+This is lineage only; the production runtime selects the currently promoted
+provider directly.
+
+## Provider-neutral CT1D Exact Profile lookup
+
+Grouped ConvTranspose1D no longer depends on the legacy
+`CANDLE_ASD_V2_CT1D_ENABLE` opt-in to read the runtime GPU identity. When a
+device-scoped Exact Profile with a target GPU UUID is embedded, CT1D obtains the
+UUID from the real CUDA context and passes it to the exact lookup regardless of
+whether the promoted provider is raw CUDA or cuDNN.
+
+An unreadable UUID or a runtime/build compute-capability mismatch fails closed.
+Explicit backend requests and `CANDLE_ASD_EXACT_DISABLE` retain their existing
+precedence.
