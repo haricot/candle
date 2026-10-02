@@ -124,20 +124,19 @@ decision memory. Historical lineage is exposed from:
 candle-kernels/src/asd_history.rs
 ```
 
-and can be inspected with:
+and can be inspected without building or linking CUDA through the standalone
+tool:
 
 ```bash
-CUDA_LIBDIR=/opt/cuda/targets/x86_64-linux/lib \
-LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LIBRARY_PATH:+:$LIBRARY_PATH} \
-LD_LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} \
-cargo run --manifest-path candle-kernels/Cargo.toml --example asd_history
+cargo run --manifest-path tools/asd-history/Cargo.toml
 
-CUDA_LIBDIR=/opt/cuda/targets/x86_64-linux/lib \
-LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LIBRARY_PATH:+:$LIBRARY_PATH} \
-LD_LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} \
-cargo run --manifest-path candle-kernels/Cargo.toml --example asd_history -- \
+cargo run --manifest-path tools/asd-history/Cargo.toml -- \
   conv2d-dw5x5-f32-b1-c384-h8-w6-g384-s1-p2-d1-raw
 ```
+
+The inspector directly reuses `candle-kernels/src/asd_history.rs` as its
+single source of truth. It has no CUDA dependency and therefore does not compile
+the kernel catalogue or link `cudart`.
 
 Historical entries are tagged as either:
 
