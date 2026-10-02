@@ -277,6 +277,19 @@ cargo check -p candle-core \
   --example asd_provider_evidence_v1
 \`\`\`
 
+Smoke/runtime probe (optional, non-authoritative):
+
+```bash
+cargo run --release -p candle-core \
+  --features cuda,cudnn \
+  --example asd_provider_evidence_v1 -- \
+  --warmup-ms 20 --iters 3 --inner 1
+```
+
+Any deviation from the default 500 ms / 40 / 32 / 5% / 1.01x protocol is
+reported as `authoritative_protocol=false` and can only produce
+`MEASUREMENT_ONLY`.
+
 Authoritative run should be performed under the same headless/quiet GPU
 conditions used for previous performance qualification:
 
