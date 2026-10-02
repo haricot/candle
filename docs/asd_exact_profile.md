@@ -113,3 +113,47 @@ contract is introduced first without weakening the existing twelve decisions.
 
 Thermal, clock and throttle observations remain evidence metadata only and do
 not change production dispatch.
+
+
+## Historical provider state
+
+The Exact Profile keeps current dispatch authority separate from historical
+decision memory. Historical lineage is exposed from:
+
+```text
+candle-kernels/src/asd_history.rs
+```
+
+and can be inspected with:
+
+```bash
+cargo run -p candle-kernels --example asd_history
+
+cargo run -p candle-kernels --example asd_history -- \
+  conv2d-dw5x5-f32-b1-c384-h8-w6-g384-s1-p2-d1-raw
+```
+
+Historical entries are tagged as either:
+
+- `historical_only`: useful prior provider/implementation measurements which
+  explain why a later decision exists but are not current promotion evidence;
+- `promotion_lineage`: the integrated measurement that led to the currently
+  promoted implementation, retained for decision context.
+
+For the C384 DW5x5 decision the retained lineage is:
+
+```text
+legacy chunk-per-group + cat
+  -> native cuDNN grouped Conv2D
+     historical speedup = 402.470x
+     earlier isolated observation = 445.265x
+
+native cuDNN grouped Conv2D
+  -> candle.depthwise-conv2d-5x5.raw.v1
+     integrated speedup = 38.313419x
+```
+
+These gains describe different generations and MUST NOT be multiplied.
+Historical state is never consulted by production dispatch, profile lookup,
+promotion gates, or Flow-Adaptive scheduling. It is retained as human/tooling
+memory so future work can see the reason and magnitude behind an exact decision.
