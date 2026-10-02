@@ -2,11 +2,11 @@ use candle_core::{Device, Result, Tensor};
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const IMPLEMENTATION_ID: &str =
     "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
-const DEFAULT_WARMUP: usize = 8;
+const DEFAULT_WARMUP_MS: f64 = 500.0;
 const DEFAULT_ITERS: usize = 40;
 const DEFAULT_INNER: usize = 32;
 const DEFAULT_MAX_DRIFT_PCT: f64 = 5.0;
@@ -21,7 +21,7 @@ struct TimingStats {
 
 #[derive(Clone, Copy)]
 struct MeasureConfig {
-    warmup: usize,
+    warmup_ms: f64,
     iters: usize,
     inner: usize,
 }
@@ -145,23 +145,53 @@ fn relative_drift_pct(first: f64, last: f64) -> f64 {
     }
 }
 
+fn timed_warmup(
+    phase: &str,
+    dir: &Path,
+    x: &Tensor,
+    w: &Tensor,
+    device: &Device,
+    warmup_ms: f64,
+    inner: usize,
+) -> Result<()> {
+    std::env::set_var("CANDLE_ASD_MODULE_DIR", dir);
+    let requested = Duration::from_secs_f64(warmup_ms / 1000.0);
+    let started = Instant::now();
+    let mut batches = 0usize;
+    let mut launches = 0usize;
+    loop {
+        let mut outputs = Vec::with_capacity(inner);
+        for _ in 0..inner {
+            outputs.push(call(x, w)?);
+        }
+        device.synchronize()?;
+        std::hint::black_box(outputs);
+        batches += 1;
+        launches += inner;
+        if started.elapsed() >= requested {
+            break;
+        }
+    }
+    println!(
+        "WARMUP phase={} requested_ms={:.3} actual_ms={:.3} batches={} launches={}",
+        phase,
+        warmup_ms,
+        started.elapsed().as_secs_f64() * 1000.0,
+        batches,
+        launches
+    );
+    Ok(())
+}
+
 fn measure(
+    phase: &str,
     dir: &Path,
     x: &Tensor,
     w: &Tensor,
     device: &Device,
     cfg: MeasureConfig,
 ) -> Result<TimingStats> {
-    std::env::set_var("CANDLE_ASD_MODULE_DIR", dir);
-
-    for _ in 0..cfg.warmup {
-        let mut outputs = Vec::with_capacity(cfg.inner);
-        for _ in 0..cfg.inner {
-            outputs.push(call(x, w)?);
-        }
-        device.synchronize()?;
-        std::hint::black_box(outputs);
-    }
+    timed_warmup(phase, dir, x, w, device, cfg.warmup_ms, cfg.inner)?;
 
     let mut samples = Vec::with_capacity(cfg.iters);
     for _ in 0..cfg.iters {
@@ -199,13 +229,13 @@ fn main() -> Result<()> {
         .map(PathBuf::from)
         .ok_or_else(|| candle_core::Error::Msg("missing CANDLE_ASD_MODULE_DIR_B".into()))?;
 
-    let warmup = parse_count("--warmup", DEFAULT_WARMUP);
+    let warmup_ms = parse_f64("--warmup-ms", DEFAULT_WARMUP_MS);
     let iters = parse_count("--iters", DEFAULT_ITERS);
     let inner = parse_count("--inner", DEFAULT_INNER);
     let max_drift_pct = parse_f64("--max-drift-pct", DEFAULT_MAX_DRIFT_PCT);
     let min_speedup_x = parse_f64("--min-speedup-x", DEFAULT_MIN_SPEEDUP_X);
-    if warmup == 0 || iters == 0 || inner == 0 {
-        candle_core::bail!("--warmup, --iters and --inner must be greater than zero")
+    if !warmup_ms.is_finite() || warmup_ms <= 0.0 || iters == 0 || inner == 0 {
+        candle_core::bail!("--warmup-ms, --iters and --inner must be greater than zero")
     }
     if max_drift_pct < 0.0 || !min_speedup_x.is_finite() || min_speedup_x <= 0.0 {
         candle_core::bail!("invalid benchmark thresholds")
@@ -242,7 +272,7 @@ fn main() -> Result<()> {
     let parity_pass = max_abs <= 1e-5 || max_rel <= 1e-5;
 
     let cfg = MeasureConfig {
-        warmup,
+        warmup_ms,
         iters,
         inner,
     };
@@ -252,7 +282,8 @@ fn main() -> Result<()> {
     println!("gpu_uuid={gpu_uuid}");
     println!("artifact_a_sha256={artifact_a_sha256}");
     println!("artifact_b_sha256={artifact_b_sha256}");
-    println!("warmup_samples={warmup}");
+    println!("warmup_policy=time_equivalent_per_backend");
+    println!("warmup_ms={warmup_ms:.3}");
     println!("timed_samples={iters}");
     println!("launches_per_sample={inner}");
     println!("max_drift_pct={max_drift_pct:.3}");
@@ -260,12 +291,12 @@ fn main() -> Result<()> {
     println!("sequence=a1,b1,a2,b2,a3,b3");
     println!("PARITY max_abs={max_abs:.8} max_rel={max_rel:.8} pass={parity_pass}");
 
-    let a1 = measure(&dir_a, &x, &w, &device, cfg)?;
-    let b1 = measure(&dir_b, &x, &w, &device, cfg)?;
-    let a2 = measure(&dir_a, &x, &w, &device, cfg)?;
-    let b2 = measure(&dir_b, &x, &w, &device, cfg)?;
-    let a3 = measure(&dir_a, &x, &w, &device, cfg)?;
-    let b3 = measure(&dir_b, &x, &w, &device, cfg)?;
+    let a1 = measure("a1", &dir_a, &x, &w, &device, cfg)?;
+    let b1 = measure("b1", &dir_b, &x, &w, &device, cfg)?;
+    let a2 = measure("a2", &dir_a, &x, &w, &device, cfg)?;
+    let b2 = measure("b2", &dir_b, &x, &w, &device, cfg)?;
+    let a3 = measure("a3", &dir_a, &x, &w, &device, cfg)?;
+    let b3 = measure("b3", &dir_b, &x, &w, &device, cfg)?;
 
     print_phase("a1", &artifact_a_sha256, a1);
     print_phase("b1", &artifact_b_sha256, b1);
@@ -310,7 +341,7 @@ fn main() -> Result<()> {
     };
 
     let evidence = format!(
-        "ASD-CUDA-PERFORMANCE-EVIDENCE-V1\nimplementation_id={IMPLEMENTATION_ID}\narchitecture=sm61\ngpu_uuid={gpu_uuid}\nartifact_a_sha256={artifact_a_sha256}\nartifact_b_sha256={artifact_b_sha256}\nparity_evidence_sha256={parity_evidence_sha256}\nwarmup_samples={warmup}\ntimed_samples={iters}\nlaunches_per_sample={inner}\nsequence=a1,b1,a2,b2,a3,b3\nmax_abs={max_abs:.8}\nmax_rel={max_rel:.8}\nparity_pass={parity_pass}\na1_median_us={:.6}\nb1_median_us={:.6}\na2_median_us={:.6}\nb2_median_us={:.6}\na3_median_us={:.6}\nb3_median_us={:.6}\na_consensus_us={a_us:.6}\nb_consensus_us={b_us:.6}\na_p90_us={a_p90:.6}\nb_p90_us={b_p90:.6}\na_drift_pct={a_drift_pct:.3}\nb_drift_pct={b_drift_pct:.3}\nspeedup_x={speedup_x:.6}\nmin_speedup_x={min_speedup_x:.6}\ndrift_pass={drift_pass}\np90_non_regression={p90_pass}\nspeedup_pass={speedup_pass}\nstatus={status}\ndecision={decision}\n",
+        "ASD-CUDA-PERFORMANCE-EVIDENCE-V1\nimplementation_id={IMPLEMENTATION_ID}\narchitecture=sm61\ngpu_uuid={gpu_uuid}\nartifact_a_sha256={artifact_a_sha256}\nartifact_b_sha256={artifact_b_sha256}\nparity_evidence_sha256={parity_evidence_sha256}\nwarmup_policy=time_equivalent_per_backend\nwarmup_ms={warmup_ms:.3}\ntimed_samples={iters}\nlaunches_per_sample={inner}\nsequence=a1,b1,a2,b2,a3,b3\nmax_abs={max_abs:.8}\nmax_rel={max_rel:.8}\nparity_pass={parity_pass}\na1_median_us={:.6}\nb1_median_us={:.6}\na2_median_us={:.6}\nb2_median_us={:.6}\na3_median_us={:.6}\nb3_median_us={:.6}\na_consensus_us={a_us:.6}\nb_consensus_us={b_us:.6}\na_p90_us={a_p90:.6}\nb_p90_us={b_p90:.6}\na_drift_pct={a_drift_pct:.3}\nb_drift_pct={b_drift_pct:.3}\nspeedup_x={speedup_x:.6}\nmin_speedup_x={min_speedup_x:.6}\ndrift_pass={drift_pass}\np90_non_regression={p90_pass}\nspeedup_pass={speedup_pass}\nstatus={status}\ndecision={decision}\n",
         a1.median_us,
         b1.median_us,
         a2.median_us,
