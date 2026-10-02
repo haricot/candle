@@ -163,9 +163,9 @@ pub const GAINS: [HistoricalGain; 5] = [
     },
 ];
 
-pub fn history_for_decision(
-    decision_id: &str,
-) -> impl Iterator<Item = &'static HistoricalGain> {
+pub fn history_for_decision<'a>(
+    decision_id: &'a str,
+) -> impl Iterator<Item = &'static HistoricalGain> + 'a {
     GAINS.iter().filter(move |gain| gain.decision_id == decision_id)
 }
 
