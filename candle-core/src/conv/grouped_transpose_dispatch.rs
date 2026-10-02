@@ -401,6 +401,42 @@ fn resolve_runtime(
     decision
 }
 
+fn actual_profile_uuid(input: &crate::cuda_backend::CudaStorage) -> Option<String> {
+    // A device-scoped Exact Profile must authenticate the real CUDA context.
+    // Provider selection is irrelevant here: raw CUDA and cuDNN decisions use
+    // the same exact-signature authority and the same device identity.
+    if candle_kernels::asd_exact::PROFILE_ID.is_none()
+        || candle_kernels::asd_exact::TARGET_GPU_UUID.is_none()
+    {
+        return None;
+    }
+
+    let stream = input.device.cuda_stream();
+    let context = stream.context();
+    let (major, minor) = context.compute_capability().ok()?;
+    if major * 10 + minor != candle_kernels::CUDA_BUILD_COMPUTE_CAP as i32 {
+        return None;
+    }
+
+    let uuid = context.uuid().ok()?;
+    let hex = uuid
+        .bytes
+        .iter()
+        .map(|b| format!("{:02x}", *b as u8))
+        .collect::<String>();
+    if hex.len() != 32 {
+        return None;
+    }
+    Some(format!(
+        "GPU-{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
+}
+
 pub(super) fn decision_1d(
     input: &crate::cuda_backend::CudaStorage,
     p: &ParamsConvTranspose1D,
@@ -426,38 +462,10 @@ pub(super) fn decision_1d(
         dtype,
     });
     // UUID comes from the real CUDA context, never CANDLE_ASD_TARGET_GPU_UUID.
-    // No device read in ordinary non-ASD operation. An unreadable UUID fails closed.
-    let actual_uuid = if candle_kernels::asd_exact::PROFILE_ID.is_some()
-        && std::env::var("CANDLE_ASD_V2_CT1D_ENABLE").ok().as_deref() == Some("1")
-    {
-        let stream = input.device.cuda_stream();
-        let context = stream.context();
-        if context.compute_capability().ok() != Some((6, 1)) {
-            None
-        } else {
-            context.uuid().ok().and_then(|u| {
-                let hex = u
-                    .bytes
-                    .iter()
-                    .map(|b| format!("{:02x}", *b as u8))
-                    .collect::<String>();
-                if hex.len() == 32 {
-                    Some(format!(
-                        "GPU-{}-{}-{}-{}-{}",
-                        &hex[..8],
-                        &hex[8..12],
-                        &hex[12..16],
-                        &hex[16..20],
-                        &hex[20..32]
-                    ))
-                } else {
-                    None
-                }
-            })
-        }
-    } else {
-        None
-    };
+    // There is no legacy CT1D opt-in: any device-scoped Exact Profile decision,
+    // regardless of provider, must be able to resolve through the same lookup.
+    // An unreadable or mismatched device identity fails closed.
+    let actual_uuid = actual_profile_uuid(input);
     resolve_runtime(
         GroupedTransposeDim::D1,
         p.groups,
@@ -594,5 +602,32 @@ mod tests {
         assert!(decision.prefers_raw());
         assert!(decision.is_exact_asd());
         assert_eq!(decision.asd_decision_id, Some("ct1d-g2"));
+    }
+
+    #[test]
+    fn exact_profile_cudnn_provider_precedes_unpromoted_general_rule() {
+        let exact = candle_kernels::asd_exact::ExactAsdMatch {
+            profile_id: "test-profile",
+            policy_id: "test-profile",
+            decision_id: "ct1d-g2-cudnn",
+            state: "promoted",
+            execution_provider: candle_kernels::asd_exact::ExactExecutionProvider::Cudnn,
+            selected_backend: "cudnn",
+            evidence_sha256: "test",
+            implementation_id: "candle.cudnn.grouped-transpose.v1",
+            min_integrated_speedup_x: Some(1.01),
+        };
+        let decision = resolve_grouped_transpose_dispatch(
+            GroupedTransposeDim::D1,
+            2,
+            61,
+            false,
+            Some("auto"),
+            Some(exact),
+        );
+        assert!(!decision.prefers_raw());
+        assert!(decision.is_exact_asd());
+        assert!(decision.exact_requires_cudnn());
+        assert_eq!(decision.asd_decision_id, Some("ct1d-g2-cudnn"));
     }
 }
