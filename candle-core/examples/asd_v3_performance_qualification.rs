@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-const INPUT_HEADER: &str = "ASD-CUDA-PERFORMANCE-EVIDENCE-V1";
+const INPUT_HEADER_V1: &str = "ASD-CUDA-PERFORMANCE-EVIDENCE-V1";
+const INPUT_HEADER_V2: &str = "ASD-CUDA-PERFORMANCE-EVIDENCE-V2";
 const OUTPUT_HEADER: &str = "ASD-CUDA-PERFORMANCE-QUALIFICATION-V1";
 const PROTOCOL_ID: &str = "time_equivalent_settled_alternating_v1";
 
@@ -12,6 +13,7 @@ const PROTOCOL_ID: &str = "time_equivalent_settled_alternating_v1";
 struct Evidence {
     path: PathBuf,
     sha256: String,
+    header: String,
     fields: BTreeMap<String, String>,
 }
 
@@ -29,9 +31,12 @@ fn read_evidence(path: &Path) -> Result<Evidence> {
         .map_err(|err| Error::Msg(format!("evidence is not UTF-8 {}: {err}", path.display())))?;
 
     let mut lines = text.lines();
-    if lines.next() != Some(INPUT_HEADER) {
+    let header = lines.next().ok_or_else(|| {
+        Error::Msg(format!("empty performance evidence {}", path.display()))
+    })?;
+    if header != INPUT_HEADER_V1 && header != INPUT_HEADER_V2 {
         return Err(Error::Msg(format!(
-            "invalid performance evidence header in {}",
+            "invalid performance evidence header {header:?} in {}",
             path.display()
         )));
     }
@@ -66,6 +71,7 @@ fn read_evidence(path: &Path) -> Result<Evidence> {
     Ok(Evidence {
         path: path.to_path_buf(),
         sha256: sha256_hex(&bytes),
+        header: header.to_owned(),
         fields,
     })
 }
@@ -155,6 +161,17 @@ fn main() -> Result<()> {
         ));
     }
 
+    if run1.header != run2.header {
+        return Err(Error::Msg(format!(
+            "qualification evidence schema mismatch: {} vs {}",
+            run1.header, run2.header
+        )));
+    }
+    if run1.header == INPUT_HEADER_V2 {
+        require_value(&run1, "telemetry_observe_only", "true")?;
+        require_value(&run2, "telemetry_observe_only", "true")?;
+    }
+
     for run in [&run1, &run2] {
         require_value(run, "status", "PASS")?;
         require_value(run, "parity_pass", "true")?;
@@ -181,6 +198,8 @@ fn main() -> Result<()> {
     let min_speedup_x = same_field(&run1, &run2, "min_speedup_x")?;
     let decision = same_field(&run1, &run2, "decision")?;
 
+    let performance_evidence_schema = run1.header.clone();
+
     if decision != "PROMOTE_CANDIDATE" && decision != "REJECT_CANDIDATE" {
         return Err(Error::Msg(format!(
             "unsupported qualified decision {decision:?}"
@@ -194,10 +213,31 @@ fn main() -> Result<()> {
     let run2_a_us = required(&run2, "a_consensus_us")?;
     let run2_b_us = required(&run2, "b_consensus_us")?;
 
+    let telemetry_lines = if performance_evidence_schema == INPUT_HEADER_V2 {
+        format!(
+            "run1_telemetry_status={}\nrun1_gpu_temp_c_max_observed={}\nrun1_sm_clock_mhz_min_observed={}\nrun1_sm_clock_mhz_max_observed={}\nrun1_thermal_state_end={}\nrun1_throttle_state_end={}\nrun2_telemetry_status={}\nrun2_gpu_temp_c_max_observed={}\nrun2_sm_clock_mhz_min_observed={}\nrun2_sm_clock_mhz_max_observed={}\nrun2_thermal_state_end={}\nrun2_throttle_state_end={}\n",
+            required(&run1, "telemetry_status")?,
+            required(&run1, "gpu_temp_c_max_observed")?,
+            required(&run1, "sm_clock_mhz_min_observed")?,
+            required(&run1, "sm_clock_mhz_max_observed")?,
+            required(&run1, "telemetry_end_thermal_state")?,
+            required(&run1, "telemetry_end_throttle_state")?,
+            required(&run2, "telemetry_status")?,
+            required(&run2, "gpu_temp_c_max_observed")?,
+            required(&run2, "sm_clock_mhz_min_observed")?,
+            required(&run2, "sm_clock_mhz_max_observed")?,
+            required(&run2, "telemetry_end_thermal_state")?,
+            required(&run2, "telemetry_end_throttle_state")?,
+        )
+    } else {
+        String::new()
+    };
+
     let closure = format!(
         "{OUTPUT_HEADER}\n\
 protocol={PROTOCOL_ID}\n\
-implementation_id={implementation_id}\n\
+performance_evidence_schema={performance_evidence_schema}\n\
+{telemetry_lines}implementation_id={implementation_id}\n\
 architecture={architecture}\n\
 gpu_uuid={gpu_uuid}\n\
 artifact_a_sha256={artifact_a_sha256}\n\
@@ -242,6 +282,7 @@ decision={decision}\n",
 
     println!("=== ASD V3 PERFORMANCE QUALIFICATION CLOSURE ===");
     println!("protocol={PROTOCOL_ID}");
+    println!("performance_evidence_schema={performance_evidence_schema}");
     println!("implementation_id={implementation_id}");
     println!("gpu_uuid={gpu_uuid}");
     println!("artifact_a_sha256={artifact_a_sha256}");
