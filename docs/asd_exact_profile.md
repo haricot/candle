@@ -127,8 +127,14 @@ candle-kernels/src/asd_history.rs
 and can be inspected with:
 
 ```bash
+CUDA_LIBDIR=/opt/cuda/targets/x86_64-linux/lib \
+LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LIBRARY_PATH:+:$LIBRARY_PATH} \
+LD_LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} \
 cargo run --manifest-path candle-kernels/Cargo.toml --example asd_history
 
+CUDA_LIBDIR=/opt/cuda/targets/x86_64-linux/lib \
+LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LIBRARY_PATH:+:$LIBRARY_PATH} \
+LD_LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} \
 cargo run --manifest-path candle-kernels/Cargo.toml --example asd_history -- \
   conv2d-dw5x5-f32-b1-c384-h8-w6-g384-s1-p2-d1-raw
 ```
