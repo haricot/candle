@@ -107,7 +107,7 @@ mdl!(UNARY, Unary);
 pub mod ffi;
 pub mod moe_selection;
 
-/// Exact, device-scoped sm61 kernels; the V2 ASD policy selects their domain.
+/// Exact, device-scoped sm61 kernels; the ASD Exact Profile selects their domain.
 pub fn sm61_exact_grouped_ptx(candidate_id: &str) -> Option<&'static str> {
     match candidate_id {
         "ct1d-s32-g2-u1-b256" => Some(sm61_ptx::SM61_EXACT_GROUPED_K00),
