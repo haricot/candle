@@ -201,3 +201,98 @@ whether the promoted provider is raw CUDA or cuDNN.
 An unreadable UUID or a runtime/build compute-capability mismatch fails closed.
 Explicit backend requests and `CANDLE_ASD_EXACT_DISABLE` retain their existing
 precedence.
+
+
+## Provider Evidence V1: CT1D G2 raw CUDA vs cuDNN
+
+The first provider-aware benchmark is:
+
+\`\`\`text
+exact decision:
+  ct1d-sm61-s32-g2-raw-exact
+
+A / incumbent:
+  execution_provider=raw_cuda
+  implementation=candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256
+
+B / challenger:
+  execution_provider=cudnn
+  implementation=candle.cudnn.grouped-transpose.v1
+\`\`\`
+
+The harness is:
+
+\`\`\`text
+candle-core/examples/asd_provider_evidence_v1.rs
+\`\`\`
+
+It refuses to benchmark if the embedded Exact Profile does not currently bind
+the CT1D G2 exact signature to the promoted raw CUDA incumbent.
+
+Provider identities are provider-specific:
+
+\`\`\`text
+raw CUDA:
+  implementation id
+  + module ABI
+  + entry symbol
+  + SHA-256 of builtin PTX
+
+cuDNN:
+  runtime cuDNN version
+  + convolution-backward-data algorithm id
+  + workspace size
+  + exact operation geometry
+\`\`\`
+
+No artificial CUDA artifact SHA is created for cuDNN.
+
+The protocol is unchanged from the stabilized artifact benchmark:
+
+\`\`\`text
+parity
+settle A 500 ms
+settle B 500 ms
+A1 B1 A2 B2 A3 B3
+40 timed samples per phase
+32 launches per sample
+drift <= 5 %
+challenger speedup >= 1.01x
+challenger p90 <= incumbent p90
+thermal/clock/throttle telemetry = observe-only
+\`\`\`
+
+A passing challenger produces \`PROMOTE_CHALLENGER_SIGNAL\`, not an automatic
+Exact Profile mutation. A second independent authoritative replication remains
+required before any provider promotion.
+
+Build check:
+
+\`\`\`bash
+export CANDLE_ASD_EXACT_POLICY=/home/np/tmp/asd-stage2g-r3-postcommit.osrFpVFJ/release/profile/stage2f-production.v2.asd
+export CANDLE_ASD_TARGET_GPU_UUID=GPU-0259509a-8026-4c2b-477f-0b13c4e2117d
+
+cargo check -p candle-core \
+  --features cuda,cudnn \
+  --example asd_provider_evidence_v1
+\`\`\`
+
+Authoritative run should be performed under the same headless/quiet GPU
+conditions used for previous performance qualification:
+
+\`\`\`bash
+cargo run --release -p candle-core \
+  --features cuda,cudnn \
+  --example asd_provider_evidence_v1 -- \
+  --evidence-out /home/np/tmp/candle_asd/provider-evidence-ct1d-g2-r1.txt
+\`\`\`
+
+The resulting file uses:
+
+\`\`\`text
+ASD-PROVIDER-PERFORMANCE-EVIDENCE-V1
+\`\`\`
+
+and records the incumbent/challenger identities, parity, all six authoritative
+phases, aggregate medians, drift, p90, threshold result, telemetry and final
+signal.
