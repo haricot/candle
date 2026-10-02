@@ -307,8 +307,11 @@ fn validate_decision(d: &Decision) -> AResult<()> {
         },
         "cudnn" => {
             validate_evidence_hash(d)?;
-            if !d.implementation_id.starts_with("candle.cudnn.") {
-                return Err("cuDNN Exact Profile implementation must use candle.cudnn.* identity".into());
+            if !matches!(op, "conv_transpose1d" | "conv_transpose2d") {
+                return Err("cuDNN Exact Profile promotion is currently enabled only for grouped ConvTranspose 1D/2D".into());
+            }
+            if !d.implementation_id.starts_with("candle.cudnn.grouped-transpose.") {
+                return Err("cuDNN grouped-transpose Exact Profile implementation must use candle.cudnn.grouped-transpose.* identity".into());
             }
             if d.min_speedup.is_some_and(|x| !x.is_finite() || x <= 0.0) {
                 return Err("invalid cuDNN promoted threshold".into());
