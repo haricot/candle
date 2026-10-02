@@ -27,13 +27,6 @@ enum Provider {
 }
 
 impl Provider {
-    const fn phase_name(self) -> &'static str {
-        match self {
-            Self::IncumbentRaw => "a",
-            Self::ChallengerCudnn => "b",
-        }
-    }
-
     const fn execution_provider(self) -> &'static str {
         match self {
             Self::IncumbentRaw => "raw_cuda",
