@@ -1,12 +1,15 @@
-//! Stage 2F V2-only production reader. All twelve exact device-scoped rows are promoted.
-//! Historical performance is not remeasured; current kernel identity and runtime are gated separately.
+//! Stage 2F ASD Exact Profile reader.
+//! The legacy V2 wire header remains accepted so stage2f-production.v2.asd stays authoritative.
+//! All twelve exact device-scoped rows remain promoted; provider evolution happens without
+//! weakening exact geometry, device scope, implementation identity, or evidence binding.
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
     io::Write,
     path::PathBuf,
 };
-pub const HEADER: &str = "ASD-EXACT-POLICY-V2";
+pub const LEGACY_POLICY_HEADER_V2: &str = "ASD-EXACT-POLICY-V2";
+pub const PROFILE_HEADER_V3: &str = "ASD-EXACT-PROFILE-V3";
 const SM61_PROMOTION_EVIDENCE: &str =
     "b6092036513164f71eb1e1d8b83bc2270b34c476a0aed808c608c86e8436b907";
 type AResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -21,7 +24,7 @@ struct Decision {
     min_speedup: Option<f64>,
 }
 #[derive(Debug)]
-struct Policy {
+struct ExactProfile {
     fields: BTreeMap<String, String>,
     decisions: Vec<Decision>,
 }
@@ -60,10 +63,11 @@ fn kv(s: &str) -> AResult<BTreeMap<String, String>> {
     }
     Ok(m)
 }
-fn parse(text: &str) -> AResult<Policy> {
+fn parse(text: &str) -> AResult<ExactProfile> {
     let mut lines = text.lines();
-    if lines.next() != Some(HEADER) {
-        return Err("V2 only".into());
+    let header = lines.next().ok_or("empty Exact Profile")?;
+    if header != LEGACY_POLICY_HEADER_V2 && header != PROFILE_HEADER_V3 {
+        return Err("unsupported Exact Profile header".into());
     }
     let mut fields = BTreeMap::new();
     let mut decisions = Vec::new();
@@ -102,7 +106,7 @@ fn parse(text: &str) -> AResult<Policy> {
             }
         }
     }
-    Ok(Policy { fields, decisions })
+    Ok(ExactProfile { fields, decisions })
 }
 fn common(
     d: &Decision,
@@ -145,9 +149,8 @@ fn common(
     if required(s, "dtype")? != "f32"
         || required(s, "input_layout")? != "contiguous_zero_offset"
         || required(s, "weight_layout")? != "contiguous_zero_offset"
-        || d.backend != "raw_cuda"
     {
-        return Err("unsupported dtype/layout/backend".into());
+        return Err("unsupported dtype/layout".into());
     }
     let op = required(s, "op")?;
     let dim = pos(s, "dim")?;
@@ -240,7 +243,8 @@ fn validate_decision(d: &Decision) -> AResult<()> {
     if d.state != "promoted" {
         return Err("Stage2F requires promoted decisions only".into());
     }
-    match d.implementation_id.as_str() {
+    match d.backend.as_str() {
+        "raw_cuda" => match d.implementation_id.as_str() {
         "candle.grouped-transpose.raw.v1" => {
             validate_thresholded_proven(d)?;
             if d.id != "ct1d-f32-b1-c64-l128-g2-k3-s2-p1-op1-d1-raw"
@@ -299,22 +303,44 @@ fn validate_decision(d: &Decision) -> AResult<()> {
                 return Err("Stage2F specialized metadata mismatch".into());
             }
         }
-        _ => return Err("unknown Stage2F implementation".into()),
+            _ => return Err("unknown Stage2F raw CUDA implementation".into()),
+        },
+        "cudnn" => {
+            validate_evidence_hash(d)?;
+            if !d.implementation_id.starts_with("candle.cudnn.") {
+                return Err("cuDNN Exact Profile implementation must use candle.cudnn.* identity".into());
+            }
+            if d.min_speedup.is_some_and(|x| !x.is_finite() || x <= 0.0) {
+                return Err("invalid cuDNN promoted threshold".into());
+            }
+        }
+        // Reserved in the Exact Profile contract. We intentionally reject native
+        // promotions until Candle has a stable, non-cuDNN native executor identity.
+        "native" => return Err("native Exact Profile provider is reserved but not promotable yet".into()),
+        _ => return Err("unknown Exact Profile execution provider".into()),
     }
     Ok(())
 }
-fn validate(p: &Policy, build_sm: u32) -> AResult<()> {
-    let keys = [
-        "policy_id",
+fn profile_id(fields: &BTreeMap<String, String>) -> AResult<&str> {
+    match (fields.get("profile_id"), fields.get("policy_id")) {
+        (Some(profile), None) => Ok(profile.as_str()),
+        (None, Some(policy)) => Ok(policy.as_str()),
+        (Some(_), Some(_)) => Err("Exact Profile cannot contain both profile_id and policy_id".into()),
+        (None, None) => Err("missing Exact Profile identity".into()),
+    }
+}
+fn validate(p: &ExactProfile, build_sm: u32) -> AResult<()> {
+    let target_keys = [
         "target.vendor",
         "target.architecture",
         "target.scope",
         "target.sm",
         "target.gpu_uuid",
     ];
-    if p.fields.len() != 6 || keys.iter().any(|k| !p.fields.contains_key(*k)) {
-        return Err("header differs".into());
+    if p.fields.len() != 6 || target_keys.iter().any(|k| !p.fields.contains_key(*k)) {
+        return Err("Exact Profile header differs".into());
     }
+    let _profile_id = profile_id(&p.fields)?;
     let policy_uuid = required(&p.fields, "target.gpu_uuid")?;
     if required(&p.fields, "target.vendor")? != "nvidia"
         || required(&p.fields, "target.architecture")? != "sm61"
@@ -378,7 +404,7 @@ fn emit(d: &Decision) -> AResult<String> {
     };
     Ok(format!("    ExactDecision {{ id: {}, state: {}, backend: {}, implementation_id: {}, evidence_ref: {}, min_integrated_speedup_x: {}, op: {}, dim: {}, batch: {}, c_in: {}, c_out: {}, spatial0: {}, spatial1: {}, weight_rank: {}, weight0: {}, weight1: {}, weight2: {}, weight3: {}, groups: {}, kernel: {}, stride: {}, padding: {}, output_padding: {}, dilation: {}, dtype: {} }},\n",rs(&d.id),rs(&d.state),rs(&d.backend),rs(&d.implementation_id),rs(&d.evidence_ref),min,op_variant(required(s,"op")?)?,dim,pos(s,"batch")?,pos(s,"c_in")?,pos(s,"c_out")?,sp[0],get(&sp,1),w.len(),w[0],w[1],w[2],get(&w,3),pos(s,"groups")?,pos(s,"kernel")?,pos(s,"stride")?,n(s,"padding")?,opad,pos(s,"dilation")?,rs(required(s,"dtype")?)))
 }
-fn render(p: &Policy, validation: bool) -> AResult<String> {
+fn render(p: &ExactProfile, validation: bool) -> AResult<String> {
     let mut rows = String::new();
     for d in &p.decisions {
         rows.push_str(&emit(d)?)
@@ -388,7 +414,7 @@ fn render(p: &Policy, validation: bool) -> AResult<String> {
     let out = t
         .replace(
             "__POLICY_ID__",
-            &format!("Some({})", rs(required(&p.fields, "policy_id")?)),
+            &format!("Some({})", rs(profile_id(&p.fields)?)),
         )
         .replace("__GPU_UUID__", &format!("Some({})", rs(policy_uuid)))
         .replace("__VALIDATION__", if validation { "true" } else { "false" })
@@ -437,8 +463,8 @@ pub fn materialize_for_candle_build(build_sm: u32) -> AResult<Option<PathBuf>> {
     f.write_all(generated.as_bytes())?;
     f.sync_all()?;
     println!(
-        "cargo:warning=ASD Stage2F production profile {} decisions=12 promoted=12 production=YES device_scope=exact_uuid validation_build={}",
-        required(&p.fields, "policy_id")?, validation
+        "cargo:warning=ASD Exact Profile {} decisions=12 promoted=12 production=YES device_scope=exact_uuid validation_build={}",
+        profile_id(&p.fields)?, validation
     );
     Ok(Some(output))
 }
