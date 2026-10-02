@@ -47,3 +47,43 @@ Trace states:
 Artifact verification is intentionally distinct from ASD promotion evidence. V1 module
 manifests do not claim that a newly-built CUBIN inherits historical benchmark evidence.
 A later promotion record must bind the exact artifact SHA-256 to fresh evidence.
+
+
+## Flow-Adaptive Tuner handoff
+
+The Flow-Adaptive Tuner treats `asd_core_v3` as the Candle execution and
+qualification target. The tuner owns search and candidate generation; Candle
+owns artifact binding, runtime loading, parity validation, performance
+qualification, and promotion evidence.
+
+The handoff unit is one SM61 CUBIN for the exact implementation id. Stage it
+with:
+
+```text
+asd_v3_stage_tuner_candidate
+  --candidate-cubin <tuner-output.cubin>
+  --out-dir <candidate-module-dir>
+  --receipt-out <candidate-receipt.txt>
+```
+
+The staging tool hashes the exact CUBIN, copies it under the required
+`implementation_id`, writes the strict `ASD-CUDA-MODULE-V1` manifest, and
+optionally emits an `ASD-CUDA-TUNER-CANDIDATE-V1` receipt. It refuses to
+overwrite an existing staged artifact.
+
+The candidate directory is then used as `CANDLE_ASD_MODULE_DIR_B`; the known
+reference artifact directory remains `CANDLE_ASD_MODULE_DIR_A`. Candidate
+generation never changes the Candle source tree and never inherits historical
+performance evidence merely by reusing the same implementation id.
+
+The qualification path is:
+
+```text
+Flow-Adaptive search
+  -> candidate CUBIN
+  -> stage/hash/manifest
+  -> external A/B/A parity evidence
+  -> settled time-equivalent performance evidence x2
+  -> ASD-CUDA-PERFORMANCE-QUALIFICATION-V1
+  -> PROMOTE_CANDIDATE or REJECT_CANDIDATE
+```
