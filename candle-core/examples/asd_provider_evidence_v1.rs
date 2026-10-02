@@ -611,6 +611,11 @@ fn main() -> Result<()> {
     let max_drift_pct = parse_f64("--max-drift-pct", DEFAULT_MAX_DRIFT_PCT);
     let min_speedup_x = parse_f64("--min-speedup-x", DEFAULT_MIN_SPEEDUP_X);
     let evidence_out = parse_path("--evidence-out");
+    let authoritative_protocol = warmup_ms == DEFAULT_WARMUP_MS
+        && iters == DEFAULT_ITERS
+        && inner == DEFAULT_INNER
+        && max_drift_pct == DEFAULT_MAX_DRIFT_PCT
+        && min_speedup_x == DEFAULT_MIN_SPEEDUP_X;
 
     if !warmup_ms.is_finite() || warmup_ms <= 0.0 || iters == 0 || inner == 0 {
         candle_core::bail!("--warmup-ms, --iters and --inner must be greater than zero")
@@ -672,6 +677,7 @@ fn main() -> Result<()> {
     println!("max_drift_pct={max_drift_pct:.3}");
     println!("min_speedup_x={min_speedup_x:.6}");
     println!("sequence=a1,b1,a2,b2,a3,b3");
+    println!("authoritative_protocol={authoritative_protocol}");
     println!("PARITY max_abs={max_abs:.8} max_rel={max_rel:.8} pass={parity_pass}");
     println!("telemetry_policy=boundary_snapshots_non_authoritative");
     println!("telemetry_observe_only=true");
@@ -713,7 +719,9 @@ fn main() -> Result<()> {
     let speedup_pass = speedup_x >= min_speedup_x;
     let harness_pass = parity_pass && drift_pass;
     let candidate_pass = harness_pass && p90_pass && speedup_pass;
-    let decision = if candidate_pass {
+    let decision = if !authoritative_protocol {
+        "MEASUREMENT_ONLY"
+    } else if candidate_pass {
         "PROMOTE_CHALLENGER_SIGNAL"
     } else if harness_pass {
         "REJECT_CHALLENGER"
@@ -772,6 +780,7 @@ settling_ms_per_provider={warmup_ms:.3}\n\
 timed_samples={iters}\n\
 launches_per_sample={inner}\n\
 sequence=a1,b1,a2,b2,a3,b3\n\
+authoritative_protocol={authoritative_protocol}\n\
 telemetry_policy=boundary_snapshots_non_authoritative\n\
 telemetry_observe_only=true\n\
 telemetry_source=nvidia-smi\n\
