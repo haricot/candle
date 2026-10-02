@@ -125,3 +125,7 @@ name = "asd_v3_performance_consensus"
 
 [[example]]
 name = "asd_v3_performance_qualification"
+
+
+[[example]]
+name = "asd_v3_stage_tuner_candidate"
