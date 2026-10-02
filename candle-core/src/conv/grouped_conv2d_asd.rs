@@ -21,7 +21,7 @@ fn exact_disabled() -> bool {
 }
 
 pub(super) fn exact_dispatch_enabled() -> bool {
-    if candle_kernels::asd_exact::POLICY_ID.is_none() {
+    if candle_kernels::asd_exact::PROFILE_ID.is_none() {
         return false;
     }
     if candle_kernels::asd_exact::VALIDATION_BUILD {
@@ -206,7 +206,7 @@ pub(super) fn try_launch_exact(
     };
 
     if matched.state != "promoted"
-        || matched.selected_backend != "raw_cuda"
+        || matched.execution_provider != candle_kernels::asd_exact::ExactExecutionProvider::RawCuda
         || matched.implementation_id != "candle.depthwise-conv2d-5x5.raw.v1"
         || matched.evidence_sha256
             != "84f3dc50433e225b1f63c92a08355b7b04f0afeec49694e5e8d5e040cf092a9a"
@@ -217,8 +217,9 @@ pub(super) fn try_launch_exact(
 
     if trace_enabled() {
         eprintln!(
-            "[candle grouped-conv2d] requested=auto sm={} selected=raw reason=exact_asd asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={} min_integrated_speedup_x={:.8}",
+            "[candle grouped-conv2d] requested=auto sm={} selected=raw reason=exact_asd asd_profile={} asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={} min_integrated_speedup_x={:.8}",
             candle_kernels::CUDA_BUILD_COMPUTE_CAP,
+            matched.profile_id,
             matched.policy_id,
             matched.decision_id,
             matched.state,
@@ -235,7 +236,8 @@ pub(super) fn try_launch_exact(
     };
     if trace_enabled() {
         eprintln!(
-            "[candle grouped-conv2d] submitted_backend=raw launch_submission=success asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={} min_integrated_speedup_x={:.8}",
+            "[candle grouped-conv2d] submitted_backend=raw launch_submission=success asd_profile={} asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={} min_integrated_speedup_x={:.8}",
+            matched.profile_id,
             matched.policy_id,
             matched.decision_id,
             matched.state,
@@ -255,7 +257,7 @@ pub(super) fn trace_current_selection() {
             "exact_miss"
         };
         eprintln!(
-            "[candle grouped-conv2d] requested=auto selected=current reason={} asd_policy=none asd_decision=none asd_state=none asd_impl=none",
+            "[candle grouped-conv2d] requested=auto selected=current reason={} asd_profile=none asd_policy=none asd_decision=none asd_state=none asd_impl=none",
             reason
         );
     }
@@ -264,7 +266,7 @@ pub(super) fn trace_current_selection() {
 pub(super) fn trace_current_submission(backend: &str) {
     if exact_dispatch_enabled() && trace_enabled() {
         eprintln!(
-            "[candle grouped-conv2d] submitted_backend={} launch_submission=success asd_policy=none asd_decision=none asd_state=none asd_impl=none",
+            "[candle grouped-conv2d] submitted_backend={} launch_submission=success asd_profile=none asd_policy=none asd_decision=none asd_state=none asd_impl=none",
             backend
         );
     }
