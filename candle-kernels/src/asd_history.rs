@@ -32,6 +32,10 @@ pub struct HistoricalGain {
     pub transition_id: &'static str,
     pub decision_id: &'static str,
     pub state: HistoricalState,
+    /// Zero-based order inside the recorded lineage for this exact decision.
+    pub generation: u32,
+    /// Explicit edge to the immediately preceding recorded transition.
+    pub predecessor_transition_id: Option<&'static str>,
     pub exact_signature: &'static str,
     pub from_provider: &'static str,
     pub from_implementation: &'static str,
@@ -75,6 +79,8 @@ pub const GAINS: [HistoricalGain; 5] = [
         transition_id: "dw5x5-c384-legacy-chunked-to-cudnn-grouped",
         decision_id: "conv2d-dw5x5-f32-b1-c384-h8-w6-g384-s1-p2-d1-raw",
         state: HistoricalState::HistoricalOnly,
+        generation: 0,
+        predecessor_transition_id: None,
         exact_signature: DW384,
         from_provider: "native",
         from_implementation: "candle.legacy-grouped-conv2d.chunk-per-group-cat",
@@ -93,6 +99,8 @@ pub const GAINS: [HistoricalGain; 5] = [
         transition_id: "dw5x5-c48-cudnn-current-to-raw-asd",
         decision_id: "conv2d-dw5x5-f32-b1-c48-h64-w48-g48-s1-p2-d1-raw",
         state: HistoricalState::PromotionLineage,
+        generation: 0,
+        predecessor_transition_id: None,
         exact_signature: DW48,
         from_provider: "cudnn",
         from_implementation: "candle.cudnn.grouped-conv2d.native.v1",
@@ -111,6 +119,8 @@ pub const GAINS: [HistoricalGain; 5] = [
         transition_id: "dw5x5-c96-cudnn-current-to-raw-asd",
         decision_id: "conv2d-dw5x5-f32-b1-c96-h32-w24-g96-s1-p2-d1-raw",
         state: HistoricalState::PromotionLineage,
+        generation: 0,
+        predecessor_transition_id: None,
         exact_signature: DW96,
         from_provider: "cudnn",
         from_implementation: "candle.cudnn.grouped-conv2d.native.v1",
@@ -129,6 +139,8 @@ pub const GAINS: [HistoricalGain; 5] = [
         transition_id: "dw5x5-c192-cudnn-current-to-raw-asd",
         decision_id: "conv2d-dw5x5-f32-b1-c192-h16-w12-g192-s1-p2-d1-raw",
         state: HistoricalState::PromotionLineage,
+        generation: 0,
+        predecessor_transition_id: None,
         exact_signature: DW192,
         from_provider: "cudnn",
         from_implementation: "candle.cudnn.grouped-conv2d.native.v1",
@@ -147,6 +159,8 @@ pub const GAINS: [HistoricalGain; 5] = [
         transition_id: "dw5x5-c384-cudnn-current-to-raw-asd",
         decision_id: "conv2d-dw5x5-f32-b1-c384-h8-w6-g384-s1-p2-d1-raw",
         state: HistoricalState::PromotionLineage,
+        generation: 1,
+        predecessor_transition_id: Some("dw5x5-c384-legacy-chunked-to-cudnn-grouped"),
         exact_signature: DW384,
         from_provider: "cudnn",
         from_implementation: "candle.cudnn.grouped-conv2d.native.v1",
@@ -163,10 +177,13 @@ pub const GAINS: [HistoricalGain; 5] = [
     },
 ];
 
-pub fn history_for_decision<'a>(
-    decision_id: &'a str,
-) -> impl Iterator<Item = &'static HistoricalGain> + 'a {
-    GAINS.iter().filter(move |gain| gain.decision_id == decision_id)
+pub fn history_for_decision(decision_id: &str) -> Vec<&'static HistoricalGain> {
+    let mut gains = GAINS
+        .iter()
+        .filter(|gain| gain.decision_id == decision_id)
+        .collect::<Vec<_>>();
+    gains.sort_by_key(|gain| gain.generation);
+    gains
 }
 
 #[cfg(test)]
@@ -177,18 +194,24 @@ mod tests {
     fn c384_preserves_two_generation_lineage() {
         let gains = history_for_decision(
             "conv2d-dw5x5-f32-b1-c384-h8-w6-g384-s1-p2-d1-raw",
-        )
-        .collect::<Vec<_>>();
+        );
         assert_eq!(gains.len(), 2);
+        assert_eq!(gains[0].generation, 0);
+        assert_eq!(gains[0].predecessor_transition_id, None);
         assert_eq!(gains[0].speedup_x, 402.470);
         assert_eq!(gains[0].earlier_observed_speedup_x, Some(445.265));
+        assert_eq!(gains[1].generation, 1);
+        assert_eq!(
+            gains[1].predecessor_transition_id,
+            Some("dw5x5-c384-legacy-chunked-to-cudnn-grouped")
+        );
         assert_eq!(gains[1].speedup_x, 38.313419);
         assert_eq!(gains[1].evidence_sha256, Some(PROMOTION_EVIDENCE));
     }
 
     #[test]
     fn history_is_not_a_generalized_depthwise_rule() {
-        assert!(history_for_decision("unknown").next().is_none());
+        assert!(history_for_decision("unknown").is_empty());
         assert_eq!(
             GAINS
                 .iter()
