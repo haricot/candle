@@ -154,7 +154,7 @@ pub(super) struct GroupedTransposeDispatchDecision {
     requested: GroupedTransposeDispatchRequest,
     selected: GroupedTransposeDispatchPath,
     reason: GroupedTransposeDispatchReason,
-    asd_policy_id: Option<&'static str>,
+    asd_profile_id: Option<&'static str>,
     asd_decision_id: Option<&'static str>,
     asd_state: Option<&'static str>,
     asd_impl: Option<&'static str>,
@@ -175,9 +175,10 @@ impl GroupedTransposeDispatchDecision {
             return;
         }
         eprintln!(
-            "[candle grouped-conv-transpose] submitted_backend={} launch_submission=success asd_policy={} asd_decision={} asd_state={} asd_impl={}",
+            "[candle grouped-conv-transpose] submitted_backend={} launch_submission=success asd_profile={} asd_policy={} asd_decision={} asd_state={} asd_impl={}",
             backend,
-            self.asd_policy_id.unwrap_or("none"),
+            self.asd_profile_id.unwrap_or("none"),
+            self.asd_profile_id.unwrap_or("none"),
             self.asd_decision_id.unwrap_or("none"),
             self.asd_state.unwrap_or("none"),
             self.asd_impl.unwrap_or("none"),
@@ -200,7 +201,7 @@ fn resolve_grouped_transpose_dispatch(
             requested,
             selected: GroupedTransposeDispatchPath::Raw,
             reason: GroupedTransposeDispatchReason::ForceKernelOverride,
-            asd_policy_id: None,
+            asd_profile_id: None,
             asd_decision_id: None,
             asd_state: None,
             asd_impl: None,
@@ -212,7 +213,7 @@ fn resolve_grouped_transpose_dispatch(
             requested,
             selected: GroupedTransposeDispatchPath::Raw,
             reason: GroupedTransposeDispatchReason::ExplicitRaw,
-            asd_policy_id: None,
+            asd_profile_id: None,
             asd_decision_id: None,
             asd_state: None,
             asd_impl: None,
@@ -221,23 +222,31 @@ fn resolve_grouped_transpose_dispatch(
             requested,
             selected: GroupedTransposeDispatchPath::Cudnn,
             reason: GroupedTransposeDispatchReason::ExplicitCudnn,
-            asd_policy_id: None,
+            asd_profile_id: None,
             asd_decision_id: None,
             asd_state: None,
             asd_impl: None,
         },
         GroupedTransposeDispatchRequest::Auto | GroupedTransposeDispatchRequest::Invalid => {
             if let Some(asd) = exact_asd {
-                let selected = match asd.selected_backend {
-                    "raw_cuda" => GroupedTransposeDispatchPath::Raw,
-                    // The current V2 profile admits raw_cuda for proven grouped-transpose decisions.
-                    _ => GroupedTransposeDispatchPath::Cudnn,
+                let selected = match asd.execution_provider {
+                    candle_kernels::asd_exact::ExactExecutionProvider::RawCuda => {
+                        GroupedTransposeDispatchPath::Raw
+                    }
+                    candle_kernels::asd_exact::ExactExecutionProvider::Cudnn => {
+                        GroupedTransposeDispatchPath::Cudnn
+                    }
+                    // The Exact Profile contract reserves Native, but the Stage2F
+                    // adapter does not emit promoted native decisions yet.
+                    candle_kernels::asd_exact::ExactExecutionProvider::Native => unreachable!(
+                        "promoted native Exact Profile decision reached grouped-transpose before native executor identity was enabled"
+                    ),
                 };
                 return GroupedTransposeDispatchDecision {
                     requested,
                     selected,
                     reason: GroupedTransposeDispatchReason::ExactAsd,
-                    asd_policy_id: Some(asd.policy_id),
+                    asd_profile_id: Some(asd.profile_id),
                     asd_decision_id: Some(asd.decision_id),
                     asd_state: Some(asd.state),
                     asd_impl: Some(asd.implementation_id),
@@ -262,7 +271,7 @@ fn resolve_grouped_transpose_dispatch(
                 requested,
                 selected,
                 reason,
-                asd_policy_id: None,
+                asd_profile_id: None,
                 asd_decision_id: None,
                 asd_state: None,
                 asd_impl: None,
@@ -295,14 +304,15 @@ fn trace_decision(
 ) {
     if grouped_transpose_trace_enabled() || asd_exact_trace_enabled() {
         eprintln!(
-            "[candle grouped-conv-transpose] requested={} sm={} dim={} groups={} selected={} reason={} asd_policy={} asd_decision={} asd_state={}",
+            "[candle grouped-conv-transpose] requested={} sm={} dim={} groups={} selected={} reason={} asd_profile={} asd_policy={} asd_decision={} asd_state={}",
             decision.requested.as_str(),
             sm,
             dim.as_str(),
             groups,
             decision.selected.as_str(),
             decision.reason.as_str(),
-            decision.asd_policy_id.unwrap_or("none"),
+            decision.asd_profile_id.unwrap_or("none"),
+            decision.asd_profile_id.unwrap_or("none"),
             decision.asd_decision_id.unwrap_or("none"),
             decision.asd_state.unwrap_or("none"),
         );
@@ -413,7 +423,7 @@ pub(super) fn decision_1d(
     });
     // UUID comes from the real CUDA context, never CANDLE_ASD_TARGET_GPU_UUID.
     // No device read in ordinary non-ASD operation. An unreadable UUID fails closed.
-    let actual_uuid = if candle_kernels::asd_exact::POLICY_ID.is_some()
+    let actual_uuid = if candle_kernels::asd_exact::PROFILE_ID.is_some()
         && std::env::var("CANDLE_ASD_V2_CT1D_ENABLE").ok().as_deref() == Some("1")
     {
         let stream = input.device.cuda_stream();
@@ -559,9 +569,11 @@ mod tests {
     #[test]
     fn exact_asd_precedes_unpromoted_general_rule() {
         let exact = candle_kernels::asd_exact::ExactAsdMatch {
-            policy_id: "test-policy",
+            profile_id: "test-profile",
+            policy_id: "test-profile",
             decision_id: "ct1d-g2",
             state: "tuner_candidate",
+            execution_provider: candle_kernels::asd_exact::ExactExecutionProvider::RawCuda,
             selected_backend: "raw_cuda",
             evidence_sha256: "test",
             implementation_id: "candle.grouped-transpose.raw.v1",
