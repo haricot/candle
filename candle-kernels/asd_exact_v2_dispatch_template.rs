@@ -234,7 +234,7 @@ fn unproven(d: &'static ExactDecision) -> Option<ExactUnprovenMatch> {
     })
 }
 
-// Stage 2F: the sole public production policy lookup.
+// Stage 2F: the sole public production Exact Profile lookup.
 pub fn lookup(call: ExactOperationCall, actual_uuid: Option<&str>) -> Option<ExactMatch> {
     if !device_scope_ok(actual_uuid) {
         return None;
