@@ -154,7 +154,7 @@ fn selected(
 }
 fn trace_selected(m: candle_kernels::asd_exact::ExactAsdMatch) {
     if env_truthy("CANDLE_SM61_EXACT_GROUPED_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
-        eprintln!("[candle asd-v2] selected_backend={} reason=exact_asd asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={}",m.selected_backend,m.policy_id,m.decision_id,m.state,m.implementation_id,m.evidence_sha256)
+        eprintln!("[candle asd-v2] execution_provider={} selected_backend={} reason=exact_asd asd_profile={} asd_policy={} asd_decision={} asd_state={} asd_impl={} evidence={}",m.execution_provider.as_str(),m.selected_backend,m.profile_id,m.policy_id,m.decision_id,m.state,m.implementation_id,m.evidence_sha256)
     }
 }
 pub(super) fn try_launch_conv1d(
