@@ -7,14 +7,58 @@ fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
         .collect()
 }
 
-fn tensors(device: &Device) -> Result<(Tensor, Tensor)> {
+#[derive(Clone, Copy)]
+struct Case {
+    decision_id: &'static str,
+    groups: usize,
+}
+
+const CASES: &[Case] = &[
+    Case {
+        decision_id: "ct1d-sm61-s32-g2-raw-exact",
+        groups: 2,
+    },
+    Case {
+        decision_id: "ct1d-sm61-s32-g4-raw-exact",
+        groups: 4,
+    },
+];
+
+fn parse_case() -> Result<Case> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let requested = args
+        .windows(2)
+        .find_map(|pair| (pair[0] == "--decision").then(|| pair[1].as_str()))
+        .unwrap_or(CASES[0].decision_id);
+    CASES
+        .iter()
+        .copied()
+        .find(|case| case.decision_id == requested)
+        .ok_or_else(|| {
+            candle_core::Error::Msg(format!(
+                "invalid --decision {requested:?}; expected {}",
+                CASES
+                    .iter()
+                    .map(|case| case.decision_id)
+                    .collect::<Vec<_>>()
+                    .join(" or ")
+            ))
+        })
+}
+
+fn tensors(device: &Device, case: Case) -> Result<(Tensor, Tensor)> {
     let x = Tensor::from_vec(deterministic(128 * 32, 37, -50), (1, 128, 32), device)?;
-    let w = Tensor::from_vec(deterministic(128 * 64 * 3, 53, -50), (128, 64, 3), device)?;
+    let c_out_per_group = 128 / case.groups;
+    let w = Tensor::from_vec(
+        deterministic(128 * c_out_per_group * 3, 53, -50),
+        (128, c_out_per_group, 3),
+        device,
+    )?;
     Ok((x, w))
 }
 
-fn call(x: &Tensor, w: &Tensor) -> Result<Tensor> {
-    x.conv_transpose1d(w, 1, 1, 2, 1, 2)
+fn call(x: &Tensor, w: &Tensor, case: Case) -> Result<Tensor> {
+    x.conv_transpose1d(w, 1, 1, 2, 1, case.groups)
 }
 
 fn max_abs_rel(lhs: &Tensor, rhs: &Tensor) -> Result<(f32, f32)> {
@@ -48,6 +92,7 @@ fn empty_module_dir() -> Result<PathBuf> {
 }
 
 fn main() -> Result<()> {
+    let case = parse_case()?;
     let module_dir = empty_module_dir()?;
 
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &module_dir);
@@ -57,10 +102,11 @@ fn main() -> Result<()> {
     std::env::remove_var("CANDLE_SM61_EXACT_GROUPED_DISABLE");
 
     let device = Device::new_cuda(0)?;
-    let (x, w) = tensors(&device)?;
+    let (x, w) = tensors(&device, case)?;
 
     println!("=== ASD V3 PHASE A QUALIFIED FALLBACK VALIDATION ===");
-    println!("decision_id=ct1d-sm61-s32-g2-raw-exact");
+    println!("decision_id={}", case.decision_id);
+    println!("ct1d_groups={}", case.groups);
     println!("primary_provider=raw_cuda");
     println!("fallback_provider=cudnn");
     println!("fallback_implementation=candle.cudnn.grouped-transpose.v1");
@@ -73,7 +119,7 @@ fn main() -> Result<()> {
     std::env::set_var("CANDLE_GROUPED_TRANSPOSE_DISPATCH", "cudnn");
     std::env::remove_var("CANDLE_ASD_BUILTIN_RAW_DISABLE");
     std::env::remove_var("CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED");
-    let cudnn_reference = call(&x, &w)?;
+    let cudnn_reference = call(&x, &w, case)?;
     device.synchronize()?;
 
     // Phase A fallback: exact raw remains promoted, but both external and builtin
@@ -82,7 +128,7 @@ fn main() -> Result<()> {
     std::env::set_var("CANDLE_GROUPED_TRANSPOSE_DISPATCH", "auto");
     std::env::set_var("CANDLE_ASD_BUILTIN_RAW_DISABLE", "1");
     std::env::set_var("CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED", "1");
-    let qualified_fallback = call(&x, &w)?;
+    let qualified_fallback = call(&x, &w, case)?;
     device.synchronize()?;
 
     let (max_abs, max_rel) = max_abs_rel(&cudnn_reference, &qualified_fallback)?;
