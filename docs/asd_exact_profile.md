@@ -192,6 +192,73 @@ cuDNN grouped Conv2D
 This is lineage only; the production runtime selects the currently promoted
 provider directly.
 
+### Provider challenge history
+
+Rejected provider alternatives are recorded separately from promotion lineage.
+A stable reject is **not** represented as a `HistoricalGain`, because no
+provider transition occurred.
+
+The separate registry is:
+
+```text
+PROVIDER_CHALLENGES
+```
+
+and its entries are descriptive memory only. They do not participate in
+production dispatch, Exact Profile lookup, promotion gates, or Flow-Adaptive
+scheduling.
+
+The first recorded challenge is the CT1D G2 raw-CUDA incumbent versus cuDNN
+production-path challenger:
+
+```text
+challenge_id=ct1d-s32-g2-raw-vs-cudnn-v1
+decision_id=ct1d-sm61-s32-g2-raw-exact
+protocol=provider-evidence-v1
+measurement_plane=production_path
+
+incumbent:
+  provider=raw_cuda
+  implementation=candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256
+
+challenger:
+  provider=cudnn
+  implementation=candle.cudnn.grouped-transpose.v1
+
+R1:
+  evidence_sha256=1d86ff6da849ffc29dc30ec4eee69f9ab91330314d74221db5fd82bed11dc07b
+  decision=REJECT_CHALLENGER
+
+R2:
+  evidence_sha256=7e2d4d08f2210b0418261df07921c2ef33b0738d157cfbc834f7c7746f20e367
+  decision=REJECT_CHALLENGER
+
+consensus=stable_reject
+incumbent_retained=true
+profile_change=false
+```
+
+The V1 protocol identifier is preserved exactly for this historical result.
+Provider Evidence V2 applies only to subsequent provider challenges.
+
+The standalone inspector prints both lineage transitions and provider
+challenges. For this exact decision:
+
+```bash
+cargo run --manifest-path tools/asd-history/Cargo.toml -- \
+  ct1d-sm61-s32-g2-raw-exact
+```
+
+The expected semantic shape is:
+
+```text
+transitions=0
+provider_challenges=1
+PROVIDER_CHALLENGE ... protocol=provider-evidence-v1 consensus=stable_reject
+  incumbent_retained=true
+  profile_change=false
+```
+
 ## Provider-neutral CT1D Exact Profile lookup
 
 Grouped ConvTranspose1D no longer depends on the legacy
