@@ -118,6 +118,10 @@ const CT1D_G2: &str = "op=conv_transpose1d,dim=1,batch=1,c_in=128,c_out=128,spat
 
 const CT1D_G2_CUDNN_IDENTITY: &str = "cudnn:runtime_version=91002:operation=conv_backward_data:algorithm_id=0:workspace_bytes=0:dtype=f32:n=1:ci=128:co=128:l=32:groups=2:k=3:s=2:p=1:op=1:d=1";
 
+const CT1D_G4: &str = "op=conv_transpose1d,dim=1,batch=1,c_in=128,c_out=128,spatial=32,weight_shape=128x32x3,groups=4,kernel=3,stride=2,padding=1,output_padding=1,dilation=1,dtype=f32,input_layout=contiguous_zero_offset,weight_layout=contiguous_zero_offset";
+
+const CT1D_G4_CUDNN_IDENTITY: &str = "cudnn:runtime_version=91002:operation=conv_backward_data:algorithm_id=0:workspace_bytes=0:dtype=f32:n=1:ci=128:co=128:l=32:groups=4:k=3:s=2:p=1:op=1:d=1";
+
 const CT1D_G2_PROVIDER_REPLICATIONS: [ProviderChallengeReplication; 2] = [
     ProviderChallengeReplication {
         replication_id: "r1",
@@ -139,6 +143,31 @@ const CT1D_G2_PROVIDER_REPLICATIONS: [ProviderChallengeReplication; 2] = [
         challenger_drift_pct: 0.342,
         incumbent_p90_us: 10.464031,
         challenger_p90_us: 117.098250,
+        decision: "REJECT_CHALLENGER",
+    },
+];
+
+const CT1D_G4_PROVIDER_REPLICATIONS: [ProviderChallengeReplication; 2] = [
+    ProviderChallengeReplication {
+        replication_id: "r1",
+        evidence_sha256: "8258710d0fbae354bd4b95505e0caf03d13cdb73c7016c82c5bc53228c2c69c2",
+        incumbent_median_us: 9.938094,
+        challenger_median_us: 121.089781,
+        incumbent_drift_pct: 0.014,
+        challenger_drift_pct: 0.049,
+        incumbent_p90_us: 10.049813,
+        challenger_p90_us: 122.634219,
+        decision: "REJECT_CHALLENGER",
+    },
+    ProviderChallengeReplication {
+        replication_id: "r2",
+        evidence_sha256: "f190a815d690c2b9e665edf985c067dac0d97419c3d237558f87bf5581e9dd8f",
+        incumbent_median_us: 9.929562,
+        challenger_median_us: 121.609188,
+        incumbent_drift_pct: 0.414,
+        challenger_drift_pct: 0.358,
+        incumbent_p90_us: 11.112406,
+        challenger_p90_us: 123.258813,
         decision: "REJECT_CHALLENGER",
     },
 ];
@@ -265,26 +294,48 @@ pub const GAINS: [HistoricalGain; 5] = [
 /// A challenge records an evaluated alternative provider/implementation that did
 /// not necessarily become a lineage transition. Stable rejects remain separate
 /// from `GAINS` so tooling never invents a provider transition that did not occur.
-pub const PROVIDER_CHALLENGES: [ProviderChallenge; 1] = [ProviderChallenge {
-    challenge_id: "ct1d-s32-g2-raw-vs-cudnn-v1",
-    decision_id: "ct1d-sm61-s32-g2-raw-exact",
-    protocol: "provider-evidence-v1",
-    measurement_plane: "production_path",
-    harness_revision: "provider-evidence-v1-no-hot-trace-r2",
-    exact_signature: CT1D_G2,
-    incumbent_provider: "raw_cuda",
-    incumbent_implementation: "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256",
-    incumbent_identity: "raw_cuda:builtin_ptx:abi=1:implementation=candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256:entry=flow_v0322_ct1d_s32_g2_u1_b256:ptx_sha256=1809818f9044bac92bd16961c8a7f3a364eefda83c050d50b85c94d219abb41b",
-    incumbent_profile_evidence_sha256: "b6092036513164f71eb1e1d8b83bc2270b34c476a0aed808c608c86e8436b907",
-    challenger_provider: "cudnn",
-    challenger_implementation: "candle.cudnn.grouped-transpose.v1",
-    challenger_identity: CT1D_G2_CUDNN_IDENTITY,
-    replications: &CT1D_G2_PROVIDER_REPLICATIONS,
-    consensus: ProviderChallengeConsensus::StableReject,
-    incumbent_retained: true,
-    profile_change: false,
-    note: "Two independent trace-clean V1 production-path replications rejected the cuDNN challenger with exact parity and stable drift. V1 evidence is preserved as-is; future provider duels use Provider Evidence V2.",
-}];
+pub const PROVIDER_CHALLENGES: [ProviderChallenge; 2] = [
+    ProviderChallenge {
+        challenge_id: "ct1d-s32-g2-raw-vs-cudnn-v1",
+        decision_id: "ct1d-sm61-s32-g2-raw-exact",
+        protocol: "provider-evidence-v1",
+        measurement_plane: "production_path",
+        harness_revision: "provider-evidence-v1-no-hot-trace-r2",
+        exact_signature: CT1D_G2,
+        incumbent_provider: "raw_cuda",
+        incumbent_implementation: "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256",
+        incumbent_identity: "raw_cuda:builtin_ptx:abi=1:implementation=candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256:entry=flow_v0322_ct1d_s32_g2_u1_b256:ptx_sha256=1809818f9044bac92bd16961c8a7f3a364eefda83c050d50b85c94d219abb41b",
+        incumbent_profile_evidence_sha256: "b6092036513164f71eb1e1d8b83bc2270b34c476a0aed808c608c86e8436b907",
+        challenger_provider: "cudnn",
+        challenger_implementation: "candle.cudnn.grouped-transpose.v1",
+        challenger_identity: CT1D_G2_CUDNN_IDENTITY,
+        replications: &CT1D_G2_PROVIDER_REPLICATIONS,
+        consensus: ProviderChallengeConsensus::StableReject,
+        incumbent_retained: true,
+        profile_change: false,
+        note: "Two independent trace-clean V1 production-path replications rejected the cuDNN challenger with exact parity and stable drift. V1 evidence is preserved as-is; future provider duels use Provider Evidence V2.",
+    },
+    ProviderChallenge {
+        challenge_id: "ct1d-s32-g4-raw-vs-cudnn-v2",
+        decision_id: "ct1d-sm61-s32-g4-raw-exact",
+        protocol: "provider-evidence-v2",
+        measurement_plane: "production_path",
+        harness_revision: "provider-evidence-v2-ct1d-matrix-r3",
+        exact_signature: CT1D_G4,
+        incumbent_provider: "raw_cuda",
+        incumbent_implementation: "candle.sm61-exact-grouped.ct1d-s32-g4-u1-b256",
+        incumbent_identity: "raw_cuda:external_cubin:abi=1:implementation=candle.sm61-exact-grouped.ct1d-s32-g4-u1-b256:entry=flow_v0322_ct1d_s32_g4_u1_b256:artifact_sha256=72c8aeaacc322596973768f2f8bb61483ab9d05c158fa86e51841f11f746107e",
+        incumbent_profile_evidence_sha256: "b6092036513164f71eb1e1d8b83bc2270b34c476a0aed808c608c86e8436b907",
+        challenger_provider: "cudnn",
+        challenger_implementation: "candle.cudnn.grouped-transpose.v1",
+        challenger_identity: CT1D_G4_CUDNN_IDENTITY,
+        replications: &CT1D_G4_PROVIDER_REPLICATIONS,
+        consensus: ProviderChallengeConsensus::StableReject,
+        incumbent_retained: true,
+        profile_change: false,
+        note: "Two independent authoritative V2 fallback-qualification replications rejected cuDNN for promotion on performance while qualifying exact parity and stable execution for resilience.",
+    },
+];
 
 pub fn provider_challenges_for_decision(
     decision_id: &str,
@@ -357,6 +408,34 @@ mod tests {
         assert_eq!(
             challenge.replications[1].evidence_sha256,
             "7e2d4d08f2210b0418261df07921c2ef33b0738d157cfbc834f7c7746f20e367"
+        );
+        assert!(challenge
+            .replications
+            .iter()
+            .all(|replication| replication.decision == "REJECT_CHALLENGER"));
+    }
+
+    #[test]
+    fn ct1d_g4_provider_challenge_preserves_v2_stable_reject() {
+        let challenges = provider_challenges_for_decision("ct1d-sm61-s32-g4-raw-exact");
+        assert_eq!(challenges.len(), 1);
+        let challenge = challenges[0];
+        assert_eq!(challenge.protocol, "provider-evidence-v2");
+        assert_eq!(
+            challenge.harness_revision,
+            "provider-evidence-v2-ct1d-matrix-r3"
+        );
+        assert_eq!(challenge.consensus, ProviderChallengeConsensus::StableReject);
+        assert!(challenge.incumbent_retained);
+        assert!(!challenge.profile_change);
+        assert_eq!(challenge.replications.len(), 2);
+        assert_eq!(
+            challenge.replications[0].evidence_sha256,
+            "8258710d0fbae354bd4b95505e0caf03d13cdb73c7016c82c5bc53228c2c69c2"
+        );
+        assert_eq!(
+            challenge.replications[1].evidence_sha256,
+            "f190a815d690c2b9e665edf985c067dac0d97419c3d237558f87bf5581e9dd8f"
         );
         assert!(challenge
             .replications
