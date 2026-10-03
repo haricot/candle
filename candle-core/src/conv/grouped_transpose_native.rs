@@ -5,6 +5,13 @@ use crate::{CpuStorage, CudaStorage, CustomOp2, Layout, MetalStorage, Result, Sh
 use super::grouped::{GroupedConvTranspose1D, GroupedConvTranspose2D};
 use super::{ParamsConvTranspose1D, ParamsConvTranspose2D};
 
+fn env_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct NativeGroupedConvTranspose1D(pub(super) ParamsConvTranspose1D);
 
@@ -60,8 +67,8 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
                 let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
                     input, input_l, kernel, kernel_l, &self.0,
                 )?;
-                if std::env::var_os("CANDLE_GROUPED_TRANSPOSE_TRACE").is_some()
-                    || std::env::var_os("CANDLE_ASD_EXACT_TRACE").is_some()
+                if env_truthy("CANDLE_GROUPED_TRANSPOSE_TRACE")
+                    || env_truthy("CANDLE_ASD_EXACT_TRACE")
                 {
                     eprintln!(
                         "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=1d",
@@ -247,8 +254,8 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
                 let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
                     input, input_l, kernel, kernel_l, &self.0,
                 )?;
-                if std::env::var_os("CANDLE_GROUPED_TRANSPOSE_TRACE").is_some()
-                    || std::env::var_os("CANDLE_ASD_EXACT_TRACE").is_some()
+                if env_truthy("CANDLE_GROUPED_TRANSPOSE_TRACE")
+                    || env_truthy("CANDLE_ASD_EXACT_TRACE")
                 {
                     eprintln!(
                         "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=2d",
