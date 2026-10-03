@@ -711,6 +711,23 @@ Verify an already-installed catalogue without recompilation:
 bash tools/asd-sm61-install.sh --verify-only
 ```
 
+Then validate runtime parity and require that every exact geometry actually
+resolved the external CUBIN (rather than silently falling through to another
+backend):
+
+```bash
+cargo run --release -p candle-core \
+  --features cuda \
+  --example asd_v3_sm61_catalogue_validate
+```
+
+A successful run prints seven `CASE ... pass=true` rows followed by:
+
+```text
+BUILTIN_RAW=preserved
+STATUS=PASS failures=0 cases=7
+```
+
 After installation, `tools/asd-profile` should report
 `phase_a_primary_resolution=external_cubin` for all seven externalizable
 sm61 exact-grouped decisions. The specialized builtin PTX remains the next
