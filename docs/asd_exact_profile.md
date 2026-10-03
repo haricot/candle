@@ -107,9 +107,11 @@ exact signature
        ASD Exact Profile
 ```
 
-The current Candle A/B V1/V2 evidence harness remains artifact-vs-artifact.
-Provider-aware evidence for cuDNN is a subsequent step; the profile/provider
-contract is introduced first without weakening the existing twelve decisions.
+Provider-aware evidence is now a first-class benchmark contract. Raw CUDA
+identity is artifact/module based, while cuDNN identity is provider/runtime
+configuration based. Provider Evidence V1 established the first exact
+raw-vs-cuDNN production-path comparison; Provider Evidence V2 hardens the
+experimental discipline for all subsequent provider duels.
 
 Thermal, clock and throttle observations remain evidence metadata only and do
 not change production dispatch.
@@ -321,3 +323,208 @@ ASD-PROVIDER-PERFORMANCE-EVIDENCE-V1
 and records the incumbent/challenger identities, parity, all six authoritative
 phases, aggregate medians, drift, p90, threshold result, telemetry and final
 signal.
+
+
+### Preserved V1 consensus: CT1D G2
+
+The two trace-clean independent V1 replications remain valid evidence and are
+not rewritten into the V2 schema:
+
+```text
+protocol=provider-evidence-v1
+decision_id=ct1d-sm61-s32-g2-raw-exact
+
+R1:
+  evidence_sha256=1d86ff6da849ffc29dc30ec4eee69f9ab91330314d74221db5fd82bed11dc07b
+  incumbent_raw_cuda ~= 10.507 us
+  challenger_cudnn  ~= 113.393 us
+  decision=REJECT_CHALLENGER
+
+R2:
+  evidence_sha256=7e2d4d08f2210b0418261df07921c2ef33b0738d157cfbc834f7c7746f20e367
+  incumbent_raw_cuda ~= 10.342 us
+  challenger_cudnn  ~= 115.327 us
+  decision=REJECT_CHALLENGER
+
+consensus=STABLE_REJECT
+incumbent_retained=true
+profile_change=false
+```
+
+These hashes will later be referenced by Provider Challenge historical state as
+V1 evidence. They are intentionally not regenerated under V2.
+
+## Provider Evidence V2 benchmark discipline
+
+All new provider duels use:
+
+```text
+candle-core/examples/asd_provider_evidence_v2.rs
+ASD-PROVIDER-PERFORMANCE-EVIDENCE-V2
+protocol=provider-evidence-v2
+measurement_plane=production_path
+```
+
+V2 keeps the V1 parity, drift, p90 and minimum-speedup gates but adds explicit
+experimental-state controls inspired by the stricter benchmark discipline used
+for reproducible model comparisons.
+
+The model-specific notions of checkpoint, quantization, context and sampling
+map to the exact-operator experiment as follows:
+
+```text
+source checkpoint     -> exact git commit + clean tracked tree
+quantization/dtype    -> exact dtype in the operation signature
+context/input         -> deterministic tensors + SHA-256 identities
+sampling protocol     -> fixed warmup/sample/inner/gate configuration
+residency             -> explicit CUDA/module/cuDNN state declaration
+GPU isolation         -> headless environment + preflight idle check
+alternation           -> deterministic balanced A/B ordering
+best-run selection    -> forbidden
+```
+
+### Authoritative protocol gate
+
+A V2 result is authoritative only when all of the following are true:
+
+```text
+default protocol:
+  warmup=500 ms/provider
+  samples=40
+  launches/sample=32
+  max drift=5 %
+  challenger minimum speedup=1.01x
+
+replication:
+  --replication r1
+  or
+  --replication r2
+
+source:
+  git snapshot available
+  tracked source tree clean
+
+environment:
+  DISPLAY unset
+  WAYLAND_DISPLAY unset
+  zero pre-existing compute processes on the target GPU
+  preflight GPU utilization <= 1 %
+```
+
+Failure of any protocol/environment item does not prevent exploratory
+measurement, but forces:
+
+```text
+authoritative_protocol=false
+DECISION=MEASUREMENT_ONLY
+```
+
+### Balanced deterministic replication order
+
+V2 deliberately avoids free randomization. The two independent replications
+use complementary deterministic orders:
+
+```text
+R1 settling: A B
+R1 timing:   A1 B1 | B2 A2 | A3 B3
+
+R2 settling: B A
+R2 timing:   B1 A1 | A2 B2 | B3 A3
+```
+
+This preserves reproducibility while reducing sensitivity to monotonic clock,
+temperature or residency drift.
+
+### Residency declaration
+
+For the current CT1D G2 production-path comparison V2 records:
+
+```text
+cache_state=warm_after_settling
+cold_cache_measured=false
+
+CUDA context:
+  warm_after_settling
+
+raw CUDA:
+  module warm_after_settling
+  source=builtin_ptx
+
+cuDNN:
+  handle=thread_local_cached
+  descriptors=recreated_per_call
+  algorithm=repicked_per_call
+  workspace=allocated_per_call
+```
+
+Those fields describe the implementation actually traversed by
+`Tensor::conv_transpose1d()`; they are not claims about intrinsic cuDNN kernel
+latency.
+
+### Production path versus intrinsic provider execution
+
+V2 makes the measurement plane explicit:
+
+```text
+measurement_plane=production_path
+provider_hot_execution_measured=false
+```
+
+A future cached/prepared cuDNN implementation is a new challenger identity and
+must receive new evidence. Its intrinsic or prepared hot-path measurements must
+not be substituted for production-path evidence.
+
+### Latency and throughput reporting
+
+V2 retains per-launch latency obtained from batched wall-clock timing and also
+reports derived serial exact-op throughput:
+
+```text
+latency_kind=per_launch_from_batched_wall_clock
+throughput_kind=serial_repeated_exact_op
+aggregation=median_of_three_phase_medians
+best_run_selection=forbidden
+```
+
+This is an exact-operator microbenchmark, so model-level distinctions such as
+prefill, continued prefill and generation are recorded as not applicable rather
+than being imitated artificially.
+
+### Running V2
+
+Compile:
+
+```bash
+cargo check -p candle-core \
+  --features cuda,cudnn \
+  --example asd_provider_evidence_v2
+```
+
+Run R1 in a fresh headless process:
+
+```bash
+cargo run --release -p candle-core \
+  --features cuda,cudnn \
+  --example asd_provider_evidence_v2 -- \
+  --replication r1 \
+  --evidence-out /home/np/tmp/candle_asd/provider-evidence-v2-ct1d-g2-r1.txt
+```
+
+Run R2 independently with `--replication r2`.
+
+Before interpreting performance, an authoritative run must show:
+
+```text
+protocol=provider-evidence-v2
+harness_revision=provider-evidence-v2-discipline-r1
+measurement_plane=production_path
+source_tree_clean=true
+headless_display_env=true
+gpu_workload_preflight_status=ok
+gpu_workload_preflight_active_compute_processes=0
+gpu_workload_preflight_clean=true
+authoritative_protocol=true
+```
+
+Provider Evidence V1 remains frozen for the already-established CT1D G2
+consensus; it should not be retroactively regenerated as V2.
