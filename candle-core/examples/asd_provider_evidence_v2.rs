@@ -402,9 +402,9 @@ fn sha256_f32(values: &[f32]) -> String {
         .collect()
 }
 
-fn input_identity() -> (String, String) {
+fn input_identity(case: Ct1dCase) -> (String, String) {
     let x = deterministic(128 * 32, 37, -50);
-    let w = deterministic(128 * 64 * 3, 53, -50);
+    let w = deterministic(128 * case.weight_c_out_per_group() * 3, 53, -50);
     (sha256_f32(&x), sha256_f32(&w))
 }
 
@@ -414,14 +414,18 @@ fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
         .collect()
 }
 
-fn tensors(device: &Device) -> Result<(Tensor, Tensor)> {
+fn tensors(device: &Device, case: Ct1dCase) -> Result<(Tensor, Tensor)> {
     let x = Tensor::from_vec(deterministic(128 * 32, 37, -50), (1, 128, 32), device)?;
-    let w = Tensor::from_vec(deterministic(128 * 64 * 3, 53, -50), (128, 64, 3), device)?;
+    let w = Tensor::from_vec(
+        deterministic(128 * case.weight_c_out_per_group() * 3, 53, -50),
+        (128, case.weight_c_out_per_group(), 3),
+        device,
+    )?;
     Ok((x, w))
 }
 
-fn call(x: &Tensor, w: &Tensor) -> Result<Tensor> {
-    x.conv_transpose1d(w, 1, 1, 2, 1, 2)
+fn call(x: &Tensor, w: &Tensor, case: Ct1dCase) -> Result<Tensor> {
+    x.conv_transpose1d(w, 1, 1, 2, 1, case.groups)
 }
 
 fn configure_provider(provider: Provider) {
@@ -468,7 +472,7 @@ fn gpu_uuid(device: &Device) -> Result<String> {
     ))
 }
 
-fn exact_call() -> candle_kernels::asd_exact::ExactOperationCall {
+fn exact_call(case: Ct1dCase) -> candle_kernels::asd_exact::ExactOperationCall {
     candle_kernels::asd_exact::ExactOperationCall {
         op: candle_kernels::asd_exact::ExactOperation::ConvTranspose1d,
         dim: 1,
@@ -479,10 +483,10 @@ fn exact_call() -> candle_kernels::asd_exact::ExactOperationCall {
         spatial1: 0,
         weight_rank: 3,
         weight0: 128,
-        weight1: 64,
+        weight1: case.weight_c_out_per_group(),
         weight2: 3,
         weight3: 0,
-        groups: 2,
+        groups: case.groups,
         kernel: 3,
         stride: 2,
         padding: 1,
@@ -496,7 +500,10 @@ fn exact_call() -> candle_kernels::asd_exact::ExactOperationCall {
     }
 }
 
-fn incumbent_profile_match(gpu_uuid: &str) -> Result<candle_kernels::asd_exact::ExactAsdMatch> {
+fn incumbent_profile_match(
+    gpu_uuid: &str,
+    case: Ct1dCase,
+) -> Result<candle_kernels::asd_exact::ExactAsdMatch> {
     if candle_kernels::asd_exact::PROFILE_ID.is_none() {
         candle_core::bail!(
             "Provider Evidence V2 requires an embedded ASD Exact Profile; rebuild with CANDLE_ASD_EXACT_POLICY pointing to the Stage2F production profile"
@@ -508,20 +515,21 @@ fn incumbent_profile_match(gpu_uuid: &str) -> Result<candle_kernels::asd_exact::
         )
     }
 
-    let matched = match candle_kernels::asd_exact::lookup(exact_call(), Some(gpu_uuid)) {
+    let matched = match candle_kernels::asd_exact::lookup(exact_call(case), Some(gpu_uuid)) {
         Some(candle_kernels::asd_exact::ExactMatch::Proven(matched)) => matched,
         Some(candle_kernels::asd_exact::ExactMatch::Unproven(_)) => {
-            candle_core::bail!("CT1D G2 Exact Profile match is not proven")
+            candle_core::bail!("{} Exact Profile match is not proven", case.decision_id)
         }
-        None => candle_core::bail!("missing CT1D G2 Exact Profile decision"),
+        None => candle_core::bail!("missing Exact Profile decision {}", case.decision_id),
     };
-    if matched.decision_id != DECISION_ID
+    if matched.decision_id != case.decision_id
         || matched.state != "promoted"
         || matched.execution_provider != candle_kernels::asd_exact::ExactExecutionProvider::RawCuda
-        || matched.implementation_id != INCUMBENT_IMPLEMENTATION_ID
+        || matched.implementation_id != case.implementation_id
     {
         candle_core::bail!(
-            "unexpected CT1D G2 incumbent profile decision id={} state={} provider={} impl={}",
+            "unexpected CT1D incumbent profile decision expected={} id={} state={} provider={} impl={}",
+            case.decision_id,
             matched.decision_id,
             matched.state,
             matched.execution_provider.as_str(),
