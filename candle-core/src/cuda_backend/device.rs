@@ -310,6 +310,17 @@ impl CudaDevice {
         self.asd_runtime.clear(implementation_id)
     }
 
+    /// Returns the resolved ASD raw source for an implementation on this device.
+    ///
+    /// This is a diagnostic/control-plane query. It never resolves an
+    /// unresolved implementation and therefore performs no filesystem I/O.
+    pub fn asd_resolved_module_source(
+        &self,
+        implementation_id: &str,
+    ) -> Result<Option<&'static str>> {
+        self.asd_runtime.resolved_source(implementation_id)
+    }
+
     /// When turned on, all cuda tensors **created after calling this function** will
     /// not track uses via cuda events.
     ///
