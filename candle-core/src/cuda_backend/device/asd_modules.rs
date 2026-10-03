@@ -98,7 +98,7 @@ const IMPLEMENTATIONS: &[AsdKernelSpec] = &[
     },
 ];
 
-const IMPLEMENTATION_COUNT: usize = 7;
+const IMPLEMENTATION_COUNT: usize = IMPLEMENTATIONS.len();
 
 fn implementation_spec(
     implementation_id: &str,
