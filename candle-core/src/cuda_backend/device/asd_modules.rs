@@ -141,6 +141,22 @@ impl AsdRuntimeCache {
         *self.slots[index].write().unwrap() = AsdRuntimeSlot::Unresolved;
         Ok(())
     }
+
+    pub(super) fn resolved_source(
+        &self,
+        implementation_id: &str,
+    ) -> Result<Option<&'static str>> {
+        let (index, _) = implementation_spec(implementation_id).ok_or_else(|| {
+            Error::Msg(format!(
+                "unknown ASD implementation {implementation_id}"
+            ))
+        })?;
+        let slot = self.slots[index].read().unwrap();
+        Ok(match &*slot {
+            AsdRuntimeSlot::Resolved(resolved) => Some(resolved.provider_name),
+            AsdRuntimeSlot::Unresolved | AsdRuntimeSlot::Unavailable => None,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
