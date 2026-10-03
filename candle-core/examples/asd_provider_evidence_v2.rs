@@ -83,6 +83,7 @@ struct GitSnapshot {
 struct GpuWorkloadSnapshot {
     status: &'static str,
     active_compute_processes: usize,
+    utilization_pct: Option<u64>,
     clean: bool,
 }
 
@@ -211,7 +212,7 @@ fn git_snapshot() -> GitSnapshot {
 }
 
 fn query_gpu_workload(gpu_uuid: &str) -> GpuWorkloadSnapshot {
-    let output = match Command::new("nvidia-smi")
+    let apps = match Command::new("nvidia-smi")
         .arg("-i")
         .arg(gpu_uuid)
         .arg("--query-compute-apps=pid,process_name")
@@ -223,30 +224,53 @@ fn query_gpu_workload(gpu_uuid: &str) -> GpuWorkloadSnapshot {
             return GpuWorkloadSnapshot {
                 status: "unavailable",
                 active_compute_processes: 0,
+                utilization_pct: None,
                 clean: false,
             };
         }
     };
-    let stdout = match String::from_utf8(output.stdout) {
+    let apps_stdout = match String::from_utf8(apps.stdout) {
         Ok(stdout) => stdout,
         Err(_) => {
             return GpuWorkloadSnapshot {
                 status: "unavailable",
                 active_compute_processes: 0,
+                utilization_pct: None,
                 clean: false,
             };
         }
     };
-    let active_compute_processes = stdout
+    let active_compute_processes = apps_stdout
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter(|line| !line.to_ascii_lowercase().contains("no running"))
         .count();
+
+    let utilization_pct = Command::new("nvidia-smi")
+        .arg("-i")
+        .arg(gpu_uuid)
+        .arg("--query-gpu=utilization.gpu")
+        .arg("--format=csv,noheader,nounits")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|stdout| stdout.lines().find_map(|line| line.trim().parse::<u64>().ok()));
+
+    let status = if utilization_pct.is_some() {
+        "ok"
+    } else {
+        "partial"
+    };
+    let clean = active_compute_processes == 0
+        && utilization_pct.is_some_and(|utilization| utilization <= 1);
+
     GpuWorkloadSnapshot {
-        status: "ok",
+        status,
         active_compute_processes,
-        clean: active_compute_processes == 0,
+        utilization_pct,
+        clean,
     }
 }
 
@@ -839,6 +863,10 @@ fn main() -> Result<()> {
         "gpu_workload_preflight_active_compute_processes={}",
         gpu_workload.active_compute_processes
     );
+    println!(
+        "gpu_workload_preflight_utilization_pct={}",
+        fmt_u64(gpu_workload.utilization_pct)
+    );
     println!("gpu_workload_preflight_clean={}", gpu_workload.clean);
     println!("workload_class=exact_operator_microbenchmark");
     println!("model_phase_semantics=not_applicable");
@@ -872,17 +900,27 @@ fn main() -> Result<()> {
     println!("residency_cudnn_descriptors=recreated_per_call");
     println!("residency_cudnn_algorithm=repicked_per_call");
     println!("residency_cudnn_workspace=allocated_per_call");
+    println!("latency_kind=per_launch_from_batched_wall_clock");
+    println!("throughput_kind=serial_repeated_exact_op");
     println!("aggregation=median_of_three_phase_medians");
     println!("best_run_selection=forbidden");
     println!("warmup_policy=time_equivalent_per_provider");
     println!("warmup_ms={warmup_ms:.3}");
-    println!("settling_policy=time_equivalent_pair_non_authoritative");
+    println!("settling_policy=time_equivalent_pair_balanced_by_replication_non_authoritative");
     println!("timed_samples={iters}");
     println!("launches_per_sample={inner}");
     println!("max_drift_pct={max_drift_pct:.3}");
     println!("min_speedup_x={min_speedup_x:.6}");
     println!("sequence={}", effective_replication.phase_sequence());
     println!("replication_pairing=deterministic_balanced");
+    println!(
+        "PROTOCOL_GATE defaults={} replication={} source_clean={} headless={} gpu_idle={}",
+        protocol_defaults,
+        replication.is_some(),
+        git.clean,
+        headless_display_env,
+        gpu_workload.clean
+    );
     println!("authoritative_protocol={authoritative_protocol}");
     println!("PARITY max_abs={max_abs:.8} max_rel={max_rel:.8} pass={parity_pass}");
     println!("telemetry_policy=boundary_snapshots_non_authoritative");
@@ -998,7 +1036,9 @@ source_tree_clean={}\n\
 headless_display_env={}\n\
 gpu_workload_preflight_status={}\n\
 gpu_workload_preflight_active_compute_processes={}\n\
+gpu_workload_preflight_utilization_pct={}\n\
 gpu_workload_preflight_clean={}\n\
+protocol_defaults_pass={protocol_defaults}\n\
 workload_class=exact_operator_microbenchmark\n\
 model_phase_semantics=not_applicable\n\
 input_sha256={}\n\
@@ -1032,6 +1072,8 @@ residency_cudnn_handle=thread_local_cached\n\
 residency_cudnn_descriptors=recreated_per_call\n\
 residency_cudnn_algorithm=repicked_per_call\n\
 residency_cudnn_workspace=allocated_per_call\n\
+latency_kind=per_launch_from_batched_wall_clock\n\
+throughput_kind=serial_repeated_exact_op\n\
 aggregation=median_of_three_phase_medians\n\
 best_run_selection=forbidden\n\
 warmup_policy=time_equivalent_per_provider\n\
@@ -1103,6 +1145,7 @@ decision={decision}\n",
         headless_display_env,
         gpu_workload.status,
         gpu_workload.active_compute_processes,
+        fmt_u64(gpu_workload.utilization_pct),
         gpu_workload.clean,
         input_sha256,
         weight_sha256,
@@ -1147,7 +1190,12 @@ decision={decision}\n",
     );
 
     let evidence_sha256 = sha256_bytes(evidence.as_bytes());
-    println!("provider_evidence_schema=ASD-PROVIDER-PERFORMANCE-EVIDENCE-V1");
+    println!("provider_evidence_schema=ASD-PROVIDER-PERFORMANCE-EVIDENCE-V2");
+    println!("provider_evidence_protocol={PROTOCOL_ID}");
+    println!(
+        "provider_evidence_replication={}",
+        replication.map(Replication::as_str).unwrap_or("unspecified")
+    );
     println!("provider_evidence_sha256={evidence_sha256}");
     println!("telemetry_observe_only=true");
     println!("telemetry_status={telemetry_status}");
