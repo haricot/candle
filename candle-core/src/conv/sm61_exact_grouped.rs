@@ -68,7 +68,7 @@ fn launch_selected(
         }
         return Ok(None);
     };
-    let func = implementation.function()?;
+    let func = implementation.function();
     let out = unsafe { dev.alloc::<f32>(implementation.output_count())? };
     let cfg = implementation.launch_config();
     let slice = match (&input.slice, &kernel.slice) {
