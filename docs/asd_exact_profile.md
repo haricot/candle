@@ -584,7 +584,7 @@ Before interpreting performance, an authoritative run must show:
 
 ```text
 protocol=provider-evidence-v2
-harness_revision=provider-evidence-v2-discipline-r1
+harness_revision=provider-evidence-v2-discipline-r2
 measurement_plane=production_path
 source_tree_clean=true
 headless_display_env=true
@@ -684,3 +684,52 @@ cp /path/to/stage2f-production.v2.asd ~/.local/share/asd/profiles/current.asd
 The build-time `CANDLE_ASD_EXACT_POLICY` mechanism remains explicit in Phase A
 for reproducibility. Merely placing `current.asd` in the user store does not
 silently change the Exact Profile embedded in an existing Candle binary.
+
+
+### Validating Phase A fallback before removing builtin PTX
+
+The dedicated validator deliberately hides external artifacts and disables the
+builtin raw layer. It also sets a strict gate that forbids falling through to an
+unqualified generic path:
+
+```bash
+cargo run --release -p candle-core \
+  --features cuda,cudnn \
+  --example asd_v3_phase_a_fallback_validate
+```
+
+A valid CT1D G2 run must emit the ASD V3 fallback trace with:
+
+```text
+runtime_role=fallback
+reason=primary_artifact_unavailable
+provider=cudnn
+implementation=candle.cudnn.grouped-transpose.v1
+```
+
+and finish with:
+
+```text
+primary_artifact_available=false
+qualified_fallback_required=true
+STATUS=PASS
+```
+
+The validation switch `CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED=1` exists only
+to prove this chain. If the qualified fallback cannot execute, the validator
+fails instead of silently trying an unqualified raw/generic fallback.
+
+### Provider Evidence V2 and external raw identity
+
+Provider Evidence V2 revision `provider-evidence-v2-discipline-r2` binds the
+incumbent evidence to the raw source actually resolved at runtime:
+
+```text
+incumbent_raw_source=builtin_ptx | external_cubin | external_ptx
+incumbent_artifact_sha256=<actual SHA-256>
+incumbent_raw_proof_status=...
+incumbent_raw_identity_verified=true|false
+```
+
+An external CUBIN/PTX without a valid matching manifest can still be useful for
+non-authoritative experimentation, but cannot produce authoritative V2 evidence.
