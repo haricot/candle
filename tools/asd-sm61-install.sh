@@ -78,9 +78,16 @@ verify_one() {
     [[ -f "$f" ]] || { echo "VERIFY_FAIL missing=$f" >&2; return 1; }
   done
 
-  local cubin_sha source_sha
+  local repo_source="$SOURCE_DIR/$source_file"
+  local cubin_sha source_sha repo_source_sha
+  [[ -f "$repo_source" ]] || { echo "VERIFY_FAIL missing=$repo_source" >&2; return 1; }
   cubin_sha="$(sha256sum "$cubin" | awk '{print $1}')"
   source_sha="$(sha256sum "$cu" | awk '{print $1}')"
+  repo_source_sha="$(sha256sum "$repo_source" | awk '{print $1}')"
+  [[ "$source_sha" == "$repo_source_sha" ]] || {
+    echo "VERIFY_FAIL impl=$impl reason=source_sha256 installed=$source_sha repo=$repo_source_sha" >&2
+    return 1
+  }
 
   grep -qx 'ASD-CUDA-MODULE-V1' <(head -n1 "$manifest") || {
     echo "VERIFY_FAIL impl=$impl reason=manifest_header" >&2; return 1;
@@ -109,7 +116,8 @@ verify_one() {
       echo "VERIFY_FAIL impl=$impl reason=entry_not_in_cubin" >&2; return 1;
     }
 
-  printf 'VERIFY_OK implementation=%s source_sha256=%s cubin_sha256=%s entry=%s\n'     "$impl" "$source_sha" "$cubin_sha" "$entry"
+  printf 'VERIFY_OK implementation=%s source_sha256=%s cubin_sha256=%s entry=%s\n' \
+    "$impl" "$source_sha" "$cubin_sha" "$entry"
 }
 
 if [[ "$VERIFY_ONLY" -eq 1 ]]; then
@@ -148,7 +156,18 @@ for row in "${CATALOGUE[@]}"; do
 
   cp "$src" "$stage_cu"
 
-  "$NVCC"     -gencode=arch=compute_61,code=sm_61     --cubin     --default-stream per-thread     --expt-relaxed-constexpr     -std=c++17     -O3     -allow-unsupported-compiler     -Wno-deprecated-gpu-targets     -ccbin "$CCBIN"     "$stage_cu"     -o "$stage_cubin"
+  "$NVCC" \
+    -gencode=arch=compute_61,code=sm_61 \
+    --cubin \
+    --default-stream per-thread \
+    --expt-relaxed-constexpr \
+    -std=c++17 \
+    -O3 \
+    -allow-unsupported-compiler \
+    -Wno-deprecated-gpu-targets \
+    -ccbin "$CCBIN" \
+    "$stage_cu" \
+    -o "$stage_cubin"
 
   cubin_sha="$(sha256sum "$stage_cubin" | awk '{print $1}')"
   source_sha="$(sha256sum "$stage_cu" | awk '{print $1}')"
@@ -169,7 +188,8 @@ entry=$entry
 artifact_sha256=$cubin_sha
 EOF
 
-  printf 'artifact|implementation=%s|source_file=%s|source_sha256=%s|entry=%s|cubin_sha256=%s\n'     "$impl" "$source_file" "$source_sha" "$entry" "$cubin_sha" >> "$CATALOGUE_FILE"
+  printf 'artifact|implementation=%s|source_file=%s|source_sha256=%s|entry=%s|cubin_sha256=%s\n' \
+    "$impl" "$source_file" "$source_sha" "$entry" "$cubin_sha" >> "$CATALOGUE_FILE"
 
   printf 'STAGED implementation=%s cubin_sha256=%s\n' "$impl" "$cubin_sha"
 done
