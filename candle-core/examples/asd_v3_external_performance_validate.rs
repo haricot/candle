@@ -328,6 +328,9 @@ fn timed_warmup(
     inner: usize,
 ) -> Result<()> {
     std::env::set_var("CANDLE_ASD_MODULE_DIR", dir);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     let requested = Duration::from_secs_f64(warmup_ms / 1000.0);
     let started = Instant::now();
     let mut batches = 0usize;
@@ -454,9 +457,15 @@ fn main() -> Result<()> {
 
     // One synchronized parity probe before timing.
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &dir_a);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     let out_a = call(&x, &w)?;
     device.synchronize()?;
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &dir_b);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     let out_b = call(&x, &w)?;
     device.synchronize()?;
     let (max_abs, max_rel) = max_abs_rel(&out_a, &out_b)?;
