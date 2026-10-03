@@ -177,6 +177,14 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
             return Ok((out, Shape::from(self.0.out_dims())));
         }
 
+        #[cfg(feature = "cuda")]
+        if decision.exact_requires_raw() && env_truthy("CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED") {
+            crate::bail!(
+                "ASD exact raw primary is unavailable and no evidence-qualified provider fallback could execute decision {}",
+                decision.exact_decision_id().unwrap_or("unknown")
+            )
+        }
+
         #[cfg(feature = "cudnn")]
         if !decision.prefers_raw() && kernel_l.is_contiguous() {
             match super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
