@@ -12,6 +12,54 @@ fn env_truthy(name: &str) -> bool {
     )
 }
 
+#[cfg(all(feature = "cuda", feature = "cudnn"))]
+fn try_qualified_ct1d_fallback(
+    decision: super::grouped_transpose_dispatch::GroupedTransposeDispatchDecision,
+    input: &CudaStorage,
+    input_l: &Layout,
+    kernel: &CudaStorage,
+    kernel_l: &Layout,
+    params: &ParamsConvTranspose1D,
+) -> Result<Option<CudaStorage>> {
+    if !decision.exact_requires_raw() || !kernel_l.is_contiguous() {
+        return Ok(None);
+    }
+    let Some(decision_id) = decision.exact_decision_id() else {
+        return Ok(None);
+    };
+    let runtime_cudnn_version = unsafe { cudarc::cudnn::sys::cudnnGetVersion() };
+
+    for fallback in candle_kernels::asd_fallback::qualified_fallbacks_for_decision(decision_id) {
+        if fallback.provider
+            != candle_kernels::asd_fallback::QualifiedFallbackProvider::Cudnn
+            || fallback.implementation_id != "candle.cudnn.grouped-transpose.v1"
+            || fallback
+                .required_cudnn_version_raw
+                .is_some_and(|required| required != runtime_cudnn_version)
+        {
+            continue;
+        }
+
+        let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
+            input, input_l, kernel, kernel_l, params,
+        )?;
+        if env_truthy("CANDLE_GROUPED_TRANSPOSE_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
+            eprintln!(
+                "[candle asd-v3] runtime_role=fallback reason=primary_artifact_unavailable decision={} fallback_rank={} provider={} implementation={} protocol={} cudnn_version_raw={}",
+                decision_id,
+                fallback.rank,
+                fallback.provider.as_str(),
+                fallback.implementation_id,
+                fallback.protocol,
+                runtime_cudnn_version,
+            );
+        }
+        return Ok(Some(out));
+    }
+
+    Ok(None)
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct NativeGroupedConvTranspose1D(pub(super) ParamsConvTranspose1D);
 
@@ -117,6 +165,16 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
             }
             #[cfg(not(feature = "cudnn"))]
             crate::bail!("ASD Exact Profile selected cuDNN for grouped ConvTranspose1D but candle-core was built without the cudnn feature")
+        }
+
+        // Phase A: if the promoted raw implementation matched but its external
+        // and builtin artifacts are unavailable, consult only evidence-qualified
+        // provider fallbacks. Historical challenge state is never used directly.
+        #[cfg(all(feature = "cuda", feature = "cudnn"))]
+        if let Some(out) =
+            try_qualified_ct1d_fallback(decision, input, input_l, kernel, kernel_l, &self.0)?
+        {
+            return Ok((out, Shape::from(self.0.out_dims())));
         }
 
         #[cfg(feature = "cudnn")]
