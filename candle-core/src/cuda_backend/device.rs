@@ -63,6 +63,7 @@ pub struct CudaDevice {
     context: Arc<cudarc::driver::CudaContext>,
     modules: Arc<std::sync::RwLock<ModuleStore>>,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
+    asd_runtime: Arc<asd_modules::AsdRuntimeCache>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
     curand: Arc<Mutex<CudaRng>>,
@@ -295,6 +296,20 @@ impl CudaDevice {
         asd_modules::AsdModuleRegistry::new(self)
     }
 
+    /// Invalidates all resolved ASD runtime implementations for this CUDA device.
+    ///
+    /// Filesystem discovery, SHA-256 verification and manifest validation are
+    /// intentionally control-plane work and only happen again after this
+    /// explicit refresh (or on the first resolution).
+    pub fn refresh_asd_modules(&self) {
+        self.asd_runtime.clear_all();
+    }
+
+    /// Invalidates one resolved ASD implementation for this CUDA device.
+    pub fn refresh_asd_module(&self, implementation_id: &str) -> Result<()> {
+        self.asd_runtime.clear(implementation_id)
+    }
+
     /// When turned on, all cuda tensors **created after calling this function** will
     /// not track uses via cuda events.
     ///
@@ -391,6 +406,7 @@ impl CudaDevice {
             curand: Arc::new(Mutex::new(CudaRng(curand))),
             modules: Arc::new(std::sync::RwLock::new(module_store)),
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            asd_runtime: Arc::new(asd_modules::AsdRuntimeCache::new()),
             seed_value: Arc::new(RwLock::new(299792458)),
         })
     }
