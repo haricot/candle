@@ -123,7 +123,7 @@ if [[ "$VERIFY_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/candle-asd-sm61-install.XXXXXX")"
+STAGE="$(mktemp -d "$ART/.install.XXXXXX")"
 cleanup() { rm -rf "$STAGE"; }
 trap cleanup EXIT
 
@@ -175,7 +175,7 @@ EOF
 done
 
 # Publish only after all seven CUBINs, entry checks and manifests succeeded.
-# Each file rename is atomic on the destination filesystem.
+# Staging lives inside ART, so each final rename stays on the same filesystem.
 for row in "${CATALOGUE[@]}"; do
   IFS='|' read -r source_file impl entry <<<"$row"
   mv -f "$STAGE/$impl.cu" "$ART/$impl.cu"
