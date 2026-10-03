@@ -82,6 +82,9 @@ fn main() -> Result<()> {
 
     // A: force the embedded PTX provider by hiding the external directory.
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &builtin_only_dir);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     println!(
         "PHASE=builtin_a expected_provider=builtin_ptx external_override={}",
         builtin_only_dir.display()
@@ -92,6 +95,9 @@ fn main() -> Result<()> {
     // B: restore the external module directory. The same implementation id must
     // resolve to the external CUBIN without rebuilding the Rust crate.
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &module_dir);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     println!("PHASE=external_b expected_provider=external_cubin");
     let external_b = call(&x, &w)?;
     device.synchronize()?;
@@ -102,6 +108,9 @@ fn main() -> Result<()> {
 
     // A2: return to the builtin provider to prove resolution is not sticky.
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &builtin_only_dir);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     println!(
         "PHASE=builtin_a2 expected_provider=builtin_ptx external_override={}",
         builtin_only_dir.display()
