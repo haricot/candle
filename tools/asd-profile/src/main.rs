@@ -109,7 +109,18 @@ fn profile_path(home: Option<&Path>) -> Option<PathBuf> {
 }
 
 fn bool_str(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+fn env_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
 }
 
 fn print_layout(home: &Path, architecture: &str) {
@@ -157,7 +168,21 @@ fn print_artifact_state(home: &Path, architecture: &str, decision: &Decision) {
         manifest.display(),
         bool_str(manifest.is_file())
     );
-    println!("  builtin_raw=enabled_by_default");
+    let builtin_disabled = env_truthy("CANDLE_ASD_BUILTIN_RAW_DISABLE");
+    let selected = if cubin.is_file() {
+        "external_cubin"
+    } else if ptx.is_file() {
+        "external_ptx"
+    } else if !builtin_disabled {
+        "builtin_raw"
+    } else {
+        "unavailable"
+    };
+    println!(
+        "  builtin_raw={}",
+        if builtin_disabled { "disabled" } else { "enabled" }
+    );
+    println!("  phase_a_primary_resolution={selected}");
 }
 
 fn print_decision(home: &Path, architecture: &str, decision: &Decision) {
@@ -203,7 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home = asd_home().ok_or("unable to resolve ASD user data home")?;
     let path = profile_path(Some(&home)).ok_or("unable to resolve ASD profile path")?;
 
-    if std::env::args().any(|arg| arg == "--layout") && !path.is_file() {
+    if std::env::args().any(|arg| arg == "--layout") {
         print_layout(&home, "sm61");
         return Ok(());
     }
@@ -268,4 +293,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_v2_promoted_decision() {
+        let source = "ASD-EXACT-POLICY-V2\n\
+policy_id=test-profile\n\
+target.vendor=nvidia\n\
+target.architecture=sm61\n\
+target.scope=device\n\
+target.sm=61\n\
+target.gpu_uuid=GPU-test\n\
+decision|ct1d-sm61-s32-g2-raw-exact|promoted|raw_cuda|op=conv_transpose1d,dim=1,batch=1,c_in=128,c_out=128,spatial=32,weight_shape=128x64x3,groups=2,kernel=3,stride=2,padding=1,output_padding=1,dilation=1,dtype=f32,input_layout=contiguous_zero_offset,weight_layout=contiguous_zero_offset|impl=candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256|evidence=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|min_integrated_speedup_x=none\n";
+        let profile = parse_profile(source).unwrap();
+        assert_eq!(profile.decisions.len(), 1);
+        assert_eq!(profile.decisions[0].state, "promoted");
+        assert_eq!(profile.decisions[0].provider, "raw_cuda");
+        assert_eq!(
+            profile.decisions[0].implementation,
+            "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_profile_header() {
+        assert!(parse_profile("ASD-UNKNOWN\n").is_err());
+    }
 }
