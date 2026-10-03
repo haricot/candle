@@ -479,9 +479,8 @@ fn external_manifest_verified(
 
 fn raw_identity() -> Result<RawIdentity> {
     if let Some(root) = raw_artifact_root() {
-        let base = root.join(INCUMBENT_IMPLEMENTATION_ID);
         for (extension, source_name) in [("cubin", "external_cubin"), ("ptx", "external_ptx")] {
-            let path = base.with_extension(extension);
+            let path = root.join(format!("{INCUMBENT_IMPLEMENTATION_ID}.{extension}"));
             if !path.is_file() {
                 continue;
             }
