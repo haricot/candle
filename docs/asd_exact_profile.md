@@ -503,7 +503,8 @@ cargo check -p candle-core \
 Run R1 in a fresh headless process:
 
 ```bash
-cargo run --release -p candle-core \
+/usr/bin/env -u DISPLAY -u WAYLAND_DISPLAY \
+  cargo run --release -p candle-core \
   --features cuda,cudnn \
   --example asd_provider_evidence_v2 -- \
   --replication r1 \
