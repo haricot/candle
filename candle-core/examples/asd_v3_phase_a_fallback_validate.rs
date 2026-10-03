@@ -95,6 +95,17 @@ fn main() -> Result<()> {
     let case = parse_case()?;
     let module_dir = empty_module_dir()?;
 
+    let profile_id = candle_kernels::asd_exact::PROFILE_ID.ok_or_else(|| {
+        candle_core::Error::Msg(
+            "Phase A qualified fallback validation requires an embedded ASD Exact Profile; set CANDLE_ASD_EXACT_POLICY before building/running".into(),
+        )
+    })?;
+    let target_gpu_uuid = candle_kernels::asd_exact::TARGET_GPU_UUID.ok_or_else(|| {
+        candle_core::Error::Msg(
+            "Phase A qualified fallback validation requires a device-scoped ASD Exact Profile with target GPU UUID".into(),
+        )
+    })?;
+
     std::env::set_var("CANDLE_ASD_MODULE_DIR", &module_dir);
     std::env::set_var("CANDLE_ASD_EXACT_TRACE", "1");
     std::env::set_var("CANDLE_SM61_EXACT_GROUPED_TRACE", "1");
@@ -105,6 +116,8 @@ fn main() -> Result<()> {
     let (x, w) = tensors(&device, case)?;
 
     println!("=== ASD V3 PHASE A QUALIFIED FALLBACK VALIDATION ===");
+    println!("profile_id={profile_id}");
+    println!("target_gpu_uuid={target_gpu_uuid}");
     println!("decision_id={}", case.decision_id);
     println!("ct1d_groups={}", case.groups);
     println!("primary_provider=raw_cuda");
