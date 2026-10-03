@@ -300,6 +300,18 @@ cargo run --release -p candle-core \
   --evidence-out /home/np/tmp/candle_asd/provider-evidence-ct1d-g2-r1.txt
 \`\`\`
 
+A trace-clean run must print, before the parity line:
+
+```text
+harness_revision=provider-evidence-v1-no-hot-trace-r2
+hot_path_trace_expected=false
+```
+
+and must not emit repeated
+`CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn ...` lines during warmup or timing.
+If either condition is violated, the measurement is invalid regardless of the
+reported gates.
+
 The resulting file uses:
 
 \`\`\`text
