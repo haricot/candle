@@ -135,12 +135,15 @@ fn print_layout(home: &Path, architecture: &str) {
 }
 
 fn print_artifact_state(home: &Path, architecture: &str, decision: &Decision) {
-    if decision.provider != "raw_cuda"
-        || !decision
-            .implementation
-            .starts_with("candle.sm61-exact-grouped.")
+    if decision.provider != "raw_cuda" {
+        println!("  artifact_model=provider_managed");
+        return;
+    }
+    if !decision
+        .implementation
+        .starts_with("candle.sm61-exact-grouped.")
     {
-        println!("  artifact_model=legacy_embedded_executor");
+        println!("  artifact_model=legacy_embedded_raw");
         return;
     }
 
