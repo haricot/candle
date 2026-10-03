@@ -53,9 +53,21 @@ fn actual_uuid(input: &CudaStorage) -> Option<String> {
         &hex[20..32]
     ))
 }
-fn launch_selected(id: &str, input: &CudaStorage, kernel: &CudaStorage) -> Result<CudaStorage> {
+fn launch_selected(
+    id: &str,
+    input: &CudaStorage,
+    kernel: &CudaStorage,
+) -> Result<Option<CudaStorage>> {
     let dev = input.device.clone();
-    let implementation = dev.asd_modules().resolve(id)?;
+    let Some(implementation) = dev.asd_modules().resolve_optional(id)? else {
+        if env_truthy("CANDLE_SM61_EXACT_GROUPED_TRACE") || env_truthy("CANDLE_ASD_EXACT_TRACE") {
+            eprintln!(
+                "[candle sm61 exact-grouped] submitted_backend=raw_exact launch_submission=unavailable implementation={} reason=external_and_builtin_missing",
+                id,
+            );
+        }
+        return Ok(None);
+    };
     let func = implementation.function()?;
     let out = unsafe { dev.alloc::<f32>(implementation.output_count())? };
     let cfg = implementation.launch_config();
@@ -78,7 +90,7 @@ fn launch_selected(id: &str, input: &CudaStorage, kernel: &CudaStorage) -> Resul
             implementation.artifact_sha256().unwrap_or("builtin"),
         )
     }
-    Ok(CudaStorage { slice, device: dev })
+    Ok(Some(CudaStorage { slice, device: dev }))
 }
 fn ct_request_allows_auto() -> bool {
     if std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
@@ -189,7 +201,7 @@ pub(super) fn try_launch_conv1d(
         return Ok(None);
     };
     trace_selected(m);
-    Ok(Some(launch_selected(m.implementation_id, input, kernel)?))
+    launch_selected(m.implementation_id, input, kernel)
 }
 pub(super) fn try_launch_ct1d(
     input: &CudaStorage,
@@ -223,7 +235,7 @@ pub(super) fn try_launch_ct1d(
         return Ok(None);
     };
     trace_selected(m);
-    Ok(Some(launch_selected(m.implementation_id, input, kernel)?))
+    launch_selected(m.implementation_id, input, kernel)
 }
 pub(super) fn try_launch_ct2d(
     input: &CudaStorage,
@@ -257,5 +269,5 @@ pub(super) fn try_launch_ct2d(
         return Ok(None);
     };
     trace_selected(m);
-    Ok(Some(launch_selected(m.implementation_id, input, kernel)?))
+    launch_selected(m.implementation_id, input, kernel)
 }
