@@ -1,10 +1,11 @@
 //! ASD V3 CUDA module resolution.
 //!
-//! External modules are opt-in through CANDLE_ASD_MODULE_DIR. For an implementation
-//! id `foo`, the provider looks for `foo.cubin` first and then `foo.ptx`.
-//! A sibling `foo.manifest` can bind the selected file to its SHA-256, ABI,
-//! architecture, implementation id and entry symbol. Missing manifests remain
-//! usable for tuner experiments but are reported as unverified.
+//! External modules are resolved first from CANDLE_ASD_MODULE_DIR when set, then
+//! from the user ASD store at `${CANDLE_ASD_HOME:-${XDG_DATA_HOME:-~/.local/share}/asd}/artifacts/sm61`.
+//! For an implementation id `foo`, the provider looks for `foo.cubin` first and
+//! then `foo.ptx`. A sibling `foo.cu` is provenance/source only and is never
+//! executed by the runtime. A sibling `foo.manifest` can bind the selected file
+//! to its SHA-256, ABI, architecture, implementation id and entry symbol.
 
 use super::{CudaDevice, CudaFunc};
 use crate::cuda_backend::WrapErr;
@@ -20,6 +21,13 @@ use std::time::UNIX_EPOCH;
 const MODULE_MANIFEST_HEADER: &str = "ASD-CUDA-MODULE-V1";
 const MODULE_ABI_VERSION: u32 = 1;
 const MODULE_ARCH: &str = "sm61";
+
+fn env_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
 
 #[derive(Clone, Copy, Debug)]
 struct AsdKernelSpec {
@@ -429,6 +437,11 @@ pub(crate) struct BuiltinProvider;
 
 impl AsdModuleProvider for BuiltinProvider {
     fn resolve(&self, spec: &'static AsdKernelSpec) -> Result<Option<AsdModuleSource>> {
+        // Phase A validation switch: lets us prove the external-artifact ->
+        // qualified-provider fallback path before builtin PTX is removed.
+        if env_truthy("CANDLE_ASD_BUILTIN_RAW_DISABLE") {
+            return Ok(None);
+        }
         Ok(candle_kernels::sm61_exact_grouped_ptx(spec.candidate_id)
             .map(AsdModuleSource::BuiltinPtx))
     }
@@ -441,13 +454,11 @@ pub(crate) struct ExternalCudaModuleProvider {
 
 impl ExternalCudaModuleProvider {
     fn from_env() -> Option<Self> {
-        let root = std::env::var_os("CANDLE_ASD_MODULE_DIR")?;
-        if root.is_empty() {
-            return None;
-        }
-        Some(Self {
-            root: PathBuf::from(root),
-        })
+        let root = std::env::var_os("CANDLE_ASD_MODULE_DIR")
+            .filter(|root| !root.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| candle_kernels::asd_paths::artifacts_dir(MODULE_ARCH))?;
+        Some(Self { root })
     }
 
     fn candidate_path(&self, implementation_id: &str, extension: &str) -> PathBuf {
@@ -503,7 +514,10 @@ impl<'a> AsdModuleRegistry<'a> {
         }
     }
 
-    pub(crate) fn resolve(&self, implementation_id: &str) -> Result<AsdCudaImplementation<'a>> {
+    pub(crate) fn resolve_optional(
+        &self,
+        implementation_id: &str,
+    ) -> Result<Option<AsdCudaImplementation<'a>>> {
         let spec = IMPLEMENTATIONS
             .iter()
             .find(|spec| spec.implementation_id == implementation_id)
@@ -515,25 +529,30 @@ impl<'a> AsdModuleRegistry<'a> {
 
         if let Some(external) = &self.external {
             if let Some(source) = external.resolve(spec)? {
-                return Ok(AsdCudaImplementation {
+                return Ok(Some(AsdCudaImplementation {
                     device: self.device,
                     spec,
                     source,
-                });
+                }));
             }
         }
 
-        let source = self.builtin.resolve(spec)?.ok_or_else(|| {
-            Error::Msg(format!(
-                "missing builtin PTX for ASD implementation {}",
-                spec.implementation_id
-            ))
-        })?;
+        let Some(source) = self.builtin.resolve(spec)? else {
+            return Ok(None);
+        };
 
-        Ok(AsdCudaImplementation {
+        Ok(Some(AsdCudaImplementation {
             device: self.device,
             spec,
             source,
+        }))
+    }
+
+    pub(crate) fn resolve(&self, implementation_id: &str) -> Result<AsdCudaImplementation<'a>> {
+        self.resolve_optional(implementation_id)?.ok_or_else(|| {
+            Error::Msg(format!(
+                "ASD raw implementation unavailable after external and builtin resolution: {implementation_id}"
+            ))
         })
     }
 }
