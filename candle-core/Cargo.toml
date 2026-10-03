@@ -122,6 +122,10 @@ required-features = ["cuda"]
 name = "asd_provider_evidence_v1"
 required-features = ["cuda", "cudnn"]
 
+[[example]]
+name = "asd_provider_evidence_v2"
+required-features = ["cuda", "cudnn"]
+
 
 [[example]]
 name = "asd_v3_performance_consensus"
