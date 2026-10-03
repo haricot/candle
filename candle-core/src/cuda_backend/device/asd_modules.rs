@@ -15,7 +15,7 @@ use cudarc::nvrtc::Ptx;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::UNIX_EPOCH;
 
 const MODULE_MANIFEST_HEADER: &str = "ASD-CUDA-MODULE-V1";
@@ -97,6 +97,53 @@ const IMPLEMENTATIONS: &[AsdKernelSpec] = &[
         block_x: 256,
     },
 ];
+
+const IMPLEMENTATION_COUNT: usize = 7;
+
+fn implementation_spec(
+    implementation_id: &str,
+) -> Option<(usize, &'static AsdKernelSpec)> {
+    IMPLEMENTATIONS
+        .iter()
+        .enumerate()
+        .find(|(_, spec)| spec.implementation_id == implementation_id)
+}
+
+#[derive(Debug)]
+enum AsdRuntimeSlot {
+    Unresolved,
+    Unavailable,
+    Resolved(Arc<ResolvedAsdImplementation>),
+}
+
+#[derive(Debug)]
+pub(super) struct AsdRuntimeCache {
+    slots: [RwLock<AsdRuntimeSlot>; IMPLEMENTATION_COUNT],
+}
+
+impl AsdRuntimeCache {
+    pub(super) fn new() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| RwLock::new(AsdRuntimeSlot::Unresolved)),
+        }
+    }
+
+    pub(super) fn clear_all(&self) {
+        for slot in &self.slots {
+            *slot.write().unwrap() = AsdRuntimeSlot::Unresolved;
+        }
+    }
+
+    pub(super) fn clear(&self, implementation_id: &str) -> Result<()> {
+        let (index, _) = implementation_spec(implementation_id).ok_or_else(|| {
+            Error::Msg(format!(
+                "unknown ASD implementation {implementation_id}"
+            ))
+        })?;
+        *self.slots[index].write().unwrap() = AsdRuntimeSlot::Unresolved;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ExternalModuleKind {
@@ -501,54 +548,134 @@ impl AsdModuleProvider for ExternalCudaModuleProvider {
 
 pub(crate) struct AsdModuleRegistry<'a> {
     device: &'a CudaDevice,
-    builtin: BuiltinProvider,
-    external: Option<ExternalCudaModuleProvider>,
+}
+
+#[derive(Debug)]
+struct ResolvedAsdImplementation {
+    function: CudaFunc,
+    provider_name: &'static str,
+    proof_status: &'static str,
+    artifact_sha256: Option<String>,
 }
 
 impl<'a> AsdModuleRegistry<'a> {
     pub(super) fn new(device: &'a CudaDevice) -> Self {
-        Self {
-            device,
-            builtin: BuiltinProvider,
-            external: ExternalCudaModuleProvider::from_env(),
+        Self { device }
+    }
+
+    fn resolve_source(
+        &self,
+        spec: &'static AsdKernelSpec,
+    ) -> Result<Option<AsdModuleSource>> {
+        if let Some(external) = ExternalCudaModuleProvider::from_env() {
+            if let Some(source) = external.resolve(spec)? {
+                return Ok(Some(source));
+            }
         }
+        BuiltinProvider.resolve(spec)
+    }
+
+    fn materialize(
+        &self,
+        spec: &'static AsdKernelSpec,
+        source: AsdModuleSource,
+    ) -> Result<ResolvedAsdImplementation> {
+        let provider_name = match &source {
+            AsdModuleSource::BuiltinPtx(_) => "builtin_ptx",
+            AsdModuleSource::External {
+                kind: ExternalModuleKind::Cubin,
+                ..
+            } => "external_cubin",
+            AsdModuleSource::External {
+                kind: ExternalModuleKind::Ptx,
+                ..
+            } => "external_ptx",
+        };
+        let proof_status = match &source {
+            AsdModuleSource::BuiltinPtx(_) => "historical_evidence_bound",
+            AsdModuleSource::External {
+                manifest_verified: true,
+                ..
+            } => "external_artifact_verified",
+            AsdModuleSource::External {
+                manifest_verified: false,
+                ..
+            } => "external_artifact_unverified",
+        };
+        let artifact_sha256 = match &source {
+            AsdModuleSource::BuiltinPtx(_) => None,
+            AsdModuleSource::External { artifact, .. } => Some(artifact.sha256.clone()),
+        };
+
+        let function = match &source {
+            AsdModuleSource::BuiltinPtx(ptx) => {
+                self.device
+                    .get_or_load_custom_func(spec.entry, spec.candidate_id, ptx)?
+            }
+            AsdModuleSource::External { artifact, kind, .. } => {
+                load_external(self.device, spec, artifact, *kind)?
+            }
+        };
+
+        Ok(ResolvedAsdImplementation {
+            function,
+            provider_name,
+            proof_status,
+            artifact_sha256,
+        })
     }
 
     pub(crate) fn resolve_optional(
         &self,
         implementation_id: &str,
-    ) -> Result<Option<AsdCudaImplementation<'a>>> {
-        let spec = IMPLEMENTATIONS
-            .iter()
-            .find(|spec| spec.implementation_id == implementation_id)
-            .ok_or_else(|| {
-                Error::Msg(format!(
-                    "unknown Stage2E implementation {implementation_id}"
-                ))
-            })?;
+    ) -> Result<Option<AsdCudaImplementation>> {
+        let (index, spec) = implementation_spec(implementation_id).ok_or_else(|| {
+            Error::Msg(format!(
+                "unknown ASD implementation {implementation_id}"
+            ))
+        })?;
 
-        if let Some(external) = &self.external {
-            if let Some(source) = external.resolve(spec)? {
-                return Ok(Some(AsdCudaImplementation {
-                    device: self.device,
-                    spec,
-                    source,
-                }));
+        {
+            let slot = self.device.asd_runtime.slots[index].read().unwrap();
+            match &*slot {
+                AsdRuntimeSlot::Resolved(resolved) => {
+                    return Ok(Some(AsdCudaImplementation {
+                        spec,
+                        resolved: resolved.clone(),
+                    }))
+                }
+                AsdRuntimeSlot::Unavailable => return Ok(None),
+                AsdRuntimeSlot::Unresolved => {}
             }
         }
 
-        let Some(source) = self.builtin.resolve(spec)? else {
+        // Control plane: only the cold path (or an explicit refresh) may touch
+        // the filesystem, hash artifacts, validate manifests, load modules, and
+        // resolve CUDA functions.
+        let mut slot = self.device.asd_runtime.slots[index].write().unwrap();
+        match &*slot {
+            AsdRuntimeSlot::Resolved(resolved) => {
+                return Ok(Some(AsdCudaImplementation {
+                    spec,
+                    resolved: resolved.clone(),
+                }))
+            }
+            AsdRuntimeSlot::Unavailable => return Ok(None),
+            AsdRuntimeSlot::Unresolved => {}
+        }
+
+        let Some(source) = self.resolve_source(spec)? else {
+            *slot = AsdRuntimeSlot::Unavailable;
             return Ok(None);
         };
+        let resolved = Arc::new(self.materialize(spec, source)?);
+        *slot = AsdRuntimeSlot::Resolved(resolved.clone());
 
-        Ok(Some(AsdCudaImplementation {
-            device: self.device,
-            spec,
-            source,
-        }))
+        Ok(Some(AsdCudaImplementation { spec, resolved }))
     }
 
-    pub(crate) fn resolve(&self, implementation_id: &str) -> Result<AsdCudaImplementation<'a>> {
+    #[allow(dead_code)]
+    pub(crate) fn resolve(&self, implementation_id: &str) -> Result<AsdCudaImplementation> {
         self.resolve_optional(implementation_id)?.ok_or_else(|| {
             Error::Msg(format!(
                 "ASD raw implementation unavailable after external and builtin resolution: {implementation_id}"
@@ -557,21 +684,14 @@ impl<'a> AsdModuleRegistry<'a> {
     }
 }
 
-pub(crate) struct AsdCudaImplementation<'a> {
-    device: &'a CudaDevice,
+pub(crate) struct AsdCudaImplementation {
     spec: &'static AsdKernelSpec,
-    source: AsdModuleSource,
+    resolved: Arc<ResolvedAsdImplementation>,
 }
 
-impl AsdCudaImplementation<'_> {
-    pub(crate) fn function(&self) -> Result<CudaFunc> {
-        match &self.source {
-            AsdModuleSource::BuiltinPtx(ptx) => {
-                self.device
-                    .get_or_load_custom_func(self.spec.entry, self.spec.candidate_id, ptx)
-            }
-            AsdModuleSource::External { artifact, kind, .. } => self.load_external(artifact, *kind),
-        }
+impl AsdCudaImplementation {
+    pub(crate) fn function(&self) -> &CudaFunc {
+        &self.resolved.function
     }
 
     pub(crate) fn output_count(&self) -> usize {
@@ -591,97 +711,74 @@ impl AsdCudaImplementation<'_> {
     }
 
     pub(crate) fn provider_name(&self) -> &'static str {
-        match &self.source {
-            AsdModuleSource::BuiltinPtx(_) => "builtin_ptx",
-            AsdModuleSource::External {
-                kind: ExternalModuleKind::Cubin,
-                ..
-            } => "external_cubin",
-            AsdModuleSource::External {
-                kind: ExternalModuleKind::Ptx,
-                ..
-            } => "external_ptx",
-        }
+        self.resolved.provider_name
     }
 
     pub(crate) fn proof_status(&self) -> &'static str {
-        match &self.source {
-            AsdModuleSource::BuiltinPtx(_) => "historical_evidence_bound",
-            AsdModuleSource::External {
-                manifest_verified: true,
-                ..
-            } => "external_artifact_verified",
-            AsdModuleSource::External {
-                manifest_verified: false,
-                ..
-            } => "external_artifact_unverified",
-        }
+        self.resolved.proof_status
     }
 
     pub(crate) fn artifact_sha256(&self) -> Option<&str> {
-        match &self.source {
-            AsdModuleSource::BuiltinPtx(_) => None,
-            AsdModuleSource::External { artifact, .. } => Some(&artifact.sha256),
-        }
+        self.resolved.artifact_sha256.as_deref()
     }
+}
 
-    fn load_external(
-        &self,
-        artifact: &CachedExternalArtifact,
-        kind: ExternalModuleKind,
-    ) -> Result<CudaFunc> {
-        let cache_key = format!(
-            "asd-external:{}:{}",
-            self.spec.implementation_id, artifact.sha256
-        );
+fn load_external(
+    device: &CudaDevice,
+    spec: &'static AsdKernelSpec,
+    artifact: &CachedExternalArtifact,
+    kind: ExternalModuleKind,
+) -> Result<CudaFunc> {
+    let cache_key = format!(
+        "asd-external:{}:{}",
+        spec.implementation_id, artifact.sha256
+    );
 
-        if let Some(module) = self
-            .device
-            .custom_modules
-            .read()
-            .unwrap()
-            .get(&cache_key)
-            .cloned()
-        {
-            let func = module.load_function(self.spec.entry).w()?;
-            return Ok(CudaFunc {
-                func,
-                stream: self.device.stream.clone(),
-            });
-        }
-
-        let image = match kind {
-            ExternalModuleKind::Cubin => Ptx::from_binary(artifact.bytes.as_ref().clone()),
-            ExternalModuleKind::Ptx => {
-                let source = String::from_utf8(artifact.bytes.as_ref().clone()).map_err(|err| {
-                    Error::Msg(format!(
-                        "external ASD PTX is not UTF-8 ({}): {err}",
-                        artifact.path.display()
-                    ))
-                })?;
-                Ptx::from_src(source)
-            }
-        };
-
-        let mut modules = self.device.custom_modules.write().unwrap();
-        if let Some(module) = modules.get(&cache_key).cloned() {
-            let func = module.load_function(self.spec.entry).w()?;
-            return Ok(CudaFunc {
-                func,
-                stream: self.device.stream.clone(),
-            });
-        }
-
-        let module = self.device.context.load_module(image).w()?;
-        modules.insert(cache_key, module.clone());
-        drop(modules);
-
-        let func = module.load_function(self.spec.entry).w()?;
-        Ok(CudaFunc {
+    if let Some(module) = device
+        .custom_modules
+        .read()
+        .unwrap()
+        .get(&cache_key)
+        .cloned()
+    {
+        let func = module.load_function(spec.entry).w()?;
+        return Ok(CudaFunc {
             func,
-            stream: self.device.stream.clone(),
-        })
+            stream: device.stream.clone(),
+        });
     }
+
+    let image = match kind {
+        ExternalModuleKind::Cubin => Ptx::from_binary(artifact.bytes.as_ref().clone()),
+        ExternalModuleKind::Ptx => {
+            let source = String::from_utf8(artifact.bytes.as_ref().clone()).map_err(|err| {
+                Error::Msg(format!(
+                    "external ASD PTX is not UTF-8 ({}): {err}",
+                    artifact.path.display()
+                ))
+            })?;
+            Ptx::from_src(source)
+        }
+    };
+
+    let mut modules = device.custom_modules.write().unwrap();
+    if let Some(module) = modules.get(&cache_key).cloned() {
+        let func = module.load_function(spec.entry).w()?;
+        return Ok(CudaFunc {
+            func,
+            stream: device.stream.clone(),
+        });
+    }
+
+    let module = device.context.load_module(image).w()?;
+    modules.insert(cache_key, module.clone());
+    drop(modules);
+
+    let func = module.load_function(spec.entry).w()?;
+    Ok(CudaFunc {
+        func,
+        stream: device.stream.clone(),
+    })
 }
 
 #[cfg(test)]
