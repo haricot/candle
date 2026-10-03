@@ -436,6 +436,34 @@ V2 keeps the V1 parity, drift, p90 and minimum-speedup gates but adds explicit
 experimental-state controls inspired by the stricter benchmark discipline used
 for reproducible model comparisons.
 
+The CT1D harness now covers the four promoted sm61 exact decisions:
+
+```text
+ct1d-sm61-s32-g2-raw-exact
+ct1d-sm61-s32-g4-raw-exact
+ct1d-sm61-s32-g8-raw-exact
+ct1d-sm61-s32-g16-raw-exact
+```
+
+`--decision <id>` selects the exact geometry. Omitting it preserves the
+historical G2 default.
+
+The harness also separates two purposes:
+
+```text
+--purpose performance-challenge
+--purpose fallback-qualification
+```
+
+`performance-challenge` preserves the promotion gates: parity + drift +
+challenger p90 non-regression + minimum speedup.
+
+`fallback-qualification` still measures the same production paths and records
+all performance fields, but resilience qualification is based on the
+authoritative protocol plus exact parity and stable drift. A slow cuDNN
+challenger can therefore be rejected for promotion while still producing a
+valid fallback-qualification replication.
+
 The model-specific notions of checkpoint, quantization, context and sampling
 map to the exact-operator experiment as follows:
 
@@ -504,7 +532,7 @@ temperature or residency drift.
 
 ### Residency declaration
 
-For the current CT1D G2 production-path comparison V2 records:
+For the selected CT1D G2/G4/G8/G16 production-path comparison V2 records:
 
 ```text
 cache_state=warm_after_settling
@@ -515,7 +543,7 @@ CUDA context:
 
 raw CUDA:
   module warm_after_settling
-  source=builtin_ptx
+  source=external_cubin | external_ptx | builtin_ptx
 
 cuDNN:
   handle=thread_local_cached
@@ -567,24 +595,29 @@ cargo check -p candle-core \
   --example asd_provider_evidence_v2
 ```
 
-Run R1 in a fresh headless process:
+Example fallback-qualification R1 for CT1D G4:
 
 ```bash
 /usr/bin/env -u DISPLAY -u WAYLAND_DISPLAY \
   cargo run --release -p candle-core \
   --features cuda,cudnn \
   --example asd_provider_evidence_v2 -- \
+  --decision ct1d-sm61-s32-g4-raw-exact \
+  --purpose fallback-qualification \
   --replication r1 \
-  --evidence-out /home/np/tmp/candle_asd/provider-evidence-v2-ct1d-g2-r1.txt
+  --evidence-out /home/np/tmp/candle_asd/provider-evidence-v2-ct1d-g4-fallback-r1.txt
 ```
 
-Run R2 independently with `--replication r2`.
+Run R2 independently with the same decision and
+`--replication r2`. Repeat for G8 and G16.
 
-Before interpreting performance, an authoritative run must show:
+Before interpreting a replication as qualification evidence, an authoritative
+run must show:
 
 ```text
 protocol=provider-evidence-v2
-harness_revision=provider-evidence-v2-discipline-r2
+harness_revision=provider-evidence-v2-ct1d-matrix-r3
+purpose=fallback-qualification
 measurement_plane=production_path
 source_tree_clean=true
 headless_display_env=true
@@ -592,10 +625,29 @@ gpu_workload_preflight_status=ok
 gpu_workload_preflight_active_compute_processes=0
 gpu_workload_preflight_clean=true
 authoritative_protocol=true
+PARITY ... pass=true
+STATUS=PASS
+FALLBACK_QUALIFICATION=QUALIFIED_REPLICATION
+DECISION=QUALIFIED_REPLICATION
+```
+
+A single `QUALIFIED_REPLICATION` is not sufficient to mutate
+`asd_fallback.rs`. Two independent authoritative replications (R1 and R2)
+must both qualify for the same exact decision and challenger identity. Their
+two evidence SHA-256 values are then the fallback qualification record.
+
+Promotion remains independent. A typical slow-but-stable resilience result can
+therefore be:
+
+```text
+PROMOTION_RESULT=REJECT_CHALLENGER
+FALLBACK_QUALIFICATION=QUALIFIED_REPLICATION
 ```
 
 Provider Evidence V1 remains frozen for the already-established CT1D G2
-consensus; it should not be retroactively regenerated as V2.
+consensus and current G2 qualified fallback. Running G2 through the generalized
+V2 harness is useful as a control, but does not rewrite that historical V1
+authority.
 
 
 ## ASD V3 user store and resilient provider resolution
@@ -829,8 +881,9 @@ fails instead of silently trying an unqualified raw/generic fallback.
 
 ### Provider Evidence V2 and external raw identity
 
-Provider Evidence V2 revision `provider-evidence-v2-discipline-r2` binds the
-incumbent evidence to the raw source actually resolved at runtime:
+Provider Evidence V2 revision `provider-evidence-v2-ct1d-matrix-r3` binds the
+selected CT1D decision and incumbent evidence to the raw source actually
+resolved at runtime:
 
 ```text
 incumbent_raw_source=builtin_ptx | external_cubin | external_ptx
