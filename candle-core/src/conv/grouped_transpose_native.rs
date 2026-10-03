@@ -60,11 +60,15 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
                 let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose1d(
                     input, input_l, kernel, kernel_l, &self.0,
                 )?;
-                eprintln!(
-                    "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=1d",
-                    std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
-                        as u8
-                );
+                if std::env::var_os("CANDLE_GROUPED_TRANSPOSE_TRACE").is_some()
+                    || std::env::var_os("CANDLE_ASD_EXACT_TRACE").is_some()
+                {
+                    eprintln!(
+                        "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=1d",
+                        std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
+                            as u8
+                    );
+                }
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
             #[cfg(not(feature = "cudnn"))]
@@ -243,11 +247,15 @@ impl CustomOp2 for NativeGroupedConvTranspose2D {
                 let out = super::grouped_transpose_cudnn::launch_grouped_conv_transpose2d(
                     input, input_l, kernel, kernel_l, &self.0,
                 )?;
-                eprintln!(
-                    "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=2d",
-                    std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
-                        as u8
-                );
+                if std::env::var_os("CANDLE_GROUPED_TRANSPOSE_TRACE").is_some()
+                    || std::env::var_os("CANDLE_ASD_EXACT_TRACE").is_some()
+                {
+                    eprintln!(
+                        "CANDLE_GROUPED_TRANSPOSE_BACKEND=cudnn strict={} dim=2d",
+                        std::env::var_os("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT").is_some()
+                            as u8
+                    );
+                }
                 return Ok((out, Shape::from(self.0.out_dims())));
             }
             #[cfg(not(feature = "cudnn"))]
