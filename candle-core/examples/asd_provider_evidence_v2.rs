@@ -557,6 +557,7 @@ fn external_manifest_verified(
     artifact_path: &Path,
     artifact_kind: &str,
     artifact_sha256: &str,
+    case: Ct1dCase,
 ) -> bool {
     let manifest_path = artifact_path.with_extension("manifest");
     let Ok(source) = std::fs::read_to_string(manifest_path) else {
@@ -578,17 +579,17 @@ fn external_manifest_verified(
         fields.insert(key.trim(), value.trim());
     }
     fields.get("abi_version").copied() == Some("1")
-        && fields.get("implementation_id").copied() == Some(INCUMBENT_IMPLEMENTATION_ID)
+        && fields.get("implementation_id").copied() == Some(case.implementation_id)
         && fields.get("architecture").copied() == Some("sm61")
         && fields.get("artifact_kind").copied() == Some(artifact_kind)
-        && fields.get("entry").copied() == Some(INCUMBENT_ENTRY)
+        && fields.get("entry").copied() == Some(case.entry)
         && fields.get("artifact_sha256").copied() == Some(artifact_sha256)
 }
 
-fn raw_identity() -> Result<RawIdentity> {
+fn raw_identity(case: Ct1dCase) -> Result<RawIdentity> {
     if let Some(root) = raw_artifact_root() {
         for (extension, source_name) in [("cubin", "external_cubin"), ("ptx", "external_ptx")] {
-            let path = root.join(format!("{INCUMBENT_IMPLEMENTATION_ID}.{extension}"));
+            let path = root.join(format!("{}.{extension}", case.implementation_id));
             if !path.is_file() {
                 continue;
             }
@@ -599,11 +600,13 @@ fn raw_identity() -> Result<RawIdentity> {
                 ))
             })?;
             let artifact_sha256 = sha256_bytes(&bytes);
-            let verified = external_manifest_verified(&path, extension, &artifact_sha256);
+            let verified = external_manifest_verified(&path, extension, &artifact_sha256, case);
             return Ok(RawIdentity {
                 source: source_name,
                 identity: format!(
-                    "raw_cuda:{source_name}:abi={RAW_MODULE_ABI_VERSION}:implementation={INCUMBENT_IMPLEMENTATION_ID}:entry={INCUMBENT_ENTRY}:artifact_sha256={artifact_sha256}"
+                    "raw_cuda:{source_name}:abi={RAW_MODULE_ABI_VERSION}:implementation={}:entry={}:artifact_sha256={artifact_sha256}",
+                    case.implementation_id,
+                    case.entry
                 ),
                 artifact_sha256,
                 proof_status: if verified {
@@ -622,13 +625,20 @@ fn raw_identity() -> Result<RawIdentity> {
         )
     }
 
-    let ptx = candle_kernels::sm61_exact_grouped_ptx(INCUMBENT_CANDIDATE_ID)
-        .ok_or_else(|| candle_core::Error::Msg("missing builtin CT1D G2 PTX".into()))?;
+    let ptx = candle_kernels::sm61_exact_grouped_ptx(case.candidate_id)
+        .ok_or_else(|| {
+            candle_core::Error::Msg(format!(
+                "missing builtin PTX for {}",
+                case.implementation_id
+            ))
+        })?;
     let artifact_sha256 = sha256_bytes(ptx.as_bytes());
     Ok(RawIdentity {
         source: "builtin_ptx",
         identity: format!(
-            "raw_cuda:builtin_ptx:abi={RAW_MODULE_ABI_VERSION}:implementation={INCUMBENT_IMPLEMENTATION_ID}:entry={INCUMBENT_ENTRY}:artifact_sha256={artifact_sha256}"
+            "raw_cuda:builtin_ptx:abi={RAW_MODULE_ABI_VERSION}:implementation={}:entry={}:artifact_sha256={artifact_sha256}",
+            case.implementation_id,
+            case.entry
         ),
         artifact_sha256,
         proof_status: "historical_evidence_bound",
@@ -636,7 +646,7 @@ fn raw_identity() -> Result<RawIdentity> {
     })
 }
 
-fn cudnn_identity(device: &Device) -> Result<CudnnIdentity> {
+fn cudnn_identity(device: &Device, case: Ct1dCase) -> Result<CudnnIdentity> {
     let dev = device.as_cuda_device()?;
     let cudnn = Cudnn::new(dev.cuda_stream())?;
     let mut conv = cudnn.create_conv2d::<f32>(
@@ -645,7 +655,7 @@ fn cudnn_identity(device: &Device) -> Result<CudnnIdentity> {
         [1, 1],
         cudarc::cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
     )?;
-    conv.set_group_count(2)?;
+    conv.set_group_count(case.groups)?;
 
     let dx = cudnn.create_4d_tensor::<f32>(
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
@@ -653,7 +663,7 @@ fn cudnn_identity(device: &Device) -> Result<CudnnIdentity> {
     )?;
     let w = cudnn.create_4d_filter::<f32>(
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-        [128, 64, 3, 1],
+        [128, case.weight_c_out_per_group() as i32, 3, 1],
     )?;
     let dy = cudnn.create_4d_tensor::<f32>(
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
@@ -673,7 +683,8 @@ fn cudnn_identity(device: &Device) -> Result<CudnnIdentity> {
     let version_raw = unsafe { cudarc::cudnn::sys::cudnnGetVersion() };
 
     let identity = format!(
-        "cudnn:runtime_version={version_raw}:operation=conv_backward_data:algorithm_id={algorithm_id}:workspace_bytes={workspace_bytes}:dtype=f32:n=1:ci=128:co=128:l=32:groups=2:k=3:s=2:p=1:op=1:d=1"
+        "cudnn:runtime_version={version_raw}:operation=conv_backward_data:algorithm_id={algorithm_id}:workspace_bytes={workspace_bytes}:dtype=f32:n=1:ci=128:co=128:l=32:groups={}:k=3:s=2:p=1:op=1:d=1",
+        case.groups
     );
 
     Ok(CudnnIdentity {
