@@ -924,6 +924,7 @@ fn main() -> Result<()> {
     let profile_match = incumbent_profile_match(&gpu_uuid)?;
     let raw_identity = raw.identity.as_str();
     let raw_artifact_sha256 = raw.artifact_sha256.as_str();
+    let raw_source = raw.source;
     let cudnn = cudnn_identity(&device)?;
     let (input_sha256, weight_sha256) = input_identity();
     let (x, w) = tensors(&device)?;
@@ -997,7 +998,7 @@ fn main() -> Result<()> {
     println!("cold_cache_measured=false");
     println!("residency_cuda_context=warm_after_settling");
     println!("residency_raw_module=warm_after_settling");
-    println!("residency_raw_module_source=builtin_ptx");
+    println!("residency_raw_module_source={raw_source}");
     println!("residency_cudnn_handle=thread_local_cached");
     println!("residency_cudnn_descriptors=recreated_per_call");
     println!("residency_cudnn_algorithm=repicked_per_call");
@@ -1173,7 +1174,7 @@ cache_state=warm_after_settling\n\
 cold_cache_measured=false\n\
 residency_cuda_context=warm_after_settling\n\
 residency_raw_module=warm_after_settling\n\
-residency_raw_module_source=builtin_ptx\n\
+residency_raw_module_source={raw_source}\n\
 residency_cudnn_handle=thread_local_cached\n\
 residency_cudnn_descriptors=recreated_per_call\n\
 residency_cudnn_algorithm=repicked_per_call\n\
