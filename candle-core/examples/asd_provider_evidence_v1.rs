@@ -7,8 +7,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 const DECISION_ID: &str = "ct1d-sm61-s32-g2-raw-exact";
-const INCUMBENT_IMPLEMENTATION_ID: &str =
-    "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
+const INCUMBENT_IMPLEMENTATION_ID: &str = "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
 const INCUMBENT_CANDIDATE_ID: &str = "ct1d-s32-g2-u1-b256";
 const INCUMBENT_ENTRY: &str = "flow_v0322_ct1d_s32_g2_u1_b256";
 const RAW_MODULE_ABI_VERSION: u32 = 1;
@@ -212,9 +211,7 @@ fn exact_call() -> candle_kernels::asd_exact::ExactOperationCall {
     }
 }
 
-fn incumbent_profile_match(
-    gpu_uuid: &str,
-) -> Result<candle_kernels::asd_exact::ExactAsdMatch> {
+fn incumbent_profile_match(gpu_uuid: &str) -> Result<candle_kernels::asd_exact::ExactAsdMatch> {
     if candle_kernels::asd_exact::PROFILE_ID.is_none() {
         candle_core::bail!(
             "Provider Evidence V1 requires an embedded ASD Exact Profile; rebuild with CANDLE_ASD_EXACT_POLICY pointing to the Stage2F production profile"
@@ -317,7 +314,11 @@ fn cudnn_identity(device: &Device) -> Result<CudnnIdentity> {
 
 fn max_abs_rel(lhs: &Tensor, rhs: &Tensor) -> Result<(f32, f32)> {
     if lhs.dims() != rhs.dims() {
-        candle_core::bail!("provider parity shape mismatch {:?} vs {:?}", lhs.dims(), rhs.dims())
+        candle_core::bail!(
+            "provider parity shape mismatch {:?} vs {:?}",
+            lhs.dims(),
+            rhs.dims()
+        )
     }
     let lhs = lhs.flatten_all()?.to_vec1::<f32>()?;
     let rhs = rhs.flatten_all()?.to_vec1::<f32>()?;
@@ -427,15 +428,7 @@ fn measure(
     device: &Device,
     cfg: MeasureConfig,
 ) -> Result<TimingStats> {
-    timed_warmup(
-        phase,
-        provider,
-        x,
-        w,
-        device,
-        cfg.warmup_ms,
-        cfg.inner,
-    )?;
+    timed_warmup(phase, provider, x, w, device, cfg.warmup_ms, cfg.inner)?;
 
     let mut samples = Vec::with_capacity(cfg.iters);
     for _ in 0..cfg.iters {
@@ -490,7 +483,9 @@ fn parse_optional_u64(value: &str) -> Option<u64> {
 
 fn parse_throttle_mask(value: &str) -> Option<u64> {
     let value = value.trim();
-    let hex = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X"))?;
+    let hex = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))?;
     u64::from_str_radix(hex, 16).ok()
 }
 
@@ -765,10 +760,14 @@ fn main() -> Result<()> {
         min_u64(telemetry_start.sm_clock_mhz, telemetry_end.sm_clock_mhz);
     let sm_clock_mhz_max_observed =
         max_u64(telemetry_start.sm_clock_mhz, telemetry_end.sm_clock_mhz);
-    let memory_clock_mhz_min_observed =
-        min_u64(telemetry_start.memory_clock_mhz, telemetry_end.memory_clock_mhz);
-    let memory_clock_mhz_max_observed =
-        max_u64(telemetry_start.memory_clock_mhz, telemetry_end.memory_clock_mhz);
+    let memory_clock_mhz_min_observed = min_u64(
+        telemetry_start.memory_clock_mhz,
+        telemetry_end.memory_clock_mhz,
+    );
+    let memory_clock_mhz_max_observed = max_u64(
+        telemetry_start.memory_clock_mhz,
+        telemetry_end.memory_clock_mhz,
+    );
     let power_w_max_observed = max_f64(telemetry_start.power_w, telemetry_end.power_w);
 
     let evidence = format!(

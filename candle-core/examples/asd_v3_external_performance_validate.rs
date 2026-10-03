@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-const IMPLEMENTATION_ID: &str =
-    "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
+const IMPLEMENTATION_ID: &str = "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
 const DEFAULT_WARMUP_MS: f64 = 500.0;
 const DEFAULT_ITERS: usize = 40;
 const DEFAULT_INNER: usize = 32;
@@ -76,7 +75,9 @@ fn parse_optional_u64(value: &str) -> Option<u64> {
 
 fn parse_throttle_mask(value: &str) -> Option<u64> {
     let value = value.trim();
-    let hex = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X"))?;
+    let hex = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))?;
     u64::from_str_radix(hex, 16).ok()
 }
 
@@ -144,11 +145,15 @@ fn query_telemetry(gpu_uuid: &str) -> TelemetrySnapshot {
 }
 
 fn fmt_f64(value: Option<f64>) -> String {
-    value.map(|value| format!("{value:.3}")).unwrap_or_else(|| "na".to_owned())
+    value
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "na".to_owned())
 }
 
 fn fmt_u64(value: Option<u64>) -> String {
-    value.map(|value| value.to_string()).unwrap_or_else(|| "na".to_owned())
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "na".to_owned())
 }
 
 fn fmt_string(value: Option<&str>) -> &str {
@@ -231,16 +236,8 @@ fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
 }
 
 fn tensors(device: &Device) -> Result<(Tensor, Tensor)> {
-    let x = Tensor::from_vec(
-        deterministic(1 * 128 * 32, 37, -50),
-        (1, 128, 32),
-        device,
-    )?;
-    let w = Tensor::from_vec(
-        deterministic(128 * 64 * 3, 53, -50),
-        (128, 64, 3),
-        device,
-    )?;
+    let x = Tensor::from_vec(deterministic(1 * 128 * 32, 37, -50), (1, 128, 32), device)?;
+    let w = Tensor::from_vec(deterministic(128 * 64 * 3, 53, -50), (128, 64, 3), device)?;
     Ok((x, w))
 }
 
@@ -545,10 +542,14 @@ fn main() -> Result<()> {
         min_u64(telemetry_start.sm_clock_mhz, telemetry_end.sm_clock_mhz);
     let sm_clock_mhz_max_observed =
         max_u64(telemetry_start.sm_clock_mhz, telemetry_end.sm_clock_mhz);
-    let memory_clock_mhz_min_observed =
-        min_u64(telemetry_start.memory_clock_mhz, telemetry_end.memory_clock_mhz);
-    let memory_clock_mhz_max_observed =
-        max_u64(telemetry_start.memory_clock_mhz, telemetry_end.memory_clock_mhz);
+    let memory_clock_mhz_min_observed = min_u64(
+        telemetry_start.memory_clock_mhz,
+        telemetry_end.memory_clock_mhz,
+    );
+    let memory_clock_mhz_max_observed = max_u64(
+        telemetry_start.memory_clock_mhz,
+        telemetry_end.memory_clock_mhz,
+    );
     let power_w_max_observed = max_f64(telemetry_start.power_w, telemetry_end.power_w);
 
     let parity_evidence_sha256 = match std::env::var_os("CANDLE_ASD_PARITY_EVIDENCE") {
@@ -593,9 +594,18 @@ fn main() -> Result<()> {
         .collect::<String>();
     println!("performance_evidence_schema=ASD-CUDA-PERFORMANCE-EVIDENCE-V2");
     println!("telemetry_status={telemetry_status}");
-    println!("gpu_temp_c_max_observed={}", fmt_f64(gpu_temp_c_max_observed));
-    println!("sm_clock_mhz_min_observed={}", fmt_u64(sm_clock_mhz_min_observed));
-    println!("sm_clock_mhz_max_observed={}", fmt_u64(sm_clock_mhz_max_observed));
+    println!(
+        "gpu_temp_c_max_observed={}",
+        fmt_f64(gpu_temp_c_max_observed)
+    );
+    println!(
+        "sm_clock_mhz_min_observed={}",
+        fmt_u64(sm_clock_mhz_min_observed)
+    );
+    println!(
+        "sm_clock_mhz_max_observed={}",
+        fmt_u64(sm_clock_mhz_max_observed)
+    );
     println!("performance_evidence_sha256={evidence_sha256}");
 
     if let Some(path) = std::env::var_os("CANDLE_ASD_PERF_EVIDENCE_OUT") {

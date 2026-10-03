@@ -2,8 +2,7 @@ use candle_core::{Device, Result, Tensor};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
-const IMPLEMENTATION_ID: &str =
-    "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
+const IMPLEMENTATION_ID: &str = "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
 
 fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
     (0..len)
@@ -12,16 +11,8 @@ fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
 }
 
 fn tensors(device: &Device) -> Result<(Tensor, Tensor)> {
-    let x = Tensor::from_vec(
-        deterministic(1 * 128 * 32, 37, -50),
-        (1, 128, 32),
-        device,
-    )?;
-    let w = Tensor::from_vec(
-        deterministic(128 * 64 * 3, 53, -50),
-        (128, 64, 3),
-        device,
-    )?;
+    let x = Tensor::from_vec(deterministic(1 * 128 * 32, 37, -50), (1, 128, 32), device)?;
+    let w = Tensor::from_vec(deterministic(128 * 64 * 3, 53, -50), (128, 64, 3), device)?;
     Ok((x, w))
 }
 
@@ -133,12 +124,8 @@ fn main() -> Result<()> {
     let ab_pass = ab_abs <= 1e-5 || ab_rel <= 1e-5;
     let aa_pass = aa_abs <= 1e-5 || aa_rel <= 1e-5;
 
-    println!(
-        "PARITY external_a_vs_b max_abs={ab_abs:.8} max_rel={ab_rel:.8} pass={ab_pass}"
-    );
-    println!(
-        "PARITY external_a1_vs_a2 max_abs={aa_abs:.8} max_rel={aa_rel:.8} pass={aa_pass}"
-    );
+    println!("PARITY external_a_vs_b max_abs={ab_abs:.8} max_rel={ab_rel:.8} pass={ab_pass}");
+    println!("PARITY external_a1_vs_a2 max_abs={aa_abs:.8} max_rel={aa_rel:.8} pass={aa_pass}");
     let status = if ab_pass && aa_pass { "PASS" } else { "HOLD" };
     println!("STATUS={status}");
 

@@ -547,14 +547,11 @@ pub(crate) struct AsdCudaImplementation<'a> {
 impl AsdCudaImplementation<'_> {
     pub(crate) fn function(&self) -> Result<CudaFunc> {
         match &self.source {
-            AsdModuleSource::BuiltinPtx(ptx) => self.device.get_or_load_custom_func(
-                self.spec.entry,
-                self.spec.candidate_id,
-                ptx,
-            ),
-            AsdModuleSource::External { artifact, kind, .. } => {
-                self.load_external(artifact, *kind)
+            AsdModuleSource::BuiltinPtx(ptx) => {
+                self.device
+                    .get_or_load_custom_func(self.spec.entry, self.spec.candidate_id, ptx)
             }
+            AsdModuleSource::External { artifact, kind, .. } => self.load_external(artifact, *kind),
         }
     }
 
@@ -694,7 +691,10 @@ mod tests {
         );
         let parsed = parse_manifest(&source, Path::new("test.manifest")).unwrap();
         assert_eq!(parsed.abi_version, 1);
-        assert_eq!(parsed.implementation_id, IMPLEMENTATIONS[0].implementation_id);
+        assert_eq!(
+            parsed.implementation_id,
+            IMPLEMENTATIONS[0].implementation_id
+        );
         assert_eq!(parsed.architecture, "sm61");
         assert_eq!(parsed.artifact_kind, "cubin");
         assert_eq!(parsed.entry, IMPLEMENTATIONS[0].entry);

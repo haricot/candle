@@ -1,8 +1,7 @@
 use candle_core::{Device, Result, Tensor};
 use std::path::PathBuf;
 
-const IMPLEMENTATION_ID: &str =
-    "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
+const IMPLEMENTATION_ID: &str = "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
 
 fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
     (0..len)
@@ -11,16 +10,8 @@ fn deterministic(len: usize, mul: usize, bias: isize) -> Vec<f32> {
 }
 
 fn tensors(device: &Device) -> Result<(Tensor, Tensor)> {
-    let x = Tensor::from_vec(
-        deterministic(1 * 128 * 32, 37, -50),
-        (1, 128, 32),
-        device,
-    )?;
-    let w = Tensor::from_vec(
-        deterministic(128 * 64 * 3, 53, -50),
-        (128, 64, 3),
-        device,
-    )?;
+    let x = Tensor::from_vec(deterministic(1 * 128 * 32, 37, -50), (1, 128, 32), device)?;
+    let w = Tensor::from_vec(deterministic(128 * 64 * 3, 53, -50), (128, 64, 3), device)?;
     Ok((x, w))
 }
 
@@ -85,9 +76,7 @@ fn main() -> Result<()> {
 
     let (ab_abs, ab_rel) = max_abs_rel(&builtin_a, &external_b)?;
     let ab_pass = ab_abs <= 1e-5 || ab_rel <= 1e-5;
-    println!(
-        "PARITY builtin_vs_external max_abs={ab_abs:.8} max_rel={ab_rel:.8} pass={ab_pass}"
-    );
+    println!("PARITY builtin_vs_external max_abs={ab_abs:.8} max_rel={ab_rel:.8} pass={ab_pass}");
 
     // A2: return to the builtin provider to prove resolution is not sticky.
     std::env::remove_var("CANDLE_ASD_MODULE_DIR");
@@ -97,9 +86,7 @@ fn main() -> Result<()> {
 
     let (aa_abs, aa_rel) = max_abs_rel(&builtin_a, &builtin_a2)?;
     let aa_pass = aa_abs <= 1e-5 || aa_rel <= 1e-5;
-    println!(
-        "PARITY builtin_a_vs_a2 max_abs={aa_abs:.8} max_rel={aa_rel:.8} pass={aa_pass}"
-    );
+    println!("PARITY builtin_a_vs_a2 max_abs={aa_abs:.8} max_rel={aa_rel:.8} pass={aa_pass}");
 
     println!(
         "STATUS={}",

@@ -3,8 +3,7 @@ use sha2::{Digest, Sha256};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-const IMPLEMENTATION_ID: &str =
-    "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
+const IMPLEMENTATION_ID: &str = "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
 const ABI_VERSION: u32 = 1;
 const ARCHITECTURE: &str = "sm61";
 const ENTRY: &str = "flow_v0322_ct1d_s32_g2_u1_b256";
@@ -27,24 +26,23 @@ fn parse_args() -> Result<(PathBuf, PathBuf, Option<PathBuf>)> {
         match args[i].as_str() {
             "--candidate-cubin" => {
                 i += 1;
-                cubin = Some(PathBuf::from(
-                    args.get(i)
-                        .ok_or_else(|| Error::Msg("--candidate-cubin requires a path".into()))?,
-                ));
+                cubin = Some(PathBuf::from(args.get(i).ok_or_else(|| {
+                    Error::Msg("--candidate-cubin requires a path".into())
+                })?));
             }
             "--out-dir" => {
                 i += 1;
-                out_dir = Some(PathBuf::from(
-                    args.get(i)
-                        .ok_or_else(|| Error::Msg("--out-dir requires a path".into()))?,
-                ));
+                out_dir =
+                    Some(PathBuf::from(args.get(i).ok_or_else(|| {
+                        Error::Msg("--out-dir requires a path".into())
+                    })?));
             }
             "--receipt-out" => {
                 i += 1;
-                receipt_out = Some(PathBuf::from(
-                    args.get(i)
-                        .ok_or_else(|| Error::Msg("--receipt-out requires a path".into()))?,
-                ));
+                receipt_out =
+                    Some(PathBuf::from(args.get(i).ok_or_else(|| {
+                        Error::Msg("--receipt-out requires a path".into())
+                    })?));
             }
             other => return Err(Error::Msg(format!("unknown argument {other:?}"))),
         }
@@ -67,9 +65,8 @@ fn create_new_file(path: &Path, bytes: &[u8], what: &str) -> Result<()> {
                 path.display()
             ))
         })?;
-    file.write_all(bytes).map_err(|err| {
-        Error::Msg(format!("failed to write {what} {}: {err}", path.display()))
-    })
+    file.write_all(bytes)
+        .map_err(|err| Error::Msg(format!("failed to write {what} {}: {err}", path.display())))
 }
 
 fn main() -> Result<()> {

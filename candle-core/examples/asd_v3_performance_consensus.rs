@@ -22,12 +22,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn read_evidence(path: &Path) -> Result<Evidence> {
-    let bytes = std::fs::read(path).map_err(|err| {
-        Error::Msg(format!("failed to read evidence {}: {err}", path.display()))
-    })?;
-    let text = std::str::from_utf8(&bytes).map_err(|err| {
-        Error::Msg(format!("evidence is not UTF-8 {}: {err}", path.display()))
-    })?;
+    let bytes = std::fs::read(path)
+        .map_err(|err| Error::Msg(format!("failed to read evidence {}: {err}", path.display())))?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|err| Error::Msg(format!("evidence is not UTF-8 {}: {err}", path.display())))?;
     let mut lines = text.lines();
     if lines.next() != Some(HEADER) {
         return Err(Error::Msg(format!(
@@ -65,9 +63,10 @@ fn read_evidence(path: &Path) -> Result<Evidence> {
 }
 
 fn required<'a>(e: &'a Evidence, key: &str) -> Result<&'a str> {
-    e.fields.get(key).map(String::as_str).ok_or_else(|| {
-        Error::Msg(format!("missing field {key:?} in {}", e.path.display()))
-    })
+    e.fields
+        .get(key)
+        .map(String::as_str)
+        .ok_or_else(|| Error::Msg(format!("missing field {key:?} in {}", e.path.display())))
 }
 
 fn parse_f64(e: &Evidence, key: &str) -> Result<f64> {
@@ -108,22 +107,24 @@ fn parse_args() -> Result<([PathBuf; RUN_COUNT], Option<PathBuf>, Option<PathBuf
         match args[i].as_str() {
             "--evidence" => {
                 i += 1;
-                let value = args.get(i).ok_or_else(|| {
-                    Error::Msg("--evidence requires a path".into())
-                })?;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| Error::Msg("--evidence requires a path".into()))?;
                 evidence.push(PathBuf::from(value));
             }
             "--consensus-out" => {
                 i += 1;
-                consensus_out = Some(PathBuf::from(args.get(i).ok_or_else(|| {
-                    Error::Msg("--consensus-out requires a path".into())
-                })?));
+                consensus_out =
+                    Some(PathBuf::from(args.get(i).ok_or_else(|| {
+                        Error::Msg("--consensus-out requires a path".into())
+                    })?));
             }
             "--promotion-out" => {
                 i += 1;
-                promotion_out = Some(PathBuf::from(args.get(i).ok_or_else(|| {
-                    Error::Msg("--promotion-out requires a path".into())
-                })?));
+                promotion_out =
+                    Some(PathBuf::from(args.get(i).ok_or_else(|| {
+                        Error::Msg("--promotion-out requires a path".into())
+                    })?));
             }
             other => return Err(Error::Msg(format!("unknown argument {other:?}"))),
         }
@@ -201,10 +202,7 @@ fn main() -> Result<()> {
     }
 
     let consensus_valid = all_harness_pass && all_parity && all_drift;
-    let promote = consensus_valid
-        && all_candidate_promote
-        && all_p90
-        && all_speedup;
+    let promote = consensus_valid && all_candidate_promote && all_p90 && all_speedup;
     let decision = if promote {
         "PROMOTE_CANDIDATE"
     } else {

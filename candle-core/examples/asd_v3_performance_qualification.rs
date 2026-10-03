@@ -31,9 +31,9 @@ fn read_evidence(path: &Path) -> Result<Evidence> {
         .map_err(|err| Error::Msg(format!("evidence is not UTF-8 {}: {err}", path.display())))?;
 
     let mut lines = text.lines();
-    let header = lines.next().ok_or_else(|| {
-        Error::Msg(format!("empty performance evidence {}", path.display()))
-    })?;
+    let header = lines
+        .next()
+        .ok_or_else(|| Error::Msg(format!("empty performance evidence {}", path.display())))?;
     if header != INPUT_HEADER_V1 && header != INPUT_HEADER_V2 {
         return Err(Error::Msg(format!(
             "invalid performance evidence header {header:?} in {}",
@@ -77,16 +77,12 @@ fn read_evidence(path: &Path) -> Result<Evidence> {
 }
 
 fn required<'a>(evidence: &'a Evidence, key: &str) -> Result<&'a str> {
-    evidence
-        .fields
-        .get(key)
-        .map(String::as_str)
-        .ok_or_else(|| {
-            Error::Msg(format!(
-                "missing field {key:?} in {}",
-                evidence.path.display()
-            ))
-        })
+    evidence.fields.get(key).map(String::as_str).ok_or_else(|| {
+        Error::Msg(format!(
+            "missing field {key:?} in {}",
+            evidence.path.display()
+        ))
+    })
 }
 
 fn same_field(run1: &Evidence, run2: &Evidence, key: &str) -> Result<String> {
@@ -123,10 +119,10 @@ fn parse_args() -> Result<([PathBuf; 2], PathBuf)> {
         match args[i].as_str() {
             "--evidence" => {
                 i += 1;
-                evidence.push(PathBuf::from(
-                    args.get(i)
-                        .ok_or_else(|| Error::Msg("--evidence requires a path".into()))?,
-                ));
+                evidence
+                    .push(PathBuf::from(args.get(i).ok_or_else(|| {
+                        Error::Msg("--evidence requires a path".into())
+                    })?));
             }
             "--out" => {
                 i += 1;
