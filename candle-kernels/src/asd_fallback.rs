@@ -38,17 +38,35 @@ const CT1D_G2_V1_EVIDENCE: [&str; 2] = [
     "7e2d4d08f2210b0418261df07921c2ef33b0738d157cfbc834f7c7746f20e367",
 ];
 
-pub const QUALIFIED_FALLBACKS: [QualifiedFallback; 1] = [QualifiedFallback {
-    decision_id: "ct1d-sm61-s32-g2-raw-exact",
-    rank: 1,
-    provider: QualifiedFallbackProvider::Cudnn,
-    implementation_id: "candle.cudnn.grouped-transpose.v1",
-    protocol: "provider-evidence-v1",
-    evidence_sha256: &CT1D_G2_V1_EVIDENCE,
-    required_cudnn_version_raw: Some(91002),
-    qualification: "exact_parity+stable_execution",
-    note: "Rejected for promotion on performance, but qualified as a resilience fallback when the promoted raw artifact is unavailable.",
-}];
+const CT1D_G4_V2_EVIDENCE: [&str; 2] = [
+    "8258710d0fbae354bd4b95505e0caf03d13cdb73c7016c82c5bc53228c2c69c2",
+    "f190a815d690c2b9e665edf985c067dac0d97419c3d237558f87bf5581e9dd8f",
+];
+
+pub const QUALIFIED_FALLBACKS: [QualifiedFallback; 2] = [
+    QualifiedFallback {
+        decision_id: "ct1d-sm61-s32-g2-raw-exact",
+        rank: 1,
+        provider: QualifiedFallbackProvider::Cudnn,
+        implementation_id: "candle.cudnn.grouped-transpose.v1",
+        protocol: "provider-evidence-v1",
+        evidence_sha256: &CT1D_G2_V1_EVIDENCE,
+        required_cudnn_version_raw: Some(91002),
+        qualification: "exact_parity+stable_execution",
+        note: "Rejected for promotion on performance, but qualified as a resilience fallback when the promoted raw artifact is unavailable.",
+    },
+    QualifiedFallback {
+        decision_id: "ct1d-sm61-s32-g4-raw-exact",
+        rank: 1,
+        provider: QualifiedFallbackProvider::Cudnn,
+        implementation_id: "candle.cudnn.grouped-transpose.v1",
+        protocol: "provider-evidence-v2",
+        evidence_sha256: &CT1D_G4_V2_EVIDENCE,
+        required_cudnn_version_raw: Some(91002),
+        qualification: "exact_parity+stable_execution",
+        note: "Two authoritative fallback-qualification replications passed exact parity and drift; cuDNN was rejected for promotion on performance but qualified for resilience.",
+    },
+];
 
 pub fn qualified_fallbacks_for_decision(
     decision_id: &str,
@@ -73,6 +91,23 @@ mod tests {
         assert_eq!(fallbacks[0].provider, QualifiedFallbackProvider::Cudnn);
         assert_eq!(fallbacks[0].protocol, "provider-evidence-v1");
         assert_eq!(fallbacks[0].evidence_sha256.len(), 2);
+        assert_eq!(fallbacks[0].required_cudnn_version_raw, Some(91002));
+    }
+
+    #[test]
+    fn ct1d_g4_cudnn_is_qualified_from_two_v2_replications() {
+        let fallbacks = qualified_fallbacks_for_decision("ct1d-sm61-s32-g4-raw-exact");
+        assert_eq!(fallbacks.len(), 1);
+        assert_eq!(fallbacks[0].rank, 1);
+        assert_eq!(fallbacks[0].provider, QualifiedFallbackProvider::Cudnn);
+        assert_eq!(fallbacks[0].protocol, "provider-evidence-v2");
+        assert_eq!(
+            fallbacks[0].evidence_sha256,
+            &[
+                "8258710d0fbae354bd4b95505e0caf03d13cdb73c7016c82c5bc53228c2c69c2",
+                "f190a815d690c2b9e665edf985c067dac0d97419c3d237558f87bf5581e9dd8f",
+            ]
+        );
         assert_eq!(fallbacks[0].required_cudnn_version_raw, Some(91002));
     }
 }
