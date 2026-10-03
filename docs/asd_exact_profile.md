@@ -663,6 +663,60 @@ artifact once, then repopulates the execution-plane cache. Changing
 `CANDLE_ASD_MODULE_DIR` or files under the ASD user store without a refresh
 does not implicitly alter an already-resolved implementation.
 
+### Canonical sm61 external package
+
+For the seven `candle.sm61-exact-grouped.*` implementations, external CUBIN is
+the canonical installed runtime artifact. External PTX remains an optional
+secondary artifact, while builtin PTX is preserved throughout Phase A.
+
+The cached execution-plane validation established that the same K00
+implementation is effectively equivalent in steady state when loaded as
+external PTX or external CUBIN (about 9.86 us versus 9.91 us in the diagnostic
+R1). The earlier 17-19 us external measurements were control-plane overhead,
+not CUBIN/PTX code-generation cost.
+
+Install or refresh the complete seven-kernel catalogue with:
+
+```bash
+export CANDLE_ASD_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/asd"
+export NVCC=/opt/cuda/bin/nvcc
+export NVCC_CCBIN=/usr/bin/g++-14
+
+bash tools/asd-sm61-install.sh
+```
+
+The installer:
+
+- compiles all seven sources for `sm_61` as CUBIN using the same optimization
+  settings as the Candle PTX build;
+- verifies each expected CUDA entry symbol;
+- writes strict `ASD-CUDA-MODULE-V1` manifests with the actual CUBIN SHA-256;
+- records source and CUBIN hashes in
+  `ASD-SM61-EXACT-GROUPED-CATALOGUE-V1`;
+- stages inside the destination artifact directory and publishes only after all
+  seven compile/verification steps succeed;
+- does not remove or modify Candle's builtin PTX.
+
+Existing external PTX files are left untouched by default because runtime
+resolution already prefers CUBIN. To deliberately remove external PTX copies
+while retaining builtin PTX:
+
+```bash
+bash tools/asd-sm61-install.sh --prune-external-ptx
+```
+
+Verify an already-installed catalogue without recompilation:
+
+```bash
+bash tools/asd-sm61-install.sh --verify-only
+```
+
+After installation, `tools/asd-profile` should report
+`phase_a_primary_resolution=external_cubin` for all seven externalizable
+sm61 exact-grouped decisions. The specialized builtin PTX remains the next
+Phase-A layer until a qualified provider fallback exists for the corresponding
+decision.
+
 The final step consults only `candle-kernels/src/asd_fallback.rs`.
 Historical `ProviderChallenge` state remains descriptive and is never used
 directly by dispatch.
