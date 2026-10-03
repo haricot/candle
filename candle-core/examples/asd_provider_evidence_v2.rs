@@ -655,7 +655,7 @@ fn cudnn_identity(device: &Device, case: Ct1dCase) -> Result<CudnnIdentity> {
         [1, 1],
         cudarc::cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
     )?;
-    conv.set_group_count(case.groups)?;
+    conv.set_group_count(case.groups as i32)?;
 
     let dx = cudnn.create_4d_tensor::<f32>(
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
@@ -743,6 +743,7 @@ fn timed_warmup(
     x: &Tensor,
     w: &Tensor,
     device: &Device,
+    case: Ct1dCase,
     warmup_ms: f64,
     inner: usize,
 ) -> Result<()> {
@@ -754,7 +755,7 @@ fn timed_warmup(
     loop {
         let mut outputs = Vec::with_capacity(inner);
         for _ in 0..inner {
-            outputs.push(call(x, w)?);
+            outputs.push(call(x, w, case)?);
         }
         device.synchronize()?;
         std::hint::black_box(outputs);
@@ -777,6 +778,7 @@ fn settle_pair(
     x: &Tensor,
     w: &Tensor,
     device: &Device,
+    case: Ct1dCase,
     warmup_ms: f64,
     inner: usize,
 ) -> Result<()> {
@@ -784,7 +786,7 @@ fn settle_pair(
     println!("settling_policy=time_equivalent_pair_balanced_by_replication");
     println!("settling_sequence={}", replication.settling_sequence());
     let settle = |phase: &str, provider: Provider| {
-        timed_warmup(phase, provider, x, w, device, warmup_ms, inner)
+        timed_warmup(phase, provider, x, w, device, case, warmup_ms, inner)
     };
     match replication {
         Replication::R1 => {
@@ -807,9 +809,19 @@ fn measure(
     x: &Tensor,
     w: &Tensor,
     device: &Device,
+    case: Ct1dCase,
     cfg: MeasureConfig,
 ) -> Result<TimingStats> {
-    timed_warmup(phase, provider, x, w, device, cfg.warmup_ms, cfg.inner)?;
+    timed_warmup(
+        phase,
+        provider,
+        x,
+        w,
+        device,
+        case,
+        cfg.warmup_ms,
+        cfg.inner,
+    )?;
 
     let mut samples = Vec::with_capacity(cfg.iters);
     for _ in 0..cfg.iters {
@@ -817,7 +829,7 @@ fn measure(
         let start = Instant::now();
         let mut outputs = Vec::with_capacity(cfg.inner);
         for _ in 0..cfg.inner {
-            outputs.push(call(x, w)?);
+            outputs.push(call(x, w, case)?);
         }
         device.synchronize()?;
         samples.push(start.elapsed().as_secs_f64() * 1_000_000.0 / cfg.inner as f64);
@@ -832,11 +844,17 @@ fn measure(
     })
 }
 
-fn print_phase(name: &str, provider: Provider, identity: &str, stats: TimingStats) {
+fn print_phase(
+    name: &str,
+    provider: Provider,
+    case: Ct1dCase,
+    identity: &str,
+    stats: TimingStats,
+) {
     println!(
         "PHASE phase={name} provider={} implementation={} identity={} median_us={:.6} p10_us={:.6} p90_us={:.6}",
         provider.execution_provider(),
-        provider.implementation_id(),
+        provider.implementation_id(case),
         identity,
         stats.median_us,
         stats.p10_us,
