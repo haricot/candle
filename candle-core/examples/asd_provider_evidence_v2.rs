@@ -6,14 +6,79 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-const DECISION_ID: &str = "ct1d-sm61-s32-g2-raw-exact";
-const INCUMBENT_IMPLEMENTATION_ID: &str = "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256";
-const INCUMBENT_CANDIDATE_ID: &str = "ct1d-s32-g2-u1-b256";
-const INCUMBENT_ENTRY: &str = "flow_v0322_ct1d_s32_g2_u1_b256";
 const RAW_MODULE_ABI_VERSION: u32 = 1;
 const CHALLENGER_IMPLEMENTATION_ID: &str = "candle.cudnn.grouped-transpose.v1";
 const PROTOCOL_ID: &str = "provider-evidence-v2";
-const HARNESS_REVISION: &str = "provider-evidence-v2-discipline-r2";
+const HARNESS_REVISION: &str = "provider-evidence-v2-ct1d-matrix-r3";
+
+#[derive(Clone, Copy, Debug)]
+struct Ct1dCase {
+    decision_id: &'static str,
+    implementation_id: &'static str,
+    candidate_id: &'static str,
+    entry: &'static str,
+    groups: usize,
+}
+
+impl Ct1dCase {
+    const fn weight_c_out_per_group(self) -> usize {
+        128 / self.groups
+    }
+
+    fn exact_signature(self) -> String {
+        format!(
+            "op=conv_transpose1d,dim=1,batch=1,c_in=128,c_out=128,spatial=32,weight_shape=128x{}x3,groups={},kernel=3,stride=2,padding=1,output_padding=1,dilation=1,dtype=f32,input_layout=contiguous_zero_offset,weight_layout=contiguous_zero_offset",
+            self.weight_c_out_per_group(),
+            self.groups
+        )
+    }
+}
+
+const CT1D_CASES: &[Ct1dCase] = &[
+    Ct1dCase {
+        decision_id: "ct1d-sm61-s32-g2-raw-exact",
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256",
+        candidate_id: "ct1d-s32-g2-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g2_u1_b256",
+        groups: 2,
+    },
+    Ct1dCase {
+        decision_id: "ct1d-sm61-s32-g4-raw-exact",
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g4-u1-b256",
+        candidate_id: "ct1d-s32-g4-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g4_u1_b256",
+        groups: 4,
+    },
+    Ct1dCase {
+        decision_id: "ct1d-sm61-s32-g8-raw-exact",
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g8-u1-b256",
+        candidate_id: "ct1d-s32-g8-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g8_u1_b256",
+        groups: 8,
+    },
+    Ct1dCase {
+        decision_id: "ct1d-sm61-s32-g16-raw-exact",
+        implementation_id: "candle.sm61-exact-grouped.ct1d-s32-g16-u1-b256",
+        candidate_id: "ct1d-s32-g16-u1-b256",
+        entry: "flow_v0322_ct1d_s32_g16_u1_b256",
+        groups: 16,
+    },
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Purpose {
+    PerformanceChallenge,
+    FallbackQualification,
+}
+
+impl Purpose {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::PerformanceChallenge => "performance-challenge",
+            Self::FallbackQualification => "fallback-qualification",
+        }
+    }
+}
 
 const DEFAULT_WARMUP_MS: f64 = 500.0;
 const DEFAULT_ITERS: usize = 40;
@@ -35,9 +100,9 @@ impl Provider {
         }
     }
 
-    const fn implementation_id(self) -> &'static str {
+    const fn implementation_id(self, case: Ct1dCase) -> &'static str {
         match self {
-            Self::IncumbentRaw => INCUMBENT_IMPLEMENTATION_ID,
+            Self::IncumbentRaw => case.implementation_id,
             Self::ChallengerCudnn => CHALLENGER_IMPLEMENTATION_ID,
         }
     }
@@ -181,6 +246,41 @@ fn parse_path(flag: &str) -> Option<PathBuf> {
     let args = std::env::args().collect::<Vec<_>>();
     args.windows(2)
         .find_map(|pair| (pair[0] == flag).then(|| PathBuf::from(&pair[1])))
+}
+
+fn parse_value(flag: &str) -> Option<String> {
+    let args = std::env::args().collect::<Vec<_>>();
+    args.windows(2)
+        .find_map(|pair| (pair[0] == flag).then(|| pair[1].clone()))
+}
+
+fn parse_case() -> Result<Ct1dCase> {
+    let requested = parse_value("--decision")
+        .unwrap_or_else(|| CT1D_CASES[0].decision_id.to_owned());
+    CT1D_CASES
+        .iter()
+        .copied()
+        .find(|case| case.decision_id == requested)
+        .ok_or_else(|| {
+            candle_core::Error::Msg(format!(
+                "invalid --decision {requested:?}; expected one of {}",
+                CT1D_CASES
+                    .iter()
+                    .map(|case| case.decision_id)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ))
+        })
+}
+
+fn parse_purpose() -> Result<Purpose> {
+    match parse_value("--purpose").as_deref() {
+        None | Some("performance-challenge") => Ok(Purpose::PerformanceChallenge),
+        Some("fallback-qualification") => Ok(Purpose::FallbackQualification),
+        Some(other) => candle_core::bail!(
+            "invalid --purpose {other:?}; expected performance-challenge or fallback-qualification"
+        ),
+    }
 }
 
 fn parse_replication() -> Result<Option<Replication>> {
