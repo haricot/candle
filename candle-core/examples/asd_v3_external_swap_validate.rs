@@ -81,6 +81,9 @@ fn run_external(
     device: &Device,
 ) -> Result<Tensor> {
     std::env::set_var("CANDLE_ASD_MODULE_DIR", dir);
+    device
+        .as_cuda_device()?
+        .refresh_asd_module(IMPLEMENTATION_ID)?;
     println!(
         "PHASE={phase} expected_provider=external_cubin module={}",
         module_path(dir).display()
