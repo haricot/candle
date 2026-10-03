@@ -174,6 +174,14 @@ impl GroupedTransposeDispatchDecision {
         self.is_exact_asd() && self.selected == GroupedTransposeDispatchPath::Cudnn
     }
 
+    pub(super) fn exact_requires_raw(self) -> bool {
+        self.is_exact_asd() && self.selected == GroupedTransposeDispatchPath::Raw
+    }
+
+    pub(super) fn exact_decision_id(self) -> Option<&'static str> {
+        self.is_exact_asd().then_some(self.asd_decision_id).flatten()
+    }
+
     pub(super) fn trace_submission(self, backend: &str) {
         if !grouped_transpose_trace_enabled() && !asd_exact_trace_enabled() {
             return;
