@@ -209,6 +209,17 @@ fn exact_call() -> candle_kernels::asd_exact::ExactOperationCall {
 fn incumbent_profile_match(
     gpu_uuid: &str,
 ) -> Result<candle_kernels::asd_exact::ExactAsdMatch> {
+    if candle_kernels::asd_exact::PROFILE_ID.is_none() {
+        candle_core::bail!(
+            "Provider Evidence V1 requires an embedded ASD Exact Profile; rebuild with CANDLE_ASD_EXACT_POLICY pointing to the Stage2F production profile"
+        )
+    }
+    if candle_kernels::asd_exact::TARGET_GPU_UUID.is_none() {
+        candle_core::bail!(
+            "Provider Evidence V1 requires a device-scoped ASD Exact Profile with target GPU UUID"
+        )
+    }
+
     let matched = match candle_kernels::asd_exact::lookup(exact_call(), Some(gpu_uuid)) {
         Some(candle_kernels::asd_exact::ExactMatch::Proven(matched)) => matched,
         Some(candle_kernels::asd_exact::ExactMatch::Unproven(_)) => {
