@@ -145,11 +145,13 @@ fn print_artifact_state(home: &Path, architecture: &str, decision: &Decision) {
     }
 
     let root = home.join("artifacts").join(architecture);
-    let base = root.join(&decision.implementation);
-    let cu = base.with_extension("cu");
-    let cubin = base.with_extension("cubin");
-    let ptx = base.with_extension("ptx");
-    let manifest = base.with_extension("manifest");
+    let artifact = |extension: &str| {
+        root.join(format!("{}.{}", decision.implementation, extension))
+    };
+    let cu = artifact("cu");
+    let cubin = artifact("cubin");
+    let ptx = artifact("ptx");
+    let manifest = artifact("manifest");
 
     println!("  artifact_model=asd_v3_externalizable_raw");
     println!("  source_cu={} available={}", cu.display(), bool_str(cu.is_file()));
