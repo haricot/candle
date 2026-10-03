@@ -57,6 +57,11 @@ fn print_provider_challenge(challenge: &asd_history::ProviderChallenge) {
         "  incumbent provider={} implementation={}",
         challenge.incumbent_provider, challenge.incumbent_implementation
     );
+    println!("  incumbent_identity={}", challenge.incumbent_identity);
+    println!(
+        "  incumbent_profile_evidence_sha256={}",
+        challenge.incumbent_profile_evidence_sha256
+    );
     println!(
         "  challenger provider={} implementation={}",
         challenge.challenger_provider, challenge.challenger_implementation
