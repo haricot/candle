@@ -109,14 +109,12 @@ fn implementation_spec(
         .find(|(_, spec)| spec.implementation_id == implementation_id)
 }
 
-#[derive(Debug)]
 enum AsdRuntimeSlot {
     Unresolved,
     Unavailable,
     Resolved(Arc<ResolvedAsdImplementation>),
 }
 
-#[derive(Debug)]
 pub(super) struct AsdRuntimeCache {
     slots: [RwLock<AsdRuntimeSlot>; IMPLEMENTATION_COUNT],
 }
@@ -550,7 +548,6 @@ pub(crate) struct AsdModuleRegistry<'a> {
     device: &'a CudaDevice,
 }
 
-#[derive(Debug)]
 struct ResolvedAsdImplementation {
     function: CudaFunc,
     provider_name: &'static str,
