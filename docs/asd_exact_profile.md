@@ -596,3 +596,91 @@ authoritative_protocol=true
 
 Provider Evidence V1 remains frozen for the already-established CT1D G2
 consensus; it should not be retroactively regenerated as V2.
+
+
+## ASD V3 user store and resilient provider resolution
+
+Phase A introduces a user-scoped ASD store:
+
+```text
+~/.local/share/asd/
+├── profiles/
+│   └── current.asd
+└── artifacts/
+    └── sm61/
+        ├── <implementation-id>.cu
+        ├── <implementation-id>.cubin
+        ├── <implementation-id>.ptx
+        └── <implementation-id>.manifest
+```
+
+`CANDLE_ASD_HOME` overrides the ASD root and `XDG_DATA_HOME` is honored.
+`CANDLE_ASD_MODULE_DIR` remains a direct artifact-directory override.
+
+The `.cu` file is source/provenance only. Runtime raw resolution is:
+
+```text
+external CUBIN
+  -> external PTX
+  -> builtin raw PTX
+  -> evidence-qualified provider fallback
+```
+
+The final step consults only `candle-kernels/src/asd_fallback.rs`.
+Historical `ProviderChallenge` state remains descriptive and is never used
+directly by dispatch.
+
+For CT1D G2 the first qualified fallback is cuDNN
+`candle.cudnn.grouped-transpose.v1`, bound to the two Provider Evidence V1
+replications and cuDNN runtime version 91002. Its two roles are intentionally
+orthogonal:
+
+```text
+promotion_result=stable_reject
+fallback_result=qualified
+```
+
+It is too slow to replace the raw primary, but exact parity and stable execution
+qualify it as a resilience fallback when the promoted raw implementation cannot
+be resolved.
+
+`CANDLE_ASD_BUILTIN_RAW_DISABLE=1` is a Phase A validation switch. It lets the
+external-artifact -> qualified-fallback path be exercised before builtin PTX is
+physically removed. Normal Phase A production keeps builtin PTX enabled.
+
+Phase B is entered only after this path is validated:
+
+```text
+external artifact
+  -> qualified provider fallback
+```
+
+Only then should the corresponding specialized builtin raw source/PTX be
+removed from Candle.
+
+### Inspecting current primary/fallback state
+
+```bash
+cargo run --manifest-path tools/asd-profile/Cargo.toml -- --layout
+
+cargo run --manifest-path tools/asd-profile/Cargo.toml -- \
+  --profile /path/to/stage2f-production.v2.asd
+
+cargo run --manifest-path tools/asd-profile/Cargo.toml -- \
+  --profile /path/to/stage2f-production.v2.asd \
+  ct1d-sm61-s32-g2-raw-exact
+```
+
+The tool reports promoted provider counts, exact primary identity, V3 artifact
+availability, Phase A raw resolution, and ranked qualified fallbacks.
+
+Install the current profile into the user store with:
+
+```bash
+mkdir -p ~/.local/share/asd/profiles ~/.local/share/asd/artifacts/sm61
+cp /path/to/stage2f-production.v2.asd ~/.local/share/asd/profiles/current.asd
+```
+
+The build-time `CANDLE_ASD_EXACT_POLICY` mechanism remains explicit in Phase A
+for reproducibility. Merely placing `current.asd` in the user store does not
+silently change the Exact Profile embedded in an existing Candle binary.
