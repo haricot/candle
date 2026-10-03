@@ -1282,11 +1282,17 @@ fn main() -> Result<()> {
         telemetry_end.memory_clock_mhz,
     );
     let power_w_max_observed = max_f64(telemetry_start.power_w, telemetry_end.power_w);
+    let purpose_name = purpose.as_str();
+    let exact_signature = case.exact_signature();
+    let ct1d_groups = case.groups;
+    let incumbent_implementation_id = case.implementation_id;
+    let incumbent_entry = case.entry;
 
     let evidence = format!(
         "ASD-PROVIDER-PERFORMANCE-EVIDENCE-V2\n\
 protocol={PROTOCOL_ID}\n\
 harness_revision={HARNESS_REVISION}\n\
+purpose={purpose_name}\n\
 measurement_plane=production_path\n\
 provider_hot_execution_measured=false\n\
 hot_path_trace_expected=false\n\
@@ -1306,14 +1312,15 @@ input_sha256={}\n\
 weight_sha256={}\n\
 profile_id={}\n\
 decision_id={}\n\
+ct1d_groups={ct1d_groups}\n\
 architecture=sm61\n\
 gpu_uuid={gpu_uuid}\n\
-exact_signature=op=conv_transpose1d,dim=1,batch=1,c_in=128,c_out=128,spatial=32,weight_shape=128x64x3,groups=2,kernel=3,stride=2,padding=1,output_padding=1,dilation=1,dtype=f32,input_layout=contiguous_zero_offset,weight_layout=contiguous_zero_offset\n\
+exact_signature={exact_signature}\n\
 incumbent_execution_provider=raw_cuda\n\
-incumbent_implementation_id={INCUMBENT_IMPLEMENTATION_ID}\n\
+incumbent_implementation_id={incumbent_implementation_id}\n\
 incumbent_identity={raw_identity}\n\
 incumbent_raw_abi_version={RAW_MODULE_ABI_VERSION}\n\
-incumbent_raw_entry={INCUMBENT_ENTRY}\n\
+incumbent_raw_entry={incumbent_entry}\n\
 incumbent_raw_source={}\n\
 incumbent_raw_proof_status={}\n\
 incumbent_raw_identity_verified={}\n\
@@ -1401,6 +1408,9 @@ drift_pass={drift_pass}\n\
 p90_non_regression={p90_pass}\n\
 speedup_pass={speedup_pass}\n\
 status={status}\n\
+promotion_result={promotion_result}\n\
+fallback_qualification={fallback_qualification}\n\
+fallback_qualification_basis=authoritative_protocol+parity+drift\n\
 decision={decision}\n",
         replication.map(Replication::as_str).unwrap_or("unspecified"),
         git.commit,
