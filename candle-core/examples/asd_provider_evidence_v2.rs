@@ -2,7 +2,7 @@ use candle_core::{Device, Result, Tensor};
 use cudarc::cudnn::safe::{ConvBackwardData, Cudnn};
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -13,7 +13,7 @@ const INCUMBENT_ENTRY: &str = "flow_v0322_ct1d_s32_g2_u1_b256";
 const RAW_MODULE_ABI_VERSION: u32 = 1;
 const CHALLENGER_IMPLEMENTATION_ID: &str = "candle.cudnn.grouped-transpose.v1";
 const PROTOCOL_ID: &str = "provider-evidence-v2";
-const HARNESS_REVISION: &str = "provider-evidence-v2-discipline-r1";
+const HARNESS_REVISION: &str = "provider-evidence-v2-discipline-r2";
 
 const DEFAULT_WARMUP_MS: f64 = 500.0;
 const DEFAULT_ITERS: usize = 40;
@@ -137,6 +137,22 @@ struct CudnnIdentity {
     algorithm_debug: String,
     workspace_bytes: usize,
     identity: String,
+}
+
+#[derive(Clone, Debug)]
+struct RawIdentity {
+    source: &'static str,
+    identity: String,
+    artifact_sha256: String,
+    proof_status: &'static str,
+    verified: bool,
+}
+
+fn env_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
 }
 
 fn parse_count(flag: &str, default: usize) -> usize {
@@ -318,7 +334,6 @@ fn configure_provider(provider: Provider) {
     std::env::remove_var("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL");
     std::env::remove_var("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT");
     std::env::remove_var("CANDLE_ASD_EXACT_DISABLE");
-    std::env::remove_var("CANDLE_ASD_MODULE_DIR");
 
     match provider {
         Provider::IncumbentRaw => std::env::set_var("CANDLE_GROUPED_TRANSPOSE_DISPATCH", "auto"),
@@ -423,14 +438,95 @@ fn sha256_bytes(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn raw_identity() -> Result<(String, String)> {
+fn raw_artifact_root() -> Option<PathBuf> {
+    std::env::var_os("CANDLE_ASD_MODULE_DIR")
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| candle_kernels::asd_paths::artifacts_dir("sm61"))
+}
+
+fn external_manifest_verified(
+    artifact_path: &Path,
+    artifact_kind: &str,
+    artifact_sha256: &str,
+) -> bool {
+    let manifest_path = artifact_path.with_extension("manifest");
+    let Ok(source) = std::fs::read_to_string(manifest_path) else {
+        return false;
+    };
+    let mut lines = source.lines();
+    if lines.next() != Some("ASD-CUDA-MODULE-V1") {
+        return false;
+    }
+    let mut fields = std::collections::BTreeMap::<&str, &str>::new();
+    for raw in lines {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        fields.insert(key.trim(), value.trim());
+    }
+    fields.get("abi_version").copied() == Some("1")
+        && fields.get("implementation_id").copied() == Some(INCUMBENT_IMPLEMENTATION_ID)
+        && fields.get("architecture").copied() == Some("sm61")
+        && fields.get("artifact_kind").copied() == Some(artifact_kind)
+        && fields.get("entry").copied() == Some(INCUMBENT_ENTRY)
+        && fields.get("artifact_sha256").copied() == Some(artifact_sha256)
+}
+
+fn raw_identity() -> Result<RawIdentity> {
+    if let Some(root) = raw_artifact_root() {
+        let base = root.join(INCUMBENT_IMPLEMENTATION_ID);
+        for (extension, source_name) in [("cubin", "external_cubin"), ("ptx", "external_ptx")] {
+            let path = base.with_extension(extension);
+            if !path.is_file() {
+                continue;
+            }
+            let bytes = std::fs::read(&path).map_err(|err| {
+                candle_core::Error::Msg(format!(
+                    "failed to read incumbent ASD artifact {}: {err}",
+                    path.display()
+                ))
+            })?;
+            let artifact_sha256 = sha256_bytes(&bytes);
+            let verified = external_manifest_verified(&path, extension, &artifact_sha256);
+            return Ok(RawIdentity {
+                source: source_name,
+                identity: format!(
+                    "raw_cuda:{source_name}:abi={RAW_MODULE_ABI_VERSION}:implementation={INCUMBENT_IMPLEMENTATION_ID}:entry={INCUMBENT_ENTRY}:artifact_sha256={artifact_sha256}"
+                ),
+                artifact_sha256,
+                proof_status: if verified {
+                    "external_artifact_verified"
+                } else {
+                    "external_artifact_unverified"
+                },
+                verified,
+            });
+        }
+    }
+
+    if env_truthy("CANDLE_ASD_BUILTIN_RAW_DISABLE") {
+        candle_core::bail!(
+            "Provider Evidence V2 incumbent raw implementation is unavailable: no external artifact and builtin raw is disabled"
+        )
+    }
+
     let ptx = candle_kernels::sm61_exact_grouped_ptx(INCUMBENT_CANDIDATE_ID)
         .ok_or_else(|| candle_core::Error::Msg("missing builtin CT1D G2 PTX".into()))?;
-    let ptx_sha256 = sha256_bytes(ptx.as_bytes());
-    let identity = format!(
-        "raw_cuda:builtin_ptx:abi={RAW_MODULE_ABI_VERSION}:implementation={INCUMBENT_IMPLEMENTATION_ID}:entry={INCUMBENT_ENTRY}:ptx_sha256={ptx_sha256}"
-    );
-    Ok((identity, ptx_sha256))
+    let artifact_sha256 = sha256_bytes(ptx.as_bytes());
+    Ok(RawIdentity {
+        source: "builtin_ptx",
+        identity: format!(
+            "raw_cuda:builtin_ptx:abi={RAW_MODULE_ABI_VERSION}:implementation={INCUMBENT_IMPLEMENTATION_ID}:entry={INCUMBENT_ENTRY}:artifact_sha256={artifact_sha256}"
+        ),
+        artifact_sha256,
+        proof_status: "historical_evidence_bound",
+        verified: true,
+    })
 }
 
 fn cudnn_identity(device: &Device) -> Result<CudnnIdentity> {
@@ -797,6 +893,7 @@ fn main() -> Result<()> {
         std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none();
     let target_gpu_uuid = candle_kernels::asd_exact::TARGET_GPU_UUID.unwrap_or("unavailable");
     let gpu_workload = query_gpu_workload(target_gpu_uuid);
+    let raw = raw_identity()?;
     let protocol_defaults = warmup_ms == DEFAULT_WARMUP_MS
         && iters == DEFAULT_ITERS
         && inner == DEFAULT_INNER
@@ -808,7 +905,8 @@ fn main() -> Result<()> {
         && git.clean
         && headless_display_env
         && gpu_workload.status == "ok"
-        && gpu_workload.clean;
+        && gpu_workload.clean
+        && raw.verified;
 
     if !warmup_ms.is_finite() || warmup_ms <= 0.0 || iters == 0 || inner == 0 {
         candle_core::bail!("--warmup-ms, --iters and --inner must be greater than zero")
@@ -824,7 +922,8 @@ fn main() -> Result<()> {
     let device = Device::new_cuda(0)?;
     let gpu_uuid = gpu_uuid(&device)?;
     let profile_match = incumbent_profile_match(&gpu_uuid)?;
-    let (raw_identity, raw_ptx_sha256) = raw_identity()?;
+    let raw_identity = raw.identity.as_str();
+    let raw_artifact_sha256 = raw.artifact_sha256.as_str();
     let cudnn = cudnn_identity(&device)?;
     let (input_sha256, weight_sha256) = input_identity();
     let (x, w) = tensors(&device)?;
@@ -879,7 +978,10 @@ fn main() -> Result<()> {
     println!("incumbent_execution_provider=raw_cuda");
     println!("incumbent_implementation_id={INCUMBENT_IMPLEMENTATION_ID}");
     println!("incumbent_identity={raw_identity}");
-    println!("incumbent_ptx_sha256={raw_ptx_sha256}");
+    println!("incumbent_raw_source={}", raw.source);
+    println!("incumbent_raw_proof_status={}", raw.proof_status);
+    println!("incumbent_raw_identity_verified={}", raw.verified);
+    println!("incumbent_artifact_sha256={raw_artifact_sha256}");
     println!(
         "incumbent_profile_evidence_sha256={}",
         profile_match.evidence_sha256
@@ -914,12 +1016,13 @@ fn main() -> Result<()> {
     println!("sequence={}", effective_replication.phase_sequence());
     println!("replication_pairing=deterministic_balanced");
     println!(
-        "PROTOCOL_GATE defaults={} replication={} source_clean={} headless={} gpu_idle={}",
+        "PROTOCOL_GATE defaults={} replication={} source_clean={} headless={} gpu_idle={} raw_identity_verified={}",
         protocol_defaults,
         replication.is_some(),
         git.clean,
         headless_display_env,
-        gpu_workload.clean
+        gpu_workload.clean,
+        raw.verified
     );
     println!("authoritative_protocol={authoritative_protocol}");
     println!("PARITY max_abs={max_abs:.8} max_rel={max_rel:.8} pass={parity_pass}");
@@ -1053,7 +1156,10 @@ incumbent_implementation_id={INCUMBENT_IMPLEMENTATION_ID}\n\
 incumbent_identity={raw_identity}\n\
 incumbent_raw_abi_version={RAW_MODULE_ABI_VERSION}\n\
 incumbent_raw_entry={INCUMBENT_ENTRY}\n\
-incumbent_raw_ptx_sha256={raw_ptx_sha256}\n\
+incumbent_raw_source={}\n\
+incumbent_raw_proof_status={}\n\
+incumbent_raw_identity_verified={}\n\
+incumbent_artifact_sha256={raw_artifact_sha256}\n\
 incumbent_profile_evidence_sha256={}\n\
 challenger_execution_provider=cudnn\n\
 challenger_implementation_id={CHALLENGER_IMPLEMENTATION_ID}\n\
@@ -1151,6 +1257,9 @@ decision={decision}\n",
         weight_sha256,
         profile_match.profile_id,
         profile_match.decision_id,
+        raw.source,
+        raw.proof_status,
+        raw.verified,
         profile_match.evidence_sha256,
         cudnn.identity,
         cudnn.version_raw,
