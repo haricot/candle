@@ -899,6 +899,16 @@ cargo run --release -p candle-core \
   --example asd_v3_phase_a_fallback_validate
 ```
 
+The validator requires the device-scoped Exact Profile to be embedded at
+build time. Set the same profile and target UUID used by Provider Evidence
+before running it:
+
+```bash
+export CANDLE_ASD_HOME="${CANDLE_ASD_HOME:-$HOME/.local/share/asd}"
+export CANDLE_ASD_EXACT_POLICY="$CANDLE_ASD_HOME/profiles/current.asd"
+export CANDLE_ASD_TARGET_GPU_UUID=GPU-0259509a-8026-4c2b-477f-0b13c4e2117d
+```
+
 The validator accepts either qualified CT1D decision:
 
 ```bash
@@ -914,6 +924,11 @@ cargo run --release -p candle-core \
   --example asd_v3_phase_a_fallback_validate -- \
   --decision ct1d-sm61-s32-g4-raw-exact
 ```
+
+With `CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED=1`, generic auto dispatch is
+forbidden. The validation therefore fails if the exact decision cannot be
+authenticated; a successful cuDNN execution must come from
+`asd_fallback.rs`, not from the normal `auto_rule`.
 
 A valid run must emit the ASD V3 fallback trace with:
 
