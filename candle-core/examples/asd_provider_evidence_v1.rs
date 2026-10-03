@@ -624,8 +624,9 @@ fn main() -> Result<()> {
         candle_core::bail!("invalid Provider Evidence thresholds")
     }
 
-    std::env::set_var("CANDLE_ASD_EXACT_TRACE", "0");
-    std::env::set_var("CANDLE_SM61_EXACT_GROUPED_TRACE", "0");
+    std::env::remove_var("CANDLE_ASD_EXACT_TRACE");
+    std::env::remove_var("CANDLE_SM61_EXACT_GROUPED_TRACE");
+    std::env::remove_var("CANDLE_GROUPED_TRANSPOSE_TRACE");
 
     let device = Device::new_cuda(0)?;
     let gpu_uuid = gpu_uuid(&device)?;
