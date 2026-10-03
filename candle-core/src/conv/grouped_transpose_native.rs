@@ -150,6 +150,13 @@ impl CustomOp2 for NativeGroupedConvTranspose1D {
         );
 
         #[cfg(feature = "cuda")]
+        if env_truthy("CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED") && !decision.is_exact_asd() {
+            crate::bail!(
+                "CANDLE_ASD_QUALIFIED_FALLBACK_REQUIRED requires an authenticated ASD Exact Profile decision; generic auto dispatch is forbidden"
+            )
+        }
+
+        #[cfg(feature = "cuda")]
         if decision.exact_requires_cudnn() {
             #[cfg(feature = "cudnn")]
             {
