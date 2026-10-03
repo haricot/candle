@@ -132,6 +132,8 @@ fn print_layout(home: &Path, architecture: &str) {
         home.join("artifacts").join(architecture).display()
     );
     println!("  artifact_resolution=external_cubin>external_ptx>builtin_raw>qualified_provider_fallback");
+    println!("  execution_resolution=cold_control_plane>per_device_resolved_function_cache>launch");
+    println!("  hot_path_filesystem_io=false");
 }
 
 fn print_artifact_state(home: &Path, architecture: &str, decision: &Decision) {
