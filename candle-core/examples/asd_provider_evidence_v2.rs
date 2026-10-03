@@ -1265,6 +1265,8 @@ fn main() -> Result<()> {
     println!("STATUS={status}");
     println!("PROMOTION_RESULT={promotion_result}");
     println!("FALLBACK_QUALIFICATION={fallback_qualification}");
+    println!("fallback_qualification_scope=single_replication");
+    println!("fallback_consensus_required_replications=2");
     println!("DECISION={decision}");
 
     let telemetry_status = telemetry_status(&telemetry_start, &telemetry_end);
@@ -1410,6 +1412,8 @@ speedup_pass={speedup_pass}\n\
 status={status}\n\
 promotion_result={promotion_result}\n\
 fallback_qualification={fallback_qualification}\n\
+fallback_qualification_scope=single_replication\n\
+fallback_consensus_required_replications=2\n\
 fallback_qualification_basis=authoritative_protocol+parity+drift\n\
 decision={decision}\n",
         replication.map(Replication::as_str).unwrap_or("unspecified"),
