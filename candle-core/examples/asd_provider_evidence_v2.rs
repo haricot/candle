@@ -255,8 +255,8 @@ fn parse_value(flag: &str) -> Option<String> {
 }
 
 fn parse_case() -> Result<Ct1dCase> {
-    let requested = parse_value("--decision")
-        .unwrap_or_else(|| CT1D_CASES[0].decision_id.to_owned());
+    let requested =
+        parse_value("--decision").unwrap_or_else(|| CT1D_CASES[0].decision_id.to_owned());
     CT1D_CASES
         .iter()
         .copied()
@@ -372,7 +372,11 @@ fn query_gpu_workload(gpu_uuid: &str) -> GpuWorkloadSnapshot {
         .ok()
         .filter(|output| output.status.success())
         .and_then(|output| String::from_utf8(output.stdout).ok())
-        .and_then(|stdout| stdout.lines().find_map(|line| line.trim().parse::<u64>().ok()));
+        .and_then(|stdout| {
+            stdout
+                .lines()
+                .find_map(|line| line.trim().parse::<u64>().ok())
+        });
 
     let status = if utilization_pct.is_some() {
         "ok"
@@ -625,13 +629,12 @@ fn raw_identity(case: Ct1dCase) -> Result<RawIdentity> {
         )
     }
 
-    let ptx = candle_kernels::sm61_exact_grouped_ptx(case.candidate_id)
-        .ok_or_else(|| {
-            candle_core::Error::Msg(format!(
-                "missing builtin PTX for {}",
-                case.implementation_id
-            ))
-        })?;
+    let ptx = candle_kernels::sm61_exact_grouped_ptx(case.candidate_id).ok_or_else(|| {
+        candle_core::Error::Msg(format!(
+            "missing builtin PTX for {}",
+            case.implementation_id
+        ))
+    })?;
     let artifact_sha256 = sha256_bytes(ptx.as_bytes());
     Ok(RawIdentity {
         source: "builtin_ptx",
@@ -844,13 +847,7 @@ fn measure(
     })
 }
 
-fn print_phase(
-    name: &str,
-    provider: Provider,
-    case: Ct1dCase,
-    identity: &str,
-    stats: TimingStats,
-) {
+fn print_phase(name: &str, provider: Provider, case: Ct1dCase, identity: &str, stats: TimingStats) {
     println!(
         "PHASE phase={name} provider={} implementation={} identity={} median_us={:.6} p10_us={:.6} p90_us={:.6}",
         provider.execution_provider(),
@@ -1091,7 +1088,9 @@ fn main() -> Result<()> {
     println!("hot_path_trace_expected=false");
     println!(
         "replication={}",
-        replication.map(Replication::as_str).unwrap_or("unspecified")
+        replication
+            .map(Replication::as_str)
+            .unwrap_or("unspecified")
     );
     println!("source_commit={}", git.commit);
     println!("source_tree_status={}", git.status);
@@ -1416,7 +1415,9 @@ fallback_qualification_scope=single_replication\n\
 fallback_consensus_required_replications=2\n\
 fallback_qualification_basis=authoritative_protocol+parity+drift\n\
 decision={decision}\n",
-        replication.map(Replication::as_str).unwrap_or("unspecified"),
+        replication
+            .map(Replication::as_str)
+            .unwrap_or("unspecified"),
         git.commit,
         git.status,
         git.clean,
@@ -1475,7 +1476,9 @@ decision={decision}\n",
     println!("provider_evidence_protocol={PROTOCOL_ID}");
     println!(
         "provider_evidence_replication={}",
-        replication.map(Replication::as_str).unwrap_or("unspecified")
+        replication
+            .map(Replication::as_str)
+            .unwrap_or("unspecified")
     );
     println!("provider_evidence_sha256={evidence_sha256}");
     println!("telemetry_observe_only=true");

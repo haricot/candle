@@ -64,7 +64,10 @@ fn main() -> Result<()> {
     println!("primary_provider=raw_cuda");
     println!("fallback_provider=cudnn");
     println!("fallback_implementation=candle.cudnn.grouped-transpose.v1");
-    println!("external_module_dir={} expected_empty=true", module_dir.display());
+    println!(
+        "external_module_dir={} expected_empty=true",
+        module_dir.display()
+    );
 
     // Reference: explicitly selected cuDNN.
     std::env::set_var("CANDLE_GROUPED_TRANSPOSE_DISPATCH", "cudnn");

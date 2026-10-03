@@ -100,9 +100,7 @@ const IMPLEMENTATIONS: &[AsdKernelSpec] = &[
 
 const IMPLEMENTATION_COUNT: usize = IMPLEMENTATIONS.len();
 
-fn implementation_spec(
-    implementation_id: &str,
-) -> Option<(usize, &'static AsdKernelSpec)> {
+fn implementation_spec(implementation_id: &str) -> Option<(usize, &'static AsdKernelSpec)> {
     IMPLEMENTATIONS
         .iter()
         .enumerate()
@@ -133,24 +131,15 @@ impl AsdRuntimeCache {
     }
 
     pub(super) fn clear(&self, implementation_id: &str) -> Result<()> {
-        let (index, _) = implementation_spec(implementation_id).ok_or_else(|| {
-            Error::Msg(format!(
-                "unknown ASD implementation {implementation_id}"
-            ))
-        })?;
+        let (index, _) = implementation_spec(implementation_id)
+            .ok_or_else(|| Error::Msg(format!("unknown ASD implementation {implementation_id}")))?;
         *self.slots[index].write().unwrap() = AsdRuntimeSlot::Unresolved;
         Ok(())
     }
 
-    pub(super) fn resolved_source(
-        &self,
-        implementation_id: &str,
-    ) -> Result<Option<&'static str>> {
-        let (index, _) = implementation_spec(implementation_id).ok_or_else(|| {
-            Error::Msg(format!(
-                "unknown ASD implementation {implementation_id}"
-            ))
-        })?;
+    pub(super) fn resolved_source(&self, implementation_id: &str) -> Result<Option<&'static str>> {
+        let (index, _) = implementation_spec(implementation_id)
+            .ok_or_else(|| Error::Msg(format!("unknown ASD implementation {implementation_id}")))?;
         let slot = self.slots[index].read().unwrap();
         Ok(match &*slot {
             AsdRuntimeSlot::Resolved(resolved) => Some(resolved.provider_name),
@@ -576,10 +565,7 @@ impl<'a> AsdModuleRegistry<'a> {
         Self { device }
     }
 
-    fn resolve_source(
-        &self,
-        spec: &'static AsdKernelSpec,
-    ) -> Result<Option<AsdModuleSource>> {
+    fn resolve_source(&self, spec: &'static AsdKernelSpec) -> Result<Option<AsdModuleSource>> {
         if let Some(external) = ExternalCudaModuleProvider::from_env() {
             if let Some(source) = external.resolve(spec)? {
                 return Ok(Some(source));
@@ -642,11 +628,8 @@ impl<'a> AsdModuleRegistry<'a> {
         &self,
         implementation_id: &str,
     ) -> Result<Option<AsdCudaImplementation>> {
-        let (index, spec) = implementation_spec(implementation_id).ok_or_else(|| {
-            Error::Msg(format!(
-                "unknown ASD implementation {implementation_id}"
-            ))
-        })?;
+        let (index, spec) = implementation_spec(implementation_id)
+            .ok_or_else(|| Error::Msg(format!("unknown ASD implementation {implementation_id}")))?;
 
         {
             let slot = self.device.asd_runtime.slots[index].read().unwrap();

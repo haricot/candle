@@ -30,8 +30,7 @@ fn try_qualified_ct1d_fallback(
     let runtime_cudnn_version = unsafe { cudarc::cudnn::sys::cudnnGetVersion() };
 
     for fallback in candle_kernels::asd_fallback::qualified_fallbacks_for_decision(decision_id) {
-        if fallback.provider
-            != candle_kernels::asd_fallback::QualifiedFallbackProvider::Cudnn
+        if fallback.provider != candle_kernels::asd_fallback::QualifiedFallbackProvider::Cudnn
             || fallback.implementation_id != "candle.cudnn.grouped-transpose.v1"
             || fallback
                 .required_cudnn_version_raw

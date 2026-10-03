@@ -50,10 +50,8 @@ fn main() -> Result<()> {
         candle_core::bail!("missing external CUBIN {}", cubin.display())
     }
 
-    let builtin_only_dir = std::env::temp_dir().join(format!(
-        "candle-asd-builtin-only-{}",
-        std::process::id()
-    ));
+    let builtin_only_dir =
+        std::env::temp_dir().join(format!("candle-asd-builtin-only-{}", std::process::id()));
     if builtin_only_dir.exists() {
         std::fs::remove_dir_all(&builtin_only_dir).map_err(|err| {
             candle_core::Error::Msg(format!(

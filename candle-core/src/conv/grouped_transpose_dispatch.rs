@@ -179,7 +179,9 @@ impl GroupedTransposeDispatchDecision {
     }
 
     pub(super) fn exact_decision_id(self) -> Option<&'static str> {
-        self.is_exact_asd().then_some(self.asd_decision_id).flatten()
+        self.is_exact_asd()
+            .then_some(self.asd_decision_id)
+            .flatten()
     }
 
     pub(super) fn trace_submission(self, backend: &str) {

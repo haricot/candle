@@ -70,11 +70,7 @@ fn artifact_dir() -> Result<PathBuf> {
 fn execute(case: Case, device: &Device) -> Result<Tensor> {
     match case.kind {
         Kind::Ct1d { groups } => {
-            let x = Tensor::from_vec(
-                deterministic(128 * 32, 37, -50),
-                (1, 128, 32),
-                device,
-            )?;
+            let x = Tensor::from_vec(deterministic(128 * 32, 37, -50), (1, 128, 32), device)?;
             let c_out_per_group = 128 / groups;
             let w = Tensor::from_vec(
                 deterministic(128 * c_out_per_group * 3, 53, -50),
@@ -98,16 +94,8 @@ fn execute(case: Case, device: &Device) -> Result<Tensor> {
             x.conv_transpose2d_with_groups(&w, 1, 1, 2, 1, groups)
         }
         Kind::Conv1d => {
-            let x = Tensor::from_vec(
-                deterministic(64 * 128, 37, -50),
-                (1, 64, 128),
-                device,
-            )?;
-            let w = Tensor::from_vec(
-                deterministic(64 * 8 * 3, 53, -50),
-                (64, 8, 3),
-                device,
-            )?;
+            let x = Tensor::from_vec(deterministic(64 * 128, 37, -50), (1, 64, 128), device)?;
+            let w = Tensor::from_vec(deterministic(64 * 8 * 3, 53, -50), (64, 8, 3), device)?;
             x.conv1d(&w, 1, 1, 1, 8)
         }
     }
