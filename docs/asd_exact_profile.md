@@ -649,6 +649,47 @@ consensus and current G2 qualified fallback. Running G2 through the generalized
 V2 harness is useful as a control, but does not rewrite that historical V1
 authority.
 
+### CT1D G4 qualified fallback consensus
+
+CT1D G4 completed the generalized V2 fallback-qualification protocol against
+the canonical external CUBIN incumbent:
+
+```text
+decision_id=ct1d-sm61-s32-g4-raw-exact
+incumbent_implementation=candle.sm61-exact-grouped.ct1d-s32-g4-u1-b256
+incumbent_source=external_cubin
+incumbent_cubin_sha256=72c8aeaacc322596973768f2f8bb61483ab9d05c158fa86e51841f11f746107e
+
+challenger_provider=cudnn
+challenger_implementation=candle.cudnn.grouped-transpose.v1
+cudnn_runtime_version=91002
+cudnn_algorithm_id=0
+cudnn_workspace_bytes=0
+
+R1:
+  evidence_sha256=8258710d0fbae354bd4b95505e0caf03d13cdb73c7016c82c5bc53228c2c69c2
+  authoritative_protocol=true
+  parity=pass
+  drift=pass
+  promotion_result=REJECT_CHALLENGER
+  fallback_qualification=QUALIFIED_REPLICATION
+
+R2:
+  evidence_sha256=f190a815d690c2b9e665edf985c067dac0d97419c3d237558f87bf5581e9dd8f
+  authoritative_protocol=true
+  parity=pass
+  drift=pass
+  promotion_result=REJECT_CHALLENGER
+  fallback_qualification=QUALIFIED_REPLICATION
+
+fallback_consensus=QUALIFIED
+profile_change=false
+```
+
+The two hashes are bound directly in `candle-kernels/src/asd_fallback.rs`.
+They do not promote cuDNN; they authorize it only as the rank-1 resilience
+fallback when the G4 raw implementation is unavailable.
+
 
 ## ASD V3 user store and resilient provider resolution
 
@@ -858,7 +899,23 @@ cargo run --release -p candle-core \
   --example asd_v3_phase_a_fallback_validate
 ```
 
-A valid CT1D G2 run must emit the ASD V3 fallback trace with:
+The validator accepts either qualified CT1D decision:
+
+```bash
+# historical G2 fallback
+cargo run --release -p candle-core \
+  --features cuda,cudnn \
+  --example asd_v3_phase_a_fallback_validate -- \
+  --decision ct1d-sm61-s32-g2-raw-exact
+
+# V2-qualified G4 fallback
+cargo run --release -p candle-core \
+  --features cuda,cudnn \
+  --example asd_v3_phase_a_fallback_validate -- \
+  --decision ct1d-sm61-s32-g4-raw-exact
+```
+
+A valid run must emit the ASD V3 fallback trace with:
 
 ```text
 runtime_role=fallback
