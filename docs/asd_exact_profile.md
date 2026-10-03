@@ -626,6 +626,43 @@ external CUBIN
   -> evidence-qualified provider fallback
 ```
 
+Artifact discovery is control-plane work. On the first resolution of a known
+implementation (or after an explicit refresh), Candle performs filesystem
+discovery, artifact hashing, manifest verification, CUDA module loading and
+function resolution. The result is cached per `CudaDevice` and per
+implementation.
+
+The steady-state execution path is therefore:
+
+```text
+Exact Profile decision
+  -> per-device resolved implementation slot
+  -> cached CudaFunction
+  -> launch
+```
+
+In particular, the steady-state hot path performs no artifact `stat()`, no
+artifact/manifest read, no SHA-256 computation, no manifest parsing, and no
+filesystem-cache lookup. An unavailable primary is negatively cached as well,
+so repeated qualified-fallback execution does not poll the filesystem.
+
+Artifact replacement is explicit control-plane work:
+
+```rust
+device.as_cuda_device()?.refresh_asd_module(implementation_id)?;
+```
+
+or, for all ASD implementations on the device:
+
+```rust
+device.as_cuda_device()?.refresh_asd_modules();
+```
+
+After refresh, the next exact invocation resolves and validates the current
+artifact once, then repopulates the execution-plane cache. Changing
+`CANDLE_ASD_MODULE_DIR` or files under the ASD user store without a refresh
+does not implicitly alter an already-resolved implementation.
+
 The final step consults only `candle-kernels/src/asd_fallback.rs`.
 Historical `ProviderChallenge` state remains descriptive and is never used
 directly by dispatch.
