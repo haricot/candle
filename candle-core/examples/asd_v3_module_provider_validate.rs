@@ -50,6 +50,25 @@ fn main() -> Result<()> {
         candle_core::bail!("missing external CUBIN {}", cubin.display())
     }
 
+    let builtin_only_dir = std::env::temp_dir().join(format!(
+        "candle-asd-builtin-only-{}",
+        std::process::id()
+    ));
+    if builtin_only_dir.exists() {
+        std::fs::remove_dir_all(&builtin_only_dir).map_err(|err| {
+            candle_core::Error::Msg(format!(
+                "failed to clear builtin-only ASD directory {}: {err}",
+                builtin_only_dir.display()
+            ))
+        })?;
+    }
+    std::fs::create_dir_all(&builtin_only_dir).map_err(|err| {
+        candle_core::Error::Msg(format!(
+            "failed to create builtin-only ASD directory {}: {err}",
+            builtin_only_dir.display()
+        ))
+    })?;
+
     std::env::set_var("CANDLE_ASD_EXACT_TRACE", "1");
     std::env::set_var("CANDLE_SM61_EXACT_GROUPED_TRACE", "1");
     std::env::remove_var("CANDLE_SM61_EXACT_GROUPED_DISABLE");
@@ -62,8 +81,11 @@ fn main() -> Result<()> {
     println!("external_cubin={}", cubin.display());
 
     // A: force the embedded PTX provider by hiding the external directory.
-    std::env::remove_var("CANDLE_ASD_MODULE_DIR");
-    println!("PHASE=builtin_a expected_provider=builtin_ptx");
+    std::env::set_var("CANDLE_ASD_MODULE_DIR", &builtin_only_dir);
+    println!(
+        "PHASE=builtin_a expected_provider=builtin_ptx external_override={}",
+        builtin_only_dir.display()
+    );
     let builtin_a = call(&x, &w)?;
     device.synchronize()?;
 
@@ -79,8 +101,11 @@ fn main() -> Result<()> {
     println!("PARITY builtin_vs_external max_abs={ab_abs:.8} max_rel={ab_rel:.8} pass={ab_pass}");
 
     // A2: return to the builtin provider to prove resolution is not sticky.
-    std::env::remove_var("CANDLE_ASD_MODULE_DIR");
-    println!("PHASE=builtin_a2 expected_provider=builtin_ptx");
+    std::env::set_var("CANDLE_ASD_MODULE_DIR", &builtin_only_dir);
+    println!(
+        "PHASE=builtin_a2 expected_provider=builtin_ptx external_override={}",
+        builtin_only_dir.display()
+    );
     let builtin_a2 = call(&x, &w)?;
     device.synchronize()?;
 
@@ -93,6 +118,7 @@ fn main() -> Result<()> {
         if ab_pass && aa_pass { "PASS" } else { "HOLD" }
     );
 
+    let _ = std::fs::remove_dir_all(&builtin_only_dir);
     if !ab_pass || !aa_pass {
         candle_core::bail!("ASD V3 module-provider parity failed")
     }
