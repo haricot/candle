@@ -1016,6 +1016,8 @@ fn telemetry_status(start: &TelemetrySnapshot, end: &TelemetrySnapshot) -> &'sta
 }
 
 fn main() -> Result<()> {
+    let case = parse_case()?;
+    let purpose = parse_purpose()?;
     let warmup_ms = parse_f64("--warmup-ms", DEFAULT_WARMUP_MS);
     let iters = parse_count("--iters", DEFAULT_ITERS);
     let inner = parse_count("--inner", DEFAULT_INNER);
@@ -1029,7 +1031,7 @@ fn main() -> Result<()> {
         std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none();
     let target_gpu_uuid = candle_kernels::asd_exact::TARGET_GPU_UUID.unwrap_or("unavailable");
     let gpu_workload = query_gpu_workload(target_gpu_uuid);
-    let raw = raw_identity()?;
+    let raw = raw_identity(case)?;
     let protocol_defaults = warmup_ms == DEFAULT_WARMUP_MS
         && iters == DEFAULT_ITERS
         && inner == DEFAULT_INNER
@@ -1057,19 +1059,19 @@ fn main() -> Result<()> {
 
     let device = Device::new_cuda(0)?;
     let gpu_uuid = gpu_uuid(&device)?;
-    let profile_match = incumbent_profile_match(&gpu_uuid)?;
+    let profile_match = incumbent_profile_match(&gpu_uuid, case)?;
     let raw_identity = raw.identity.as_str();
     let raw_artifact_sha256 = raw.artifact_sha256.as_str();
     let raw_source = raw.source;
-    let cudnn = cudnn_identity(&device)?;
-    let (input_sha256, weight_sha256) = input_identity();
-    let (x, w) = tensors(&device)?;
+    let cudnn = cudnn_identity(&device, case)?;
+    let (input_sha256, weight_sha256) = input_identity(case);
+    let (x, w) = tensors(&device, case)?;
 
     configure_provider(Provider::IncumbentRaw);
-    let out_a = call(&x, &w)?;
+    let out_a = call(&x, &w, case)?;
     device.synchronize()?;
     configure_provider(Provider::ChallengerCudnn);
-    let out_b = call(&x, &w)?;
+    let out_b = call(&x, &w, case)?;
     device.synchronize()?;
     let (max_abs, max_rel) = max_abs_rel(&out_a, &out_b)?;
     let parity_pass = max_abs <= 1e-5 || max_rel <= 1e-5;
@@ -1083,6 +1085,7 @@ fn main() -> Result<()> {
     println!("=== ASD PROVIDER EVIDENCE V2 ===");
     println!("protocol={PROTOCOL_ID}");
     println!("harness_revision={HARNESS_REVISION}");
+    println!("purpose={}", purpose.as_str());
     println!("measurement_plane=production_path");
     println!("provider_hot_execution_measured=false");
     println!("hot_path_trace_expected=false");
@@ -1110,10 +1113,12 @@ fn main() -> Result<()> {
     println!("weight_sha256={weight_sha256}");
     println!("profile_id={}", profile_match.profile_id);
     println!("decision_id={}", profile_match.decision_id);
+    println!("ct1d_groups={}", case.groups);
+    println!("exact_signature={}", case.exact_signature());
     println!("architecture=sm61");
     println!("gpu_uuid={gpu_uuid}");
     println!("incumbent_execution_provider=raw_cuda");
-    println!("incumbent_implementation_id={INCUMBENT_IMPLEMENTATION_ID}");
+    println!("incumbent_implementation_id={}", case.implementation_id);
     println!("incumbent_identity={raw_identity}");
     println!("incumbent_raw_source={}", raw.source);
     println!("incumbent_raw_proof_status={}", raw.proof_status);
@@ -1174,6 +1179,7 @@ fn main() -> Result<()> {
         &x,
         &w,
         &device,
+        case,
         warmup_ms,
         inner,
     )?;
@@ -1181,21 +1187,21 @@ fn main() -> Result<()> {
     println!("=== AUTHORITATIVE SEQUENCE ===");
     let (a1, b1, a2, b2, a3, b3) = match effective_replication {
         Replication::R1 => {
-            let a1 = measure("a1", Provider::IncumbentRaw, &x, &w, &device, cfg)?;
-            let b1 = measure("b1", Provider::ChallengerCudnn, &x, &w, &device, cfg)?;
-            let b2 = measure("b2", Provider::ChallengerCudnn, &x, &w, &device, cfg)?;
-            let a2 = measure("a2", Provider::IncumbentRaw, &x, &w, &device, cfg)?;
-            let a3 = measure("a3", Provider::IncumbentRaw, &x, &w, &device, cfg)?;
-            let b3 = measure("b3", Provider::ChallengerCudnn, &x, &w, &device, cfg)?;
+            let a1 = measure("a1", Provider::IncumbentRaw, &x, &w, &device, case, cfg)?;
+            let b1 = measure("b1", Provider::ChallengerCudnn, &x, &w, &device, case, cfg)?;
+            let b2 = measure("b2", Provider::ChallengerCudnn, &x, &w, &device, case, cfg)?;
+            let a2 = measure("a2", Provider::IncumbentRaw, &x, &w, &device, case, cfg)?;
+            let a3 = measure("a3", Provider::IncumbentRaw, &x, &w, &device, case, cfg)?;
+            let b3 = measure("b3", Provider::ChallengerCudnn, &x, &w, &device, case, cfg)?;
             (a1, b1, a2, b2, a3, b3)
         }
         Replication::R2 => {
-            let b1 = measure("b1", Provider::ChallengerCudnn, &x, &w, &device, cfg)?;
-            let a1 = measure("a1", Provider::IncumbentRaw, &x, &w, &device, cfg)?;
-            let a2 = measure("a2", Provider::IncumbentRaw, &x, &w, &device, cfg)?;
-            let b2 = measure("b2", Provider::ChallengerCudnn, &x, &w, &device, cfg)?;
-            let b3 = measure("b3", Provider::ChallengerCudnn, &x, &w, &device, cfg)?;
-            let a3 = measure("a3", Provider::IncumbentRaw, &x, &w, &device, cfg)?;
+            let b1 = measure("b1", Provider::ChallengerCudnn, &x, &w, &device, case, cfg)?;
+            let a1 = measure("a1", Provider::IncumbentRaw, &x, &w, &device, case, cfg)?;
+            let a2 = measure("a2", Provider::IncumbentRaw, &x, &w, &device, case, cfg)?;
+            let b2 = measure("b2", Provider::ChallengerCudnn, &x, &w, &device, case, cfg)?;
+            let b3 = measure("b3", Provider::ChallengerCudnn, &x, &w, &device, case, cfg)?;
+            let a3 = measure("a3", Provider::IncumbentRaw, &x, &w, &device, case, cfg)?;
             (a1, b1, a2, b2, a3, b3)
         }
     };
@@ -1203,12 +1209,12 @@ fn main() -> Result<()> {
     let telemetry_end = query_telemetry(&gpu_uuid);
     print_telemetry("end", &telemetry_end);
 
-    print_phase("a1", Provider::IncumbentRaw, &raw_identity, a1);
-    print_phase("b1", Provider::ChallengerCudnn, &cudnn.identity, b1);
-    print_phase("a2", Provider::IncumbentRaw, &raw_identity, a2);
-    print_phase("b2", Provider::ChallengerCudnn, &cudnn.identity, b2);
-    print_phase("a3", Provider::IncumbentRaw, &raw_identity, a3);
-    print_phase("b3", Provider::ChallengerCudnn, &cudnn.identity, b3);
+    print_phase("a1", Provider::IncumbentRaw, case, &raw_identity, a1);
+    print_phase("b1", Provider::ChallengerCudnn, case, &cudnn.identity, b1);
+    print_phase("a2", Provider::IncumbentRaw, case, &raw_identity, a2);
+    print_phase("b2", Provider::ChallengerCudnn, case, &cudnn.identity, b2);
+    print_phase("a3", Provider::IncumbentRaw, case, &raw_identity, a3);
+    print_phase("b3", Provider::ChallengerCudnn, case, &cudnn.identity, b3);
 
     let a_us = median3(a1.median_us, a2.median_us, a3.median_us);
     let b_us = median3(b1.median_us, b2.median_us, b3.median_us);
@@ -1226,7 +1232,7 @@ fn main() -> Result<()> {
     let speedup_pass = speedup_x >= min_speedup_x;
     let harness_pass = parity_pass && drift_pass;
     let candidate_pass = harness_pass && p90_pass && speedup_pass;
-    let decision = if !authoritative_protocol {
+    let promotion_result = if !authoritative_protocol {
         "MEASUREMENT_ONLY"
     } else if candidate_pass {
         "PROMOTE_CHALLENGER_SIGNAL"
@@ -1234,6 +1240,19 @@ fn main() -> Result<()> {
         "REJECT_CHALLENGER"
     } else {
         "HOLD"
+    };
+    let fallback_qualification = if purpose != Purpose::FallbackQualification {
+        "NOT_REQUESTED"
+    } else if !authoritative_protocol {
+        "MEASUREMENT_ONLY"
+    } else if harness_pass {
+        "QUALIFIED_REPLICATION"
+    } else {
+        "NOT_QUALIFIED_REPLICATION"
+    };
+    let decision = match purpose {
+        Purpose::PerformanceChallenge => promotion_result,
+        Purpose::FallbackQualification => fallback_qualification,
     };
     let status = if harness_pass { "PASS" } else { "HOLD" };
 
@@ -1244,6 +1263,8 @@ fn main() -> Result<()> {
         "GATE parity={parity_pass} drift={drift_pass} speedup={speedup_pass} p90_non_regression={p90_pass} required_speedup_x={min_speedup_x:.6}"
     );
     println!("STATUS={status}");
+    println!("PROMOTION_RESULT={promotion_result}");
+    println!("FALLBACK_QUALIFICATION={fallback_qualification}");
     println!("DECISION={decision}");
 
     let telemetry_status = telemetry_status(&telemetry_start, &telemetry_end);
