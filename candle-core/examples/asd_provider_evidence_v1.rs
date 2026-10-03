@@ -13,6 +13,7 @@ const INCUMBENT_CANDIDATE_ID: &str = "ct1d-s32-g2-u1-b256";
 const INCUMBENT_ENTRY: &str = "flow_v0322_ct1d_s32_g2_u1_b256";
 const RAW_MODULE_ABI_VERSION: u32 = 1;
 const CHALLENGER_IMPLEMENTATION_ID: &str = "candle.cudnn.grouped-transpose.v1";
+const HARNESS_REVISION: &str = "provider-evidence-v1-no-hot-trace-r2";
 
 const DEFAULT_WARMUP_MS: f64 = 500.0;
 const DEFAULT_ITERS: usize = 40;
@@ -139,6 +140,11 @@ fn call(x: &Tensor, w: &Tensor) -> Result<Tensor> {
 }
 
 fn configure_provider(provider: Provider) {
+    // Provider measurements must never inherit tracing that writes from the
+    // hot execution path.
+    std::env::remove_var("CANDLE_ASD_EXACT_TRACE");
+    std::env::remove_var("CANDLE_SM61_EXACT_GROUPED_TRACE");
+    std::env::remove_var("CANDLE_GROUPED_TRANSPOSE_TRACE");
     std::env::remove_var("CANDLE_CUDNN_NATIVE_GROUPED_TRANSPOSE_STRICT");
     std::env::remove_var("CANDLE_CUDA_GROUPED_TRANSPOSE_FORCE_KERNEL");
     std::env::remove_var("CANDLE_CUDA_NATIVE_GROUPED_TRANSPOSE_STRICT");
@@ -662,6 +668,8 @@ fn main() -> Result<()> {
     };
 
     println!("=== ASD PROVIDER EVIDENCE V1 ===");
+    println!("harness_revision={HARNESS_REVISION}");
+    println!("hot_path_trace_expected=false");
     println!("profile_id={}", profile_match.profile_id);
     println!("decision_id={}", profile_match.decision_id);
     println!("architecture=sm61");
@@ -765,6 +773,8 @@ fn main() -> Result<()> {
 
     let evidence = format!(
         "ASD-PROVIDER-PERFORMANCE-EVIDENCE-V1\n\
+harness_revision={HARNESS_REVISION}\n\
+hot_path_trace_expected=false\n\
 profile_id={}\n\
 decision_id={}\n\
 architecture=sm61\n\
