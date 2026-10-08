@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "extended-sm61-qualification-proof",
+  "repository": "haricot/candle",
+  "stable_branch": "extended",
+  "orchestrator_branch": "orch/extended-v1",
+  "workflow": "Candle Extended — Legacy CUDA + ASD-Core V3",
+  "run_id": 37778094617,
+  "run_attempt": 1,
+  "gpu_job_id": 113322264073,
+  "campaign": "extended-37778094617-1",
+  "candidate_sha": "892538754597c26e730c45c954821a20572b3f7e",
+  "orchestrator_sha": "77bdbd1a50972de3564bb2a194bfbc00911858d7",
+  "physical_target": {
+    "gpu": "NVIDIA GeForce GTX 1080 with Max-Q Design",
+    "compute_capability": "6.1",
+    "gpu_uuid": "GPU-0259509a-8026-4c2b-477f-0b13c4e2117d"
+  },
+  "hosted_gates": {
+    "prepare": "PASS",
+    "standalone_cpu_bf16": "PASS",
+    "standalone_cpu_fp8": "PASS",
+    "standalone_cpu_fp4": "PASS",
+    "standalone_cpu_cudnn": "PASS",
+    "standalone_cpu_moe": "PASS",
+    "standalone_cpu_asd_core_v3": "PASS",
+    "integrated_cpu": "PASS",
+    "integrated_cuda_compile": "PASS"
+  },
+  "physical_sm61_gates": {
+    "combined_compile": "PASS",
+    "bf16": "PASS",
+    "fp8": "PASS",
+    "fp4_mxfp4": "PASS",
+    "cudnn_fallback": "PASS",
+    "moe_simt_f16": "PASS",
+    "asd_module_provider": "PASS",
+    "asd_runtime_profile_swap": "PASS",
+    "overall": "PASS"
+  },
+  "asd_runtime_evidence": {
+    "provider": "external_cubin",
+    "implementation": "candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256",
+    "artifact_sha256": "c5613e589dffc62e1c5094276eb6fdcf52cd0cc7f60316a4f7c7a1bfe50b3e62",
+    "proof_status": "external_artifact_verified",
+    "runtime_profile_source": "/run/haricot/asd/profiles/current.asd"
+  },
+  "github_artifact": {
+    "artifact_id": 11554560242,
+    "name": "extended-extended-37778094617-1-sm61",
+    "digest": "sha256:5b5d953e4f2afc869bafecce29e1fc50102ba7cc36d141e0d4e748ff34949d67"
+  },
+  "conclusion": "QUALIFIED_ON_PHYSICAL_SM61"
+}
