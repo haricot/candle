@@ -1,4 +1,4 @@
-use cudaforge::{KernelBuilder, Result};
+use cudaforge::{detect_compute_cap, KernelBuilder, Result};
 use std::env;
 use std::path::PathBuf;
 
@@ -11,10 +11,14 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
 
+    let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
+    println!("cargo:rustc-env=CANDLE_CUDA_COMPUTE_CAP={compute_cap}");
+
     // Build for PTX
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ptx_path = out_dir.join("ptx.rs");
     let bindings = KernelBuilder::new()
+        .compute_cap(compute_cap)
         .source_dir("src") // Scan src/ for .cu files
         .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"]) // Exclude statically compiled kernels from ptx build
         .arg("--expt-relaxed-constexpr")
@@ -23,6 +27,10 @@ fn main() -> Result<()> {
         .build_ptx()?;
 
     bindings.write(&ptx_path)?;
+    std::fs::write(
+        out_dir.join("cuda_build_info.rs"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
+    )?;
 
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
