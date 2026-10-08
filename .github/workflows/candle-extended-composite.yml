@@ -1,0 +1,236 @@
+name: Candle Extended — Legacy CUDA + ASD-Core V3
+
+on:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: Immutable Extended campaign name
+        type: string
+        required: true
+      base_sha:
+        description: Optional exact fork main SHA
+        type: string
+        required: false
+      publish:
+        description: Publish immutable temporary refs for validation
+        type: boolean
+        required: true
+        default: true
+permissions:
+  contents: read
+
+concurrency:
+  group: candle-extended-${{ inputs.campaign }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    outputs:
+      candidate_sha: ${{ steps.assemble.outputs.candidate_sha }}
+      candidate_ref: ${{ steps.assemble.outputs.candidate_ref }}
+      campaign: ${{ steps.assemble.outputs.campaign }}
+      base_sha: ${{ steps.assemble.outputs.base_sha }}
+      manifest_sha256: ${{ steps.assemble.outputs.manifest_sha256 }}
+      matrix: ${{ steps.assemble.outputs.matrix }}
+      published: ${{ steps.assemble.outputs.published }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: orch/extended-v1
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare exact six-source Extended candidate
+        id: assemble
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAMPAIGN: ${{ inputs.campaign }}
+          STRATEGY: exact-delta
+          BASE_SHA_INPUT: ${{ inputs.base_sha }}
+          PUBLISH: ${{ inputs.publish }}
+        run: bash .github/scripts/candle-extended-assemble.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-preparation-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-extended/
+          if-no-files-found: warn
+          retention-days: 30
+
+  standalone_cpu:
+    needs: prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    env:
+      MODE: standalone
+      FEATURE: ${{ matrix.feature }}
+      SOURCE: ${{ matrix.source_sha }}
+      SHA: ${{ matrix.prepared_sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ matrix.prepared_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: orch/extended-v1
+          path: .ci-tools
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Independent source CPU gate
+        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-${{ matrix.feature }}-cpu
+          path: ${{ runner.temp }}/extended-standalone-cpu/
+          if-no-files-found: warn
+          retention-days: 30
+
+  integrated_cpu:
+    needs: [prepare, standalone_cpu]
+    if: needs.standalone_cpu.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    outputs:
+      lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
+    env:
+      MODE: integrated
+      SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      MANIFEST_SHA: ${{ needs.prepare.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: orch/extended-v1
+          path: .ci-tools
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+      - id: check
+        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-integrated-cpu
+          path: ${{ runner.temp }}/extended-integrated-cpu/
+          if-no-files-found: warn
+          retention-days: 30
+
+  integrated_cuda_compile:
+    needs: [prepare, integrated_cpu]
+    if: needs.integrated_cpu.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 150
+    env:
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
+      CHECK_BRANCH: extended_integration
+      CHECK_CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      LOCK_SHA256: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
+      CUDA_COMPUTE_CAP: '61'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: orch/extended-v1
+          path: .ci-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-integrated-cpu
+          path: ${{ runner.temp }}/candidate-cpu-proof
+      - run: |
+          docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
+            --tag candle-cuda1292-u2604:extended .ci-tools/.github/container
+          docker image inspect candle-cuda1292-u2604:extended --format '{{.Id}}'
+      - shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/cuda-cargo"
+          docker run --rm --user "$(id -u):$(id -g)" --security-opt=no-new-privileges \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:rw" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP:rw" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env "HOME=$RUNNER_TEMP/cuda-home" \
+            --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
+            --env RUSTUP_HOME=/opt/rustup \
+            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
+            --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
+            --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
+            --env CHECK_CAMPAIGN --env LOCK_SHA256 \
+            candle-cuda1292-u2604:extended \
+            bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-cuda-compile
+          path: ${{ runner.temp }}/candle-candidate-cuda/
+          if-no-files-found: warn
+          retention-days: 30
+
+  physical_sm61:
+    name: SM61 Extended runtime
+    needs: [prepare, integrated_cuda_compile]
+    if: needs.integrated_cuda_compile.result == 'success'
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - cuda
+      - sm61
+      - candle-extended
+      - extended-${{ github.run_id }}
+    timeout-minutes: 240
+    env:
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CUDA_COMPUTE_CAP: '61'
+      NVCC: /opt/cuda/bin/nvcc
+      NVCC_CCBIN: gcc-14
+      CARGO_INCREMENTAL: '0'
+      CANDLE_ASD_HOME: /run/haricot/asd
+      CANDLE_ASD_MODULE_DIR: /run/haricot/asd/artifacts/sm61
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: orch/extended-v1
+          path: .ci-tools
+          persist-credentials: false
+      - name: Validate Extended composition on physical SM61
+        shell: bash
+        run: bash .ci-tools/.github/scripts/candle-extended-sm61.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-sm61
+          path: ${{ runner.temp }}/extended-sm61-proof/
+          if-no-files-found: warn
+          retention-days: 30
