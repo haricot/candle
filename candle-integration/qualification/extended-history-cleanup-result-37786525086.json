@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "kind": "extended-history-cleanup-result",
+  "qualification_run_id": 37778094617,
+  "cleanup_run_id": 37786525086,
+  "cleanup_workflow": "One-shot Extended history cleanup",
+  "validated_candidate_sha": "892538754597c26e730c45c954821a20572b3f7e",
+  "result": "PASS",
+  "deleted_ref_count": 28,
+  "preserved_anchors": {
+    "extended": "892538754597c26e730c45c954821a20572b3f7e",
+    "archive/extended/sm61-validated-37778094617": "892538754597c26e730c45c954821a20572b3f7e",
+    "orch/extended-v1": "77bdbd1a50972de3564bb2a194bfbc00911858d7",
+    "asd_core_v3_standalone": "aef4738f8ef513ef425dbaa345358cdd3ae8cbb7",
+    "integration/extended/candidate/extended-37778094617-1": "892538754597c26e730c45c954821a20572b3f7e"
+  }
+}
