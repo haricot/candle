@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "kind": "extended-main-exact-delta",
+  "integration_target": "extended",
+  "source_main_ref": "main",
+  "strategy_default": "exact-delta",
+  "features": [
+    {
+      "feature": "bf16_candle",
+      "source_ref": "bf16_candle",
+      "target_ref": "bf16_candle",
+      "review_source_sha": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+      "cpu_tests": "default",
+      "cuda_features": ["cuda-legacy-bf16"]
+    },
+    {
+      "feature": "fp8_candle",
+      "source_ref": "fp8_candle",
+      "target_ref": "fp8_candle",
+      "review_source_sha": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+      "cpu_tests": "default",
+      "cuda_features": ["cuda-legacy-fp8"]
+    },
+    {
+      "feature": "fp4_candle",
+      "source_ref": "fp4_candle",
+      "target_ref": "fp4_candle",
+      "review_source_sha": "2976961e97f0aff7a353e45b209653c392f2c657",
+      "cpu_tests": "fp4-reference",
+      "cuda_features": ["cuda-legacy-fp4"]
+    },
+    {
+      "feature": "cudnn_fallback_candle",
+      "source_ref": "cudnn_fallback_candle",
+      "target_ref": "cudnn_fallback_candle",
+      "review_source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+      "cpu_tests": "default",
+      "cuda_features": ["cudnn"]
+    },
+    {
+      "feature": "moe_simt_f16_candle",
+      "source_ref": "moe_simt_f16_candle",
+      "target_ref": "moe_simt_f16_candle",
+      "review_source_sha": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+      "cpu_tests": "moe-selection",
+      "cuda_features": ["cuda"]
+    },
+    {
+      "feature": "asd_core_v3_standalone",
+      "source_ref": "asd_core_v3_standalone",
+      "target_ref": "asd_core_v3_standalone",
+      "review_source_sha": "c56d67eb0504d8ec3035609d751584f02a1d5018",
+      "cpu_tests": "grouped-core",
+      "cuda_features": ["cuda", "cudnn"]
+    }
+  ],
+  "publication": {
+    "type": "atomic",
+    "publish_only_after": [
+      "six_independent_cpu_pass",
+      "combined_hosted_cpu_pass",
+      "combined_hosted_cuda_sm61_compiles",
+      "physical_sm61_extended_pass"
+    ],
+    "hosted_validation_state": "HOSTED_CI_PASSED_GPU_PENDING",
+    "physical_sm61_required_for_final_qualification": true,
+    "update_integration_target": true,
+    "never_push_to_main": true
+  },
+  "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed",
+  "asd_invariant": "ASD-Core V3 remains runtime-data driven; legacy CUDA features must not reintroduce compiled ASD profile or architecture-specific ASD source ownership"
+}
