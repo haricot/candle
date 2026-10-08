@@ -46,6 +46,9 @@ cargo check -p candle-core -p candle-nn --no-default-features --locked   > "$rep
   }
 
 if [[ "$MODE" == integrated ]]; then
+  cargo check -p candle-transformers --lib --locked > "$report/transformers-check.log" 2>&1 || {
+      tail -n 120 "$report/transformers-check.log"; exit 1;
+    }
   cargo test -p candle-core --no-default-features --locked --lib     > "$report/core-lib-tests.log" 2>&1 || {
       tail -n 120 "$report/core-lib-tests.log"; exit 1;
     }

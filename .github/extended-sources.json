@@ -59,7 +59,7 @@
       "feature": "asd_core_v3_standalone",
       "source_ref": "asd_core_v3_standalone",
       "target_ref": "asd_core_v3_standalone",
-      "review_source_sha": "aef4738f8ef513ef425dbaa345358cdd3ae8cbb7",
+      "review_source_sha": "4583ded4513f92f72aae658d2cf3db0db1542b5e",
       "cpu_tests": "grouped-core",
       "cuda_features": [
         "cuda",

@@ -66,6 +66,13 @@ run_gate() {
 # Composition gate: Legacy CUDA and ASD-Core V3 must coexist in one build.
 run_gate combined_compile   cargo check -p candle-core -p candle-nn --release --features "$CORE_FEATURES"
 
+# Downstream closure: the qualified composition must compile the transformer stack
+# and the concrete quantized Qwen3 CUDA consumer that exposed the previous gap.
+run_gate downstream_transformers_compile \
+  cargo check -p candle-transformers --lib --release --locked
+run_gate downstream_qwen3_cuda_compile \
+  cargo check -p candle-examples --example quantized-qwen3 --features cuda --release --locked
+
 # Preserve the already-qualified Legacy runtime behavior.
 run_gate bf16   cargo test -p candle-core --release --features "$CORE_FEATURES"     --test cuda_legacy_bf16_tests -- --nocapture
 
