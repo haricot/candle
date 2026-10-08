@@ -15,6 +15,7 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
     println!("cargo::rerun-if-env-changed={LEGACY_BF16_FEATURE}");
     println!("cargo::rerun-if-env-changed={LEGACY_FP8_FEATURE}");
+    println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP4");
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
     let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
@@ -35,6 +36,10 @@ fn main() -> Result<()> {
     }
     if legacy_fp8 {
         ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
+    }
+    // Software NVFP4 is opt-in. MXFP4 remains on the standard GGUF path.
+    if env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP4").is_some() {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP4=1");
     }
 
     let bindings = ptx_builder.build_ptx()?;
