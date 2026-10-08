@@ -8,6 +8,7 @@ on:
       - .github/legacy-cuda-sources.json
       - .github/scripts/candle-legacy-assemble.sh
       - .github/scripts/candle-legacy-cpu.sh
+      - .github/scripts/candle-legacy-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
@@ -202,5 +203,46 @@ jobs:
         with:
           name: legacy-${{ needs.prepare.outputs.campaign }}-cuda-compile
           path: ${{ runner.temp }}/candle-candidate-cuda/
+          if-no-files-found: warn
+          retention-days: 30
+
+  physical_sm61:
+    name: SM61 legacy runtime
+    needs: [prepare, integrated_cuda_compile]
+    if: needs.integrated_cuda_compile.result == 'success'
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - cuda
+      - sm61
+      - candle-legacy
+      - legacy-${{ github.run_id }}
+    timeout-minutes: 180
+    env:
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CUDA_COMPUTE_CAP: '61'
+      NVCC: /opt/cuda/bin/nvcc
+      NVCC_CCBIN: gcc-14
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - name: Validate integrated legacy CUDA on physical SM61
+        shell: bash
+        run: bash .ci-tools/.github/scripts/candle-legacy-sm61.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: legacy-${{ needs.prepare.outputs.campaign }}-sm61
+          path: ${{ runner.temp }}/legacy-sm61-proof/
           if-no-files-found: warn
           retention-days: 30
