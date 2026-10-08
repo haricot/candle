@@ -23,7 +23,7 @@ case "$CHECK_BRANCH" in
   fp4_candle|moe_simt_f16_candle) features="candle-core/cuda,candle-nn/cuda" ;;
   standalone_fp48_integration)
     features="candle-core/cuda-legacy-fp8,candle-core/cuda-legacy-fp4,candle-nn/cuda" ;;
-  standalone_six_integration|legacy_cuda_integration)
+  standalone_six_integration|legacy_cuda_integration|extended_integration)
     features="candle-core/cuda-legacy-bf16,candle-core/cuda-legacy-fp8,candle-core/cuda-legacy-fp4,candle-nn/cudnn" ;;
   cudnn_fallback_candle|asd_core)
     features="candle-core/cudnn,candle-nn/cudnn" ;;
@@ -42,7 +42,7 @@ cargo check -p candle-core -p candle-nn --lib --tests \
   --no-default-features --features "$features" --locked \
   > "$report/cuda-check.log" 2>&1 || build_rc=$?
 
-if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) && "$build_rc" -eq 0 ]]; then
   cuda_tests_rc=0
   cargo check -p candle-core --features cuda --tests --locked \
     > "$report/cuda-tests-default.log" 2>&1 || cuda_tests_rc=$?
@@ -52,7 +52,7 @@ if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == lega
     build_rc=$cuda_tests_rc
   fi
 fi
-if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) && "$build_rc" -eq 0 ]]; then
   fp4_tests_rc=0
   cargo check -p candle-core --features "cuda cuda-legacy-fp4" --tests --locked \
     > "$report/cuda-tests-legacy-fp4.log" 2>&1 || fp4_tests_rc=$?
@@ -86,7 +86,7 @@ fi
 # It may compile candle-nn without its own cuda feature, which excludes
 # moe_simt_sm61.rs via #![cfg(feature = "cuda")]. Explicitly compile this
 # test with BOTH candle-nn features before assigning a physical GPU job.
-if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration ) ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$build_rc" -eq 0 ]]; then
   moe_test_rc=0
   cargo check -p candle-nn --locked --no-default-features \
     --features "cuda cudnn" --test moe_simt_sm61 \
@@ -100,7 +100,7 @@ if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_ru
   fi
 fi
 
-if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration ) ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$build_rc" -eq 0 ]]; then
   # cargo check cannot prove static-library linkability. For Pascal,
   # the SIMT translation unit must define both the real SIMT entry
   # and the WMMA compatibility ABI stub omitted with WMMA objects.
