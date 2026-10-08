@@ -14,6 +14,7 @@ on:
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4-cudnn.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4-moe.sh
+      - .github/scripts/candle-resolve-extended-asd-v3.sh
       - .github/resolutions/**
   workflow_dispatch:
     inputs:

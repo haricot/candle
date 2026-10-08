@@ -124,6 +124,9 @@ for feature in "${features[@]}"; do
     elif [[ "$feature" == moe_simt_f16_candle ]] &&
       bash .github/scripts/candle-resolve-bf16-fp8-fp4-moe.sh "$aggregate"         "${review[bf16_candle]}" "${review[fp8_candle]}"         "${review[fp4_candle]}" "${review[cudnn_fallback_candle]}"         "${review[moe_simt_f16_candle]}" "$report"; then
       resolved=true
+    elif [[ "$feature" == asd_core_v3_standalone ]] &&
+      bash .github/scripts/candle-resolve-extended-asd-v3.sh "$aggregate"         "${review[bf16_candle]}" "${review[fp8_candle]}"         "${review[fp4_candle]}" "${review[cudnn_fallback_candle]}"         "${review[moe_simt_f16_candle]}" "${review[asd_core_v3_standalone]}" "$report"; then
+      resolved=true
     fi
 
     if [[ "$resolved" == true ]]; then

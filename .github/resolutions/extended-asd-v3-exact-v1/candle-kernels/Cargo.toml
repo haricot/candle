@@ -1,0 +1,22 @@
+[package]
+name = "candle-kernels"
+version = "0.11.0"
+edition = "2021"
+
+description = "CUDA kernels for Candle"
+repository = "https://github.com/huggingface/candle"
+keywords = ["blas", "tensor", "machine-learning"]
+categories = ["science"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[features]
+cutile = []
+cuda-legacy-bf16 = []
+cuda-legacy-fp8 = []
+cuda-legacy-fp4 = []
+
+[build-dependencies]
+cudaforge = "0.1.6"
+sha2 = "0.10"

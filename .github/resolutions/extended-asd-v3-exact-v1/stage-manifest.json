@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "scope": "exact-extended-asd-v3-final-merge",
+  "validated_legacy_run": 37763913481,
+  "validated_legacy_candidate": "0ed8cbe7622218ae1ce71d212fb5607186a1a0d0",
+  "source_bf16": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+  "source_fp8": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+  "source_fp4": "2976961e97f0aff7a353e45b209653c392f2c657",
+  "source_cudnn": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+  "source_moe": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+  "source_asd_v3": "1f516801191e27cb5301c020c80590c75c6996fb",
+  "files": {
+    "candle-core/Cargo.toml": {
+      "base": "b04c0b4e4dc158bccc6b72ab9d70e3f17914c673",
+      "ours": "9eb51c6e1ac2a71791ccddfb6f1b8ffdf261da83",
+      "theirs": "9becf0a7a54d6c3025560d595d0b655af13eac3e"
+    },
+    "candle-core/src/cuda_backend/mod.rs": {
+      "base": "93f315c49c72aaaaa7e74d12e84e800534eeaab0",
+      "ours": "ddb51220e3604f79aacc099e044b2d1109eb50b0",
+      "theirs": "39e16337c10111e55f8ca2ca2f8a5ef41a4eeb99"
+    },
+    "candle-kernels/Cargo.toml": {
+      "base": "d59f9ee086139937cae9783bd08ff0642489c761",
+      "ours": "b554c414e15a7ada3e9cf19942bf98e13c7a6248",
+      "theirs": "688a72492d6e5d654e56ac4cc591eab593698d0a"
+    },
+    "candle-kernels/build.rs": {
+      "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
+      "ours": "1cc6811f41e1c0587c845098646e81399c2e7756",
+      "theirs": "dbf05da92efba8c284132a85a3234b791f89af11"
+    }
+  }
+}
