@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     bindings.write(&ptx_path)?;
     std::fs::write(
         out_dir.join("cuda_build_info.rs"),
-        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\\n"),
+        format!("pub const CUDA_BUILD_COMPUTE_CAP: u32 = {compute_cap};\n"),
     )?;
 
     let mut moe_sources = vec![
