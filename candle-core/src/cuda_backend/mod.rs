@@ -20,6 +20,7 @@ pub mod cutile;
 mod device;
 mod error;
 mod utils;
+pub(crate) use device::AsdCudaImplementation;
 pub use device::{CudaDevice, DeviceId};
 pub use error::{CudaError, WrapErr};
 pub use utils::{Map1, Map1Any, Map2, Map2Any, Map2InPlace, Map3, S};
@@ -2065,11 +2066,28 @@ impl BackendStorage for CudaStorage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConv1D,
     ) -> Result<Self> {
+        // Explicit Direct is an ASD validation reference and must never
+        // silently degrade to the generic CUDA fallback.
+        let strict_direct = params.cudnn_fwd_algo == Some(crate::conv::CudnnFwdAlgo::Direct);
+        if strict_direct && !kernel_l.is_contiguous() {
+            crate::bail!("ASD cuDNN Direct Conv1D requires a contiguous kernel")
+        }
+        if strict_direct
+            && std::env::var("CANDLE_ASD_TEST_CUDNN_UNAVAILABLE")
+                .ok()
+                .as_deref()
+                == Some("1")
+        {
+            crate::bail!("ASD validation: cuDNN Direct deliberately unavailable")
+        }
         if !kernel_l.is_contiguous() {
             return self.conv1d_cuda(inp_l, kernel, kernel_l, params);
         }
         let device = self.device().clone();
         if crate::cudnn::convolution_is_disabled(device.id()) {
+            if strict_direct {
+                crate::bail!("ASD cuDNN Direct unavailable after cuDNN quarantine")
+            }
             return self.conv1d_cuda(inp_l, kernel, kernel_l, params);
         }
         let l_out = params.l_out();
@@ -2144,17 +2162,22 @@ impl BackendStorage for CudaStorage {
             Ok(slice)
         })() {
             Ok(slice) => slice,
-            Err(err) => match cudnn_conv_fallback(&err) {
-                Some(fallback) => {
-                    if fallback == CudnnConvFallback::ExecutionFailed
-                        && !crate::cudnn::disable_convolution_after_execution_failure(&device)
-                    {
-                        return Err(err);
-                    }
-                    self.conv1d_cuda(inp_l, kernel, kernel_l, params)?.slice
+            Err(err) => {
+                if strict_direct {
+                    return Err(err);
                 }
-                None => return Err(err),
-            },
+                match cudnn_conv_fallback(&err) {
+                    Some(fallback) => {
+                        if fallback == CudnnConvFallback::ExecutionFailed
+                            && !crate::cudnn::disable_convolution_after_execution_failure(&device)
+                        {
+                            return Err(err);
+                        }
+                        self.conv1d_cuda(inp_l, kernel, kernel_l, params)?.slice
+                    }
+                    None => return Err(err),
+                }
+            }
         };
         Ok(Self { slice, device })
     }
