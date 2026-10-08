@@ -15,6 +15,7 @@ license = "MIT OR Apache-2.0"
 cutile = []
 cuda-legacy-bf16 = []
 cuda-legacy-fp8 = []
+cuda-legacy-fp4 = []
 
 [build-dependencies]
 cudaforge = "0.1.6"
