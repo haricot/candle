@@ -140,6 +140,11 @@ for feature in "${features[@]}"; do
         done
       done < <(git -C "$aggregate" diff --name-only --diff-filter=U -z)
       if [[ "$feature" == asd_core_v3_standalone ]]; then
+        echo "ASD_V3_CONFLICT_PATHS_BEGIN"
+        cat "$report/conflicts/integrate-$feature-files.txt" || true
+        echo "ASD_V3_CONFLICT_STAGES_BEGIN"
+        cat "$report/conflicts/integrate-$feature-index.txt" || true
+        echo "ASD_V3_CONFLICT_STAGES_END"
         echo "::error::New ASD-Core V3/Legacy integration conflict requires one reviewed exact-stage resolver; old ASD V1/V2 resolver is intentionally not reused."
       else
         echo "::error::Novel Extended integration conflict at $feature"
