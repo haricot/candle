@@ -8,7 +8,7 @@ manifest="$root/stage-manifest.json"
    "$source_fp4" == 2976961e97f0aff7a353e45b209653c392f2c657 &&
    "$source_cudnn" == 84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f &&
    "$source_moe" == 1c62e23cf6c986826ef12c9d544ee9356972d59b &&
-   "$source_asd" == 1f516801191e27cb5301c020c80590c75c6996fb ]] || exit 3
+   "$source_asd" == aef4738f8ef513ef425dbaa345358cdd3ae8cbb7 ]] || exit 3
 jq -e --arg b "$source_bf16" --arg f "$source_fp8" --arg p "$source_fp4" --arg c "$source_cudnn" --arg m "$source_moe" --arg a "$source_asd" '
   .schema_version==1 and .scope=="exact-extended-asd-v3-final-merge" and
   .source_bf16==$b and .source_fp8==$f and .source_fp4==$p and
