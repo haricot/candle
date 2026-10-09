@@ -78,7 +78,11 @@
     "hosted_validation_state": "HOSTED_CI_PASSED_GPU_PENDING",
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
-    "never_push_to_main": true
+    "never_push_to_main": true,
+    "update_canonical_feature_refs": true,
+    "archive_before_promote": true,
+    "force_with_lease": true,
+    "promotion_after_physical_sm61": true
   },
   "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed",
   "asd_invariant": "ASD-Core V3 remains runtime-data driven; legacy CUDA features must not reintroduce compiled ASD profile or architecture-specific ASD source ownership"
