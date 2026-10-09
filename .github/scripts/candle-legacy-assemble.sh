@@ -52,7 +52,7 @@ for feature in "${features[@]}"; do
   git merge-base "$base" "${pinned[$feature]}" >/dev/null || exit 3
 done
 
-oldintegration="$(git ls-remote --heads origin refs/heads/legacy-cuda | cut -f1 || true)"
+oldintegration="$(git ls-remote --heads origin refs/heads/cuda_legacy | cut -f1 || true)"
 : > "$report/sources.ndjson"
 
 for feature in "${features[@]}"; do
