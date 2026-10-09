@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "kind": "legacy-cuda-main-exact-delta",
-  "integration_target": "legacy-cuda",
+  "integration_target": "cuda_legacy",
   "source_main_ref": "main",
   "strategy_default": "exact-delta",
   "features": [
@@ -11,7 +11,9 @@
       "target_ref": "bf16_candle",
       "review_source_sha": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
       "cpu_tests": "default",
-      "cuda_features": ["cuda-legacy-bf16"]
+      "cuda_features": [
+        "cuda-legacy-bf16"
+      ]
     },
     {
       "feature": "fp8_candle",
@@ -19,7 +21,9 @@
       "target_ref": "fp8_candle",
       "review_source_sha": "121f14beb269754ff9edcb3a33e77c38844d5c26",
       "cpu_tests": "default",
-      "cuda_features": ["cuda-legacy-fp8"]
+      "cuda_features": [
+        "cuda-legacy-fp8"
+      ]
     },
     {
       "feature": "fp4_candle",
@@ -27,7 +31,9 @@
       "target_ref": "fp4_candle",
       "review_source_sha": "2976961e97f0aff7a353e45b209653c392f2c657",
       "cpu_tests": "fp4-reference",
-      "cuda_features": ["cuda-legacy-fp4"]
+      "cuda_features": [
+        "cuda-legacy-fp4"
+      ]
     },
     {
       "feature": "cudnn_fallback_candle",
@@ -35,7 +41,9 @@
       "target_ref": "cudnn_fallback_candle",
       "review_source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
       "cpu_tests": "default",
-      "cuda_features": ["cudnn"]
+      "cuda_features": [
+        "cudnn"
+      ]
     },
     {
       "feature": "moe_simt_f16_candle",
@@ -43,7 +51,9 @@
       "target_ref": "moe_simt_f16_candle",
       "review_source_sha": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
       "cpu_tests": "moe-selection",
-      "cuda_features": ["cuda"]
+      "cuda_features": [
+        "cuda"
+      ]
     }
   ],
   "publication": {
@@ -51,13 +61,17 @@
     "publish_only_after": [
       "five_independent_cpu_pass",
       "combined_hosted_cpu_pass",
-      "combined_hosted_cuda_sm61_compiles"
+      "combined_hosted_cuda_sm61_compiles",
+      "physical_sm61_legacy_pass"
     ],
     "hosted_validation_state": "HOSTED_CI_PASSED_GPU_PENDING",
     "physical_sm61_required_for_final_qualification": true,
     "update_canonical_feature_refs": true,
     "update_integration_target": true,
-    "never_push_to_main": true
+    "never_push_to_main": true,
+    "archive_before_promote": true,
+    "force_with_lease": true,
+    "promotion_after_physical_sm61": true
   },
   "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed"
 }
