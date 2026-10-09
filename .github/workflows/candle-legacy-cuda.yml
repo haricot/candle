@@ -1,5 +1,5 @@
 name: Candle Legacy CUDA — Hosted CI
-# base-sync-main: c68b24997319b8d76e5a4e775dab197c7f26322a
+# base-sync-main: c68b24997319b8d76e5a4e775dab197c7f26322a fp4=be550c3d02d169a79120d53e008c19e5a7c5ec1f
 
 on:
   push:
@@ -36,7 +36,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: candle-legacy-cuda-${{ github.event_name == 'push' && 'migration' || inputs.campaign }}
+  group: candle-legacy-cuda-${{ github.event_name == 'push' && github.sha || inputs.campaign }}
   cancel-in-progress: false
 
 jobs:
