@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "kind": "legacy-cuda-five",
+  "main_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+  "campaign": "legacy-37901714592-1",
+  "strategy": "exact-delta",
+  "integration_target": "legacy-cuda",
+  "old_integration_sha": null,
+  "source_config_sha256": "951135060a903bc0cfaf47c46cd6c7800c89da3c57a6595aa3d463ec6bf0695d",
+  "validation_state": "UNVALIDATED_CANDIDATE",
+  "features": [
+    {
+      "feature": "bf16_candle",
+      "source_ref": "bf16_candle",
+      "target_ref": "bf16_candle",
+      "source_sha": "418f0bbfa30a08db9fbf742e2e50cf63eaa7f114",
+      "review_source_sha": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
+      "old_target_sha": "418f0bbfa30a08db9fbf742e2e50cf63eaa7f114",
+      "prepared_sha": "f83cb4741edcfc1e3353bbb694cb72b085f88d74",
+      "preparation_ref": "prepare/legacy/legacy-37901714592-1/bf16_candle",
+      "common_base_sha": "5ba5d5b468b5b1df40e82dd3d556987bedeea041",
+      "source_patch_sha256": "090ea3a9f78aca18395f1bd25a646c404a499797e71e142a696b2b08f011248e",
+      "prepared_patch_sha256": "090ea3a9f78aca18395f1bd25a646c404a499797e71e142a696b2b08f011248e"
+    },
+    {
+      "feature": "fp8_candle",
+      "source_ref": "fp8_candle",
+      "target_ref": "fp8_candle",
+      "source_sha": "b5bfedb20e992d30d5bb0762240da1d4da42d650",
+      "review_source_sha": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+      "old_target_sha": "b5bfedb20e992d30d5bb0762240da1d4da42d650",
+      "prepared_sha": "f01b226d4baddb779a71ffdbc178b2988d3b3722",
+      "preparation_ref": "prepare/legacy/legacy-37901714592-1/fp8_candle",
+      "common_base_sha": "5ba5d5b468b5b1df40e82dd3d556987bedeea041",
+      "source_patch_sha256": "64dfd1ce2ef928d2a2177689814ff17a9e32e41d93bcc7b1c60dd15d4fbe2011",
+      "prepared_patch_sha256": "64dfd1ce2ef928d2a2177689814ff17a9e32e41d93bcc7b1c60dd15d4fbe2011"
+    },
+    {
+      "feature": "fp4_candle",
+      "source_ref": "fp4_candle",
+      "target_ref": "fp4_candle",
+      "source_sha": "be550c3d02d169a79120d53e008c19e5a7c5ec1f",
+      "review_source_sha": "2976961e97f0aff7a353e45b209653c392f2c657",
+      "old_target_sha": "be550c3d02d169a79120d53e008c19e5a7c5ec1f",
+      "prepared_sha": "3ed43213edcb99c1c7501c44823d8adcb3b30927",
+      "preparation_ref": "prepare/legacy/legacy-37901714592-1/fp4_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "719f553a18674064813952de0cc10ce1d11f16e1ce59086ebd393c47e68c709a",
+      "prepared_patch_sha256": "719f553a18674064813952de0cc10ce1d11f16e1ce59086ebd393c47e68c709a"
+    },
+    {
+      "feature": "cudnn_fallback_candle",
+      "source_ref": "cudnn_fallback_candle",
+      "target_ref": "cudnn_fallback_candle",
+      "source_sha": "9281f29397cd8dc1c88d7ec2fa8100aed63414cc",
+      "review_source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+      "old_target_sha": "9281f29397cd8dc1c88d7ec2fa8100aed63414cc",
+      "prepared_sha": "110afac98d34a688a091c57cb1abbaf4cdacc43a",
+      "preparation_ref": "prepare/legacy/legacy-37901714592-1/cudnn_fallback_candle",
+      "common_base_sha": "5ba5d5b468b5b1df40e82dd3d556987bedeea041",
+      "source_patch_sha256": "daf15e8a8e0e536cba8e4c3f797a32bc74308e22b6cbc2fc0ff1a3d294ca2667",
+      "prepared_patch_sha256": "daf15e8a8e0e536cba8e4c3f797a32bc74308e22b6cbc2fc0ff1a3d294ca2667"
+    },
+    {
+      "feature": "moe_simt_f16_candle",
+      "source_ref": "moe_simt_f16_candle",
+      "target_ref": "moe_simt_f16_candle",
+      "source_sha": "387f0c424f922e9918acaf6e7d1b70bae4305f83",
+      "review_source_sha": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+      "old_target_sha": "387f0c424f922e9918acaf6e7d1b70bae4305f83",
+      "prepared_sha": "6d2410850809d32f3b8e25a59f10ba7e228642f4",
+      "preparation_ref": "prepare/legacy/legacy-37901714592-1/moe_simt_f16_candle",
+      "common_base_sha": "5ba5d5b468b5b1df40e82dd3d556987bedeea041",
+      "source_patch_sha256": "7ba44a1f863d5130b7f34483e5e1c5cd9e73cab2d49f4f7a34abc57bf9b33b9a",
+      "prepared_patch_sha256": "7ba44a1f863d5130b7f34483e5e1c5cd9e73cab2d49f4f7a34abc57bf9b33b9a"
+    }
+  ]
+}
