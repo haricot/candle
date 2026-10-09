@@ -1,4 +1,5 @@
 name: Candle Legacy CUDA — Hosted CI
+# base-sync-main: c68b24997319b8d76e5a4e775dab197c7f26322a
 
 on:
   push:
