@@ -11,6 +11,7 @@ on:
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh
+      - .github/scripts/candle-promote-validated.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4-cudnn.sh
@@ -37,7 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: candle-extended-${{ github.event_name == 'push' && 'migration' || inputs.campaign }}
+  group: candle-extended-${{ github.event_name == 'push' && github.sha || inputs.campaign }}
   cancel-in-progress: false
 
 jobs:
@@ -250,3 +251,41 @@ jobs:
           path: ${{ runner.temp }}/extended-sm61-proof/
           if-no-files-found: warn
           retention-days: 30
+
+  promote_validated:
+    name: Promote validated Extended refs
+    needs: [prepare, physical_sm61]
+    if: needs.physical_sm61.result == 'success' && needs.prepare.outputs.published == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
+      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+      BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
+      TARGET_BRANCH: extended
+      MANIFEST_PATH: candle-integration/extended.json
+      PROMOTION_KIND: extended
+      RUN_ID: ${{ github.run_id }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Archive and atomically promote validated refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/candle-promote-validated.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-promotion
+          path: ${{ runner.temp }}/candle-promotion/
+          if-no-files-found: warn
+          retention-days: 30
+
