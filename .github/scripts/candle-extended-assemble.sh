@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build the six-source Extended candidate from exact standalone deltas.
-# The first five inputs are the validated Legacy CUDA sources; the sixth is
-# ASD-Core V3 standalone. Only immutable temporary refs are published here.
+# Build the seven-source Extended candidate from exact standalone deltas.
+# The first five inputs are validated Legacy CUDA sources; sixth ASD-Core V3;
+# seventh EmbeddingGemma 2 (text-only Candle). Publish immutable refs only.
 set -euo pipefail
 umask 077
 : "${CAMPAIGN:?}" "${STRATEGY:?}" "${PUBLISH:?}" "${GITHUB_REPOSITORY:?}"
@@ -14,7 +14,8 @@ jq -e '
   .schema_version==1 and .kind=="extended-main-exact-delta" and
   .integration_target=="extended" and
   [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
-    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone"] and
+    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone",
+    "embeddinggemma2"] and
   all(.features[];
     (.source_ref|type)=="string" and
     (.target_ref|type)=="string" and
@@ -51,6 +52,10 @@ for feature in "${features[@]}"; do
   git fetch --no-tags origin "+refs/heads/${source_ref[$feature]}:refs/remotes/origin/extended-$feature"
   pinned[$feature]="$(git rev-parse "refs/remotes/origin/extended-$feature")"
   git merge-base "$base" "${pinned[$feature]}" >/dev/null || exit 3
+  # Pin the new feature to the reviewed commit; reject silent branch movement.
+  if [[ "$feature" == embeddinggemma2 && "${pinned[$feature]}" != "${review[$feature]}" ]]; then
+    echo "::error::EmbeddingGemma 2 ref moved since review SHA ${review[$feature]}"; exit 3
+  fi
 done
 
 oldintegration="$(git ls-remote --heads origin refs/heads/extended | cut -f1 || true)"
@@ -162,7 +167,7 @@ for feature in "${features[@]}"; do
 done
 
 mkdir -p "$aggregate/candle-integration"
-jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-six",main_sha:$main_sha,
+jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-seven",main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
@@ -170,7 +175,7 @@ jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRAT
 cp "$aggregate/candle-integration/extended.json" "$report/extended.json"
 git -C "$aggregate" add candle-integration/extended.json
 git -C "$aggregate" diff --cached --check
-git -C "$aggregate" commit -m "integrate: lock six Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
+git -C "$aggregate" commit -m "integrate: lock seven Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
 
 sha="$(git -C "$aggregate" rev-parse HEAD)"
 echo "candidate_sha=$sha" >> "$GITHUB_OUTPUT"
@@ -179,9 +184,10 @@ echo "manifest_sha256=$(sha256sum "$report/extended.json" | cut -d' ' -f1)" >> "
 
 jq -cn '[inputs | {feature,source_sha,prepared_sha,preparation_ref}] | {include:.}'   < "$report/sources.ndjson" > "$report/matrix.json"
 jq -e '
-  (.include|length)==6 and
+  (.include|length)==7 and
   [.include[].feature]==["bf16_candle","fp8_candle","fp4_candle",
-    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone"]
+    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone",
+    "embeddinggemma2"]
 ' "$report/matrix.json" >/dev/null
 echo "matrix=$(cat "$report/matrix.json")" >> "$GITHUB_OUTPUT"
 
@@ -206,4 +212,4 @@ git push --atomic origin "${refs[@]}" > "$report/logs/publish.log" 2>&1 || {
   echo "::error::Atomic temporary publish failed; stable refs untouched"; exit 3
 }
 echo "published=true" >> "$GITHUB_OUTPUT"
-echo "Published six prepared refs plus one immutable Extended candidate; stable refs untouched"   >> "$GITHUB_STEP_SUMMARY"
+echo "Published seven prepared refs plus one immutable Extended candidate; stable refs untouched"   >> "$GITHUB_STEP_SUMMARY"

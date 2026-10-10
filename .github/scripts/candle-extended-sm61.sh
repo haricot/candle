@@ -22,10 +22,10 @@ manifest=candle-integration/extended.json
 [[ -f "$manifest" ]] || fail "missing $manifest"
 jq -e '
   .schema_version == 1 and
-  .kind == "extended-six" and
+  .kind == "extended-seven" and
   .integration_target == "extended" and
   [.features[].feature] == ["bf16_candle","fp8_candle","fp4_candle",
-    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone"]
+    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone","embeddinggemma2"]
 ' "$manifest" >/dev/null || fail "invalid Extended manifest"
 campaign="$(jq -r '.campaign' "$manifest")"
 
@@ -72,6 +72,11 @@ run_gate downstream_transformers_compile \
   cargo check -p candle-transformers --lib --release --locked
 run_gate downstream_qwen3_cuda_compile \
   cargo check -p candle-examples --example quantized-qwen3 --features cuda --release --locked
+
+# Compile EmbeddingGemma 2 against the seven-source CUDA SM61 closure.
+# This is NOT parity against Google weights and NOT a runtime inference gate.
+run_gate embeddinggemma2_cuda_compile \
+  cargo check -p candle-examples --example embedding-gemma2 --features cuda --release --locked
 
 # Preserve the already-qualified Legacy runtime behavior.
 run_gate bf16   cargo test -p candle-core --release --features "$CORE_FEATURES"     --test cuda_legacy_bf16_tests -- --nocapture

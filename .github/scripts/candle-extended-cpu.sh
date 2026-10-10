@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hosted CPU gate for the six-source Extended candidate.
+# Hosted CPU gate for the seven-source Extended candidate.
 set -euo pipefail
 : "${MODE:?}" "${SHA:?}" "${RUNNER_TEMP:?}"
 [[ "$(git rev-parse HEAD)" == "$SHA" ]] || exit 3
@@ -13,10 +13,10 @@ elif [[ "$MODE" == integrated ]]; then
   manifest=candle-integration/extended.json
   [[ "$(sha256sum "$manifest" | cut -d' ' -f1)" == "$MANIFEST_SHA" ]] || exit 3
   jq -e --arg c "$CAMPAIGN" '
-    .schema_version==1 and .kind=="extended-six" and .campaign==$c and
+    .schema_version==1 and .kind=="extended-seven" and .campaign==$c and
     .integration_target=="extended" and
     [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
-      "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone"]
+      "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone","embeddinggemma2"]
   ' "$manifest" >/dev/null || exit 3
   while IFS=$'\t' read -r feature prepared; do
     git merge-base --is-ancestor "$prepared" HEAD || {
@@ -49,6 +49,12 @@ if [[ "$MODE" == integrated ]]; then
   cargo check -p candle-transformers --lib --locked > "$report/transformers-check.log" 2>&1 || {
       tail -n 120 "$report/transformers-check.log"; exit 1;
     }
+  cargo check -p candle-examples --example embedding-gemma2 --locked > "$report/embedding-gemma2-check.log" 2>&1 || {
+    tail -n 120 "$report/embedding-gemma2-check.log"; exit 1;
+  }
+  cargo test -p candle-transformers embedding_gemma2::tests --lib --locked > "$report/embedding-gemma2-tests.log" 2>&1 || {
+    tail -n 120 "$report/embedding-gemma2-tests.log"; exit 1;
+  }
   cargo test -p candle-core --no-default-features --locked --lib     > "$report/core-lib-tests.log" 2>&1 || {
       tail -n 120 "$report/core-lib-tests.log"; exit 1;
     }
@@ -63,7 +69,7 @@ if [[ "$MODE" == integrated ]]; then
     }
   jq -n --arg sha "$SHA" --arg campaign "$CAMPAIGN"     --arg manifest "$MANIFEST_SHA" --arg lock "$lock"     '{status:"CPU_PASSED",candidate_sha:$sha,campaign:$campaign,
       manifest_sha256:$manifest,lock_sha256:$lock,
-      feature_scope:["bf16","fp8","fp4","cudnn-fallback","moe","asd-core-v3"],
+      feature_scope:["bf16","fp8","fp4","cudnn-fallback","moe","asd-core-v3","embedding-gemma2"],
       gpu_executed:false}' > "$report/report.json"
   echo "lock_sha256=$lock" >> "$GITHUB_OUTPUT"
   echo "Extended combined CPU PASS at $SHA; GPU not executed" >> "$GITHUB_STEP_SUMMARY"
@@ -76,6 +82,10 @@ case "$FEATURE" in
   asd_core_v3_standalone)
     cargo test -p candle-core --no-default-features --locked       --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests       -- --test-threads=1 > "$report/cpu-tests.log" 2>&1 &&
     cargo test -p candle-nn --no-default-features --locked --lib       >> "$report/cpu-tests.log" 2>&1 ;;
+  embeddinggemma2)
+    cargo check -p candle-transformers --lib --locked > "$report/embedding-gemma2-transformers.log" 2>&1 &&
+    cargo check -p candle-examples --example embedding-gemma2 --locked > "$report/embedding-gemma2-cli.log" 2>&1 &&
+    cargo test -p candle-transformers embedding_gemma2::tests --lib --locked > "$report/cpu-tests.log" 2>&1 ;;
   moe_simt_f16_candle)
     rustc --edition=2021 --test candle-kernels/src/moe_selection.rs       -o "$RUNNER_TEMP/extended-moe-selection" > "$report/cpu-tests.log" 2>&1 &&
     "$RUNNER_TEMP/extended-moe-selection" --nocapture >> "$report/cpu-tests.log" 2>&1 ;;

@@ -1,4 +1,4 @@
-name: Candle Extended — Legacy CUDA + ASD-Core V3
+name: Candle Extended — Legacy CUDA + ASD-Core V3 + EmbeddingGemma 2
 # base-sync-main: c68b24997319b8d76e5a4e775dab197c7f26322a
 
 on:
@@ -60,7 +60,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Prepare exact six-source Extended candidate
+      - name: Prepare exact seven-source Extended candidate
         id: assemble
         shell: bash
         env:

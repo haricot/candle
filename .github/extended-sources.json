@@ -65,12 +65,22 @@
         "cuda",
         "cudnn"
       ]
+    },
+    {
+      "feature": "embeddinggemma2",
+      "source_ref": "embeddinggemma2",
+      "target_ref": "embeddinggemma2",
+      "review_source_sha": "f4ea3ad08aa9492db7efabcdeb521cc55608ad1f",
+      "cpu_tests": "embedding-gemma2-native",
+      "cuda_features": [
+        "cuda"
+      ]
     }
   ],
   "publication": {
     "type": "atomic",
     "publish_only_after": [
-      "six_independent_cpu_pass",
+      "seven_independent_cpu_pass",
       "combined_hosted_cpu_pass",
       "combined_hosted_cuda_sm61_compiles",
       "physical_sm61_extended_pass"
