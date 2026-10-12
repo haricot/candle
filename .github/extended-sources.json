@@ -80,7 +80,7 @@
       "feature": "lean4_standalone",
       "source_ref": "lean4_standalone",
       "target_ref": "lean4_standalone",
-      "review_source_sha": "f6ea53e4f91d659282e0bcf0a416263302012396",
+      "review_source_sha": "fac2e62b722e8387d4ca527557c0d9567f0f6413",
       "pin_source_sha": true,
       "cpu_tests": "lean4-contracts",
       "cuda_features": []
