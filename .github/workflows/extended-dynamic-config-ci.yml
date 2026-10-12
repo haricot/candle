@@ -1,0 +1,26 @@
+name: Extended dynamic manifest smoke
+
+on:
+  push:
+    branches: [orch/extended-dynamic-v2]
+    paths:
+      - ".github/scripts/candle-extended-assemble.sh"
+      - ".github/scripts/candle-extended-cpu.sh"
+      - ".github/scripts/candle-extended-sm61.sh"
+      - ".github/scripts/candle-candidate-cuda-compile.sh"
+      - ".github/scripts/extended-dynamic-selftest.sh"
+      - ".github/extended-sources.json"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest_6_7_8:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Verify manifest-driven cardinalities and shell syntax
+        run: bash .github/scripts/extended-dynamic-selftest.sh

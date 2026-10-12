@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+config=.github/extended-sources.json
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
+for script in \
+  .github/scripts/candle-extended-assemble.sh \
+  .github/scripts/candle-extended-cpu.sh \
+  .github/scripts/candle-extended-sm61.sh \
+  .github/scripts/candle-candidate-cuda-compile.sh; do
+  bash -n "$script"
+done
+
+# Exercise cardinality 6, 7 and 8 without encoding any of them in the
+# production assembler. Validate source uniqueness and candidate parity.
+for count in 6 7 8; do
+  jq --argjson count "$count" '.features |= .[:$count]' "$config" > "$scratch/config.json"
+  jq -e --argjson count "$count" '
+    .schema_version == 1 and .kind == "extended-main-exact-delta" and
+    .integration_target == "extended" and
+    (.features | length) == $count and
+    ([.features[].feature] | unique | length) == $count and
+    ([.features[].target_ref] | unique | length) == $count and
+    all(.features[];
+      (.feature | test("^[a-z][a-z0-9_]{0,63}$")) and
+      (.review_source_sha | test("^[a-f0-9]{40}$")) and
+      (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
+        "embedding-gemma2-native","moe-selection","lean4-contracts"] | index($tests) != null))
+  ' "$scratch/config.json" >/dev/null
+  jq --argjson count "$count" '
+    {schema_version:1,kind:"extended-multi",integration_target:"extended",
+     feature_count:$count,features:[.features[]|{feature,source_ref,target_ref,review_source_sha}]}
+  ' "$scratch/config.json" > "$scratch/integration.json"
+  jq -e --slurpfile cfg "$scratch/config.json" '
+    .feature_count == (.features | length) and
+    [.features[].feature] == [$cfg[0].features[].feature]
+  ' "$scratch/integration.json" >/dev/null
+  echo "DYNAMIC_EXTENDED_COUNT_$count=PASS"
+done
+
+# A duplicated component is rejected by manifest uniqueness requirements.
+jq '.features += [.features[0]]' "$config" > "$scratch/duplicated.json"
+if jq -e '([.features[].feature] | unique | length) == (.features | length)' \
+    "$scratch/duplicated.json" >/dev/null; then
+  echo "DYNAMIC_EXTENDED_DUPLICATE=FAIL" >&2
+  exit 1
+fi
+echo "DYNAMIC_EXTENDED_DUPLICATE=REJECTED"
+echo "DYNAMIC_EXTENDED_STATIC=PASS"
