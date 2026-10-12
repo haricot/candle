@@ -22,23 +22,29 @@ manifest=candle-integration/extended.json
 [[ -f "$manifest" ]] || fail "missing $manifest"
 jq -e '
   .schema_version == 1 and
-  .kind == "extended-seven" and
+  .kind == "extended-multi" and
   .integration_target == "extended" and
-  [.features[].feature] == ["bf16_candle","fp8_candle","fp4_candle",
-    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone","embeddinggemma2"]
+  (.features | type == "array" and length > 0) and
+  .feature_count == (.features | length) and
+  ([.features[].feature] | unique | length) == .feature_count
 ' "$manifest" >/dev/null || fail "invalid Extended manifest"
+has_feature() {
+  jq -e --arg feature "$1" '.features | any(.feature == $feature)' "$manifest" >/dev/null
+}
 campaign="$(jq -r '.campaign' "$manifest")"
 
 cc="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n1 | tr -d '[:space:]')"
 [[ "$cc" == "6.1" ]] || fail "expected compute capability 6.1, got $cc"
 
-test -r "$CANDLE_ASD_HOME/fallbacks/current.json" || fail "missing ASD fallback store"
-test -r "$CANDLE_ASD_HOME/profiles/current.asd" || fail "missing ASD runtime profile"
-export CANDLE_ASD_MODULE_DIR="${CANDLE_ASD_MODULE_DIR:-$CANDLE_ASD_HOME/artifacts/sm61}"
+if has_feature asd_core_v3_standalone; then
+  test -r "$CANDLE_ASD_HOME/fallbacks/current.json" || fail "missing ASD fallback store"
+  test -r "$CANDLE_ASD_HOME/profiles/current.asd" || fail "missing ASD runtime profile"
+  export CANDLE_ASD_MODULE_DIR="${CANDLE_ASD_MODULE_DIR:-$CANDLE_ASD_HOME/artifacts/sm61}"
 
-G2_IMPL='candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256'
-test -r "$CANDLE_ASD_MODULE_DIR/$G2_IMPL.cubin" || fail "missing G2 ASD CUBIN"
-test -r "$CANDLE_ASD_MODULE_DIR/$G2_IMPL.manifest" || fail "missing G2 ASD manifest"
+  G2_IMPL='candle.sm61-exact-grouped.ct1d-s32-g2-u1-b256'
+  test -r "$CANDLE_ASD_MODULE_DIR/$G2_IMPL.cubin" || fail "missing G2 ASD CUBIN"
+  test -r "$CANDLE_ASD_MODULE_DIR/$G2_IMPL.manifest" || fail "missing G2 ASD manifest"
+fi
 
 "$NVCC" --version | tee "$REPORT_DIR/nvcc.txt"
 gcc-14 --version | head -n1 | tee "$REPORT_DIR/gcc.txt"
@@ -53,7 +59,8 @@ export CARGO_INCREMENTAL=0
 export CANDLE_ASD_HOME
 export CANDLE_ASD_MODULE_DIR
 
-CORE_FEATURES="cuda,cudnn,cuda-legacy-bf16,cuda-legacy-fp8,cuda-legacy-fp4"
+CORE_FEATURES="$(jq -r '[.features[].cuda_features[]] | unique | join(",")' "$manifest")"
+[[ -n "$CORE_FEATURES" ]] || fail "no CUDA features in this physical SM61 campaign"
 
 run_gate() {
   local name="$1"
@@ -73,26 +80,44 @@ run_gate downstream_transformers_compile \
 run_gate downstream_qwen3_cuda_compile \
   cargo check -p candle-examples --example quantized-qwen3 --features cuda --release --locked
 
-# Compile EmbeddingGemma 2 against the seven-source CUDA SM61 closure.
-# This is NOT parity against Google weights and NOT a runtime inference gate.
-run_gate embeddinggemma2_cuda_compile \
-  cargo check -p candle-examples --example embedding-gemma2 --features cuda --release --locked
+# Feature-specific smoke gates; do not assume seven/eight sources.
+if has_feature embeddinggemma2; then
+  run_gate embeddinggemma2_cuda_compile \
+    cargo check -p candle-examples --example embedding-gemma2 --features cuda --release --locked
+fi
+if has_feature lean4_standalone; then
+  # Only CUDA adapter compilation; Lean mathematical proof ran in CPU gate.
+  run_gate lean4_cuda_adapter_compile \
+    cargo check --manifest-path tools/lean4-standalone/Cargo.toml --features cuda --release
+fi
 
 # Preserve the already-qualified Legacy runtime behavior.
-run_gate bf16   cargo test -p candle-core --release --features "$CORE_FEATURES"     --test cuda_legacy_bf16_tests -- --nocapture
+if has_feature bf16_candle; then
+  run_gate bf16 cargo test -p candle-core --release --features "$CORE_FEATURES" --test cuda_legacy_bf16_tests -- --nocapture
+fi
 
-run_gate fp8   cargo test -p candle-core --release --features "$CORE_FEATURES"     --test fp8_legacy_tests -- --nocapture
+if has_feature fp8_candle; then
+  run_gate fp8 cargo test -p candle-core --release --features "$CORE_FEATURES" --test fp8_legacy_tests -- --nocapture
+fi
 
-run_gate fp4_mxfp4   cargo test -p candle-core --release --features "$CORE_FEATURES"     --test mxfp4_tests -- --nocapture
+if has_feature fp4_candle; then
+  run_gate fp4_mxfp4 cargo test -p candle-core --release --features "$CORE_FEATURES" --test mxfp4_tests -- --nocapture
+fi
 
-run_gate cudnn_fallback   cargo test -p candle-core --release --features "$CORE_FEATURES" --lib     cuda_backend::cudnn_fallback_classifier_tests::synthetic_quarantine_routes_generic_conv1d_conv2d     -- --exact --nocapture
+if has_feature cudnn_fallback_candle; then
+  run_gate cudnn_fallback cargo test -p candle-core --release --features "$CORE_FEATURES" --lib \
+    cuda_backend::cudnn_fallback_classifier_tests::synthetic_quarantine_routes_generic_conv1d_conv2d -- --exact --nocapture
+fi
 
-run_gate moe_simt_f16   cargo test -p candle-nn --release --features cuda     --test moe_simt_sm61 -- --nocapture
+if has_feature moe_simt_f16_candle; then
+  run_gate moe_simt_f16 cargo test -p candle-nn --release --features cuda --test moe_simt_sm61 -- --nocapture
+fi
 
-# ASD-Core V3 must remain runtime-data driven inside the Legacy composition.
-run_gate asd_module_provider   cargo run -p candle-core --release --example asd_v3_module_provider_validate     --features "$CORE_FEATURES"
-
-run_gate asd_runtime_profile_swap   cargo run -p candle-core --release --example asd_v3_phase_d_runtime_profile_swap_validate     --features "$CORE_FEATURES"
+# ASD-Core V3 runtime invariants apply only when ASD is composed.
+if has_feature asd_core_v3_standalone; then
+  run_gate asd_module_provider cargo run -p candle-core --release --example asd_v3_module_provider_validate --features "$CORE_FEATURES"
+  run_gate asd_runtime_profile_swap cargo run -p candle-core --release --example asd_v3_phase_d_runtime_profile_swap_validate --features "$CORE_FEATURES"
+fi
 
 echo "EXTENDED_SM61_CANDIDATE=$actual_sha" | tee -a "$REPORT_DIR/summary.txt"
 echo "EXTENDED_SM61_CAMPAIGN=$campaign" | tee -a "$REPORT_DIR/summary.txt"

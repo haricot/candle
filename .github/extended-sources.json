@@ -70,17 +70,27 @@
       "feature": "embeddinggemma2",
       "source_ref": "embeddinggemma2",
       "target_ref": "embeddinggemma2",
-      "review_source_sha": "f4ea3ad08aa9492db7efabcdeb521cc55608ad1f",
+      "review_source_sha": "8c718916998181ce98930dec5e4ed4aa1624852b",
       "cpu_tests": "embedding-gemma2-native",
       "cuda_features": [
         "cuda"
-      ]
+      ],
+      "pin_source_sha": true
+    },
+    {
+      "feature": "lean4_standalone",
+      "source_ref": "lean4_standalone",
+      "target_ref": "lean4_standalone",
+      "review_source_sha": "9f5ced89e309d6ef01d4b24b9ca2f37ee3e2ab69",
+      "pin_source_sha": true,
+      "cpu_tests": "lean4-contracts",
+      "cuda_features": []
     }
   ],
   "publication": {
     "type": "atomic",
     "publish_only_after": [
-      "seven_independent_cpu_pass",
+      "all_independent_cpu_pass",
       "combined_hosted_cpu_pass",
       "combined_hosted_cuda_sm61_compiles",
       "physical_sm61_extended_pass"

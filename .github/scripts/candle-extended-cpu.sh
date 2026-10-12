@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hosted CPU gate for the seven-source Extended candidate.
+# Hosted CPU gate for a manifest-driven Extended candidate.
 set -euo pipefail
 : "${MODE:?}" "${SHA:?}" "${RUNNER_TEMP:?}"
 [[ "$(git rev-parse HEAD)" == "$SHA" ]] || exit 3
@@ -12,11 +12,12 @@ elif [[ "$MODE" == integrated ]]; then
   report="$RUNNER_TEMP/extended-integrated-cpu"
   manifest=candle-integration/extended.json
   [[ "$(sha256sum "$manifest" | cut -d' ' -f1)" == "$MANIFEST_SHA" ]] || exit 3
-  jq -e --arg c "$CAMPAIGN" '
-    .schema_version==1 and .kind=="extended-seven" and .campaign==$c and
-    .integration_target=="extended" and
-    [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
-      "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone","embeddinggemma2"]
+  jq -e --arg c "$CAMPAIGN" --slurpfile sources ".ci-tools/.github/extended-sources.json" '
+    .schema_version == 1 and .kind == "extended-multi" and .campaign == $c and
+    .integration_target == "extended" and
+    .feature_count == (.features | length) and
+    .feature_count > 0 and
+    [.features[].feature] == [$sources[0].features[].feature]
   ' "$manifest" >/dev/null || exit 3
   while IFS=$'\t' read -r feature prepared; do
     git merge-base --is-ancestor "$prepared" HEAD || {
@@ -45,38 +46,56 @@ cargo check -p candle-core -p candle-nn --no-default-features --locked   > "$rep
     tail -n 120 "$report/cpu-check.log"; exit 1;
   }
 
+has_feature() {
+  jq -e --arg feature "$1" '.features | any(.feature == $feature)' "$manifest" >/dev/null
+}
+
 if [[ "$MODE" == integrated ]]; then
   cargo check -p candle-transformers --lib --locked > "$report/transformers-check.log" 2>&1 || {
-      tail -n 120 "$report/transformers-check.log"; exit 1;
-    }
-  cargo check -p candle-examples --example embedding-gemma2 --locked > "$report/embedding-gemma2-check.log" 2>&1 || {
-    tail -n 120 "$report/embedding-gemma2-check.log"; exit 1;
+    tail -n 120 "$report/transformers-check.log"; exit 1;
   }
-  cargo test -p candle-transformers embedding_gemma2::tests --lib --locked > "$report/embedding-gemma2-tests.log" 2>&1 || {
-    tail -n 120 "$report/embedding-gemma2-tests.log"; exit 1;
-  }
-  cargo test -p candle-core --no-default-features --locked --lib     > "$report/core-lib-tests.log" 2>&1 || {
-      tail -n 120 "$report/core-lib-tests.log"; exit 1;
+  if has_feature embeddinggemma2; then
+    cargo check -p candle-examples --example embedding-gemma2 --locked > "$report/embedding-gemma2-check.log" 2>&1 || {
+      tail -n 120 "$report/embedding-gemma2-check.log"; exit 1;
     }
-  cargo test -p candle-core --no-default-features --locked     --test mxfp4_tests --test nvfp4_experiment     > "$report/fp4-reference-tests.log" 2>&1 || {
+    cargo test -p candle-transformers embedding_gemma2::tests --lib --locked > "$report/embedding-gemma2-tests.log" 2>&1 || {
+      tail -n 120 "$report/embedding-gemma2-tests.log"; exit 1;
+    }
+  fi
+  cargo test -p candle-core --no-default-features --locked --lib > "$report/core-lib-tests.log" 2>&1 || {
+    tail -n 120 "$report/core-lib-tests.log"; exit 1;
+  }
+  if has_feature fp4_candle; then
+    cargo test -p candle-core --no-default-features --locked --test mxfp4_tests --test nvfp4_experiment > "$report/fp4-reference-tests.log" 2>&1 || {
       tail -n 120 "$report/fp4-reference-tests.log"; exit 1;
     }
-  cargo test -p candle-core --no-default-features --locked     --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests     -- --test-threads=1 > "$report/grouped-tests.log" 2>&1 || {
+  fi
+  if has_feature asd_core_v3_standalone; then
+    cargo test -p candle-core --no-default-features --locked --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests -- --test-threads=1 > "$report/grouped-tests.log" 2>&1 || {
       tail -n 120 "$report/grouped-tests.log"; exit 1;
     }
-  cargo test -p candle-nn --no-default-features --locked --lib     > "$report/nn-lib-tests.log" 2>&1 || {
-      tail -n 120 "$report/nn-lib-tests.log"; exit 1;
+  fi
+  cargo test -p candle-nn --no-default-features --locked --lib > "$report/nn-lib-tests.log" 2>&1 || {
+    tail -n 120 "$report/nn-lib-tests.log"; exit 1;
+  }
+  if has_feature lean4_standalone; then
+    bash tools/lean4-standalone/scripts/check.sh > "$report/lean4-contracts.log" 2>&1 || {
+      tail -n 120 "$report/lean4-contracts.log"; exit 1;
     }
-  jq -n --arg sha "$SHA" --arg campaign "$CAMPAIGN"     --arg manifest "$MANIFEST_SHA" --arg lock "$lock"     '{status:"CPU_PASSED",candidate_sha:$sha,campaign:$campaign,
+  fi
+  jq -n --arg sha "$SHA" --arg campaign "$CAMPAIGN" --arg manifest "$MANIFEST_SHA" \
+    --arg lock "$lock" --argjson features "$(jq '[.features[].feature]' "$manifest")" \
+    '{status:"CPU_PASSED",candidate_sha:$sha,campaign:$campaign,
       manifest_sha256:$manifest,lock_sha256:$lock,
-      feature_scope:["bf16","fp8","fp4","cudnn-fallback","moe","asd-core-v3","embedding-gemma2"],
-      gpu_executed:false}' > "$report/report.json"
+      feature_scope:$features,gpu_executed:false}' > "$report/report.json"
   echo "lock_sha256=$lock" >> "$GITHUB_OUTPUT"
   echo "Extended combined CPU PASS at $SHA; GPU not executed" >> "$GITHUB_STEP_SUMMARY"
   exit 0
 fi
 
 case "$FEATURE" in
+  lean4_standalone)
+    bash tools/lean4-standalone/scripts/check.sh > "$report/cpu-tests.log" 2>&1 ;;
   fp4_candle)
     cargo test -p candle-core --no-default-features --locked       --test mxfp4_tests --test nvfp4_experiment > "$report/cpu-tests.log" 2>&1 ;;
   asd_core_v3_standalone)
