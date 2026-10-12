@@ -28,7 +28,10 @@ case "$CHECK_BRANCH" in
   extended_integration)
     manifest=candle-integration/extended.json
     jq -e '.schema_version==1 and .kind=="extended-multi" and
-      .feature_count==(.features|length) and .feature_count>0' "$manifest" >/dev/null || exit 3
+      .feature_count==(.features|length) and .feature_count>0 and
+      all(.features[]; (.cuda_features|type)=="array" and
+        all(.cuda_features[]; type=="string" and test("^[a-z0-9_-]+$"))) and
+      ([.features[].cuda_features[]] | length > 0)' "$manifest" >/dev/null || exit 3
     mapfile -t cuda_features < <(jq -r '[.features[].cuda_features[]] | unique | .[]' "$manifest")
     (( ${#cuda_features[@]} > 0 )) || { echo "::error::No CUDA features in Extended"; exit 3; }
     features=""

@@ -2,7 +2,7 @@ name: Extended dynamic manifest smoke
 
 on:
   push:
-    branches: [orch/extended-dynamic-v2]
+    branches: [orch/extended-dynamic-v2, orch/extended-cuda-manifest-fix]
     paths:
       - ".github/scripts/candle-extended-assemble.sh"
       - ".github/scripts/candle-extended-cpu.sh"
@@ -43,6 +43,17 @@ jobs:
           STRATEGY: exact-delta
           PUBLISH: 'false'
         run: bash .github/scripts/candle-extended-assemble.sh
+      - name: Require exact CUDA capability parity in the assembled candidate
+        run: |
+          set -euo pipefail
+          jq -e --slurpfile cfg .github/extended-sources.json '
+            .schema_version == 1 and .kind == "extended-multi" and
+            .feature_count == ($cfg[0].features|length) and
+            [.features[]|{feature,cuda_features}] ==
+              [$cfg[0].features[]|{feature,cuda_features}] and
+            ([.features[].cuda_features[]] | unique) ==
+              ([$cfg[0].features[].cuda_features[]] | unique)
+          ' "$RUNNER_TEMP/candle-extended/extended.json"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
