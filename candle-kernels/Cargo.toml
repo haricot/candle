@@ -19,3 +19,4 @@ cuda-legacy-fp4 = []
 
 [build-dependencies]
 cudaforge = "0.1.6"
+sha2 = "0.10"
