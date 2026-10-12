@@ -23,14 +23,35 @@ case "$CHECK_BRANCH" in
   fp4_candle|moe_simt_f16_candle) features="candle-core/cuda,candle-nn/cuda" ;;
   standalone_fp48_integration)
     features="candle-core/cuda-legacy-fp8,candle-core/cuda-legacy-fp4,candle-nn/cuda" ;;
-  standalone_six_integration|legacy_cuda_integration|extended_integration)
+  standalone_six_integration|legacy_cuda_integration)
     features="candle-core/cuda-legacy-bf16,candle-core/cuda-legacy-fp8,candle-core/cuda-legacy-fp4,candle-nn/cudnn" ;;
+  extended_integration)
+    manifest=candle-integration/extended.json
+    jq -e '.schema_version==1 and .kind=="extended-multi" and
+      .feature_count==(.features|length) and .feature_count>0' "$manifest" >/dev/null || exit 3
+    mapfile -t cuda_features < <(jq -r '[.features[].cuda_features[]] | unique | .[]' "$manifest")
+    (( ${#cuda_features[@]} > 0 )) || { echo "::error::No CUDA features in Extended"; exit 3; }
+    features=""
+    nn_feature="cuda"
+    for feature in "${cuda_features[@]}"; do
+      [[ "$feature" =~ ^[a-z0-9_-]+$ ]] || exit 3
+      features+="candle-core/$feature,"
+      if [[ "$feature" == cudnn ]]; then nn_feature="cudnn"; fi
+    done
+    features+="candle-nn/$nn_feature"
+    ;;
   cudnn_fallback_candle|asd_core)
     features="candle-core/cudnn,candle-nn/cudnn" ;;
   cuda_asd_runner_v2)
     features="candle-core/cuda-legacy-bf16,candle-core/cuda-legacy-fp8,candle-nn/cudnn" ;;
   *) echo "::error::Unknown branch"; exit 2 ;;
 esac
+HAS_MOE=true
+HAS_FP4=true
+if [[ "$CHECK_BRANCH" == extended_integration ]]; then
+  HAS_MOE="$(jq -r '[.features[].feature] | index("moe_simt_f16_candle") != null' "$manifest")"
+  HAS_FP4="$(jq -r '[.features[].feature] | index("fp4_candle") != null' "$manifest")"
+fi
 {
   nvcc --version
   rustc --version
@@ -65,7 +86,7 @@ if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == lega
     build_rc=$cuda_tests_rc
   fi
 fi
-if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) && "$HAS_FP4" == true && "$build_rc" -eq 0 ]]; then
   fp4_tests_rc=0
   cargo check -p candle-core --features "cuda cuda-legacy-fp4" --tests --locked \
     > "$report/cuda-tests-legacy-fp4.log" 2>&1 || fp4_tests_rc=$?
@@ -99,7 +120,7 @@ fi
 # It may compile candle-nn without its own cuda feature, which excludes
 # moe_simt_sm61.rs via #![cfg(feature = "cuda")]. Explicitly compile this
 # test with BOTH candle-nn features before assigning a physical GPU job.
-if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$HAS_MOE" == true && "$build_rc" -eq 0 ]]; then
   moe_test_rc=0
   cargo check -p candle-nn --locked --no-default-features \
     --features "cuda cudnn" --test moe_simt_sm61 \
@@ -113,7 +134,7 @@ if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_ru
   fi
 fi
 
-if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$build_rc" -eq 0 ]]; then
+if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$HAS_MOE" == true && "$build_rc" -eq 0 ]]; then
   # cargo check cannot prove static-library linkability. For Pascal,
   # the SIMT translation unit must define both the real SIMT entry
   # and the WMMA compatibility ABI stub omitted with WMMA objects.
