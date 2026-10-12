@@ -1,0 +1,6 @@
+name = "HaricotLeanContracts"
+version = "0.1.0"
+defaultTargets = ["HaricotLeanContracts"]
+
+[[lean_lib]]
+name = "HaricotLeanContracts"
