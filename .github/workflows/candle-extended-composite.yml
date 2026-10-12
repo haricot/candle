@@ -1,4 +1,4 @@
-name: Candle Extended — Legacy CUDA + ASD-Core V3 + EmbeddingGemma 2
+name: Candle Extended — Manifest-driven Standalone Composition
 # base-sync-main: c68b24997319b8d76e5a4e775dab197c7f26322a
 
 on:
@@ -55,12 +55,13 @@ jobs:
       manifest_sha256: ${{ steps.assemble.outputs.manifest_sha256 }}
       matrix: ${{ steps.assemble.outputs.matrix }}
       published: ${{ steps.assemble.outputs.published }}
+      has_lean: ${{ steps.assemble.outputs.has_lean }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Prepare exact seven-source Extended candidate
+      - name: Prepare manifest-defined Extended candidate
         id: assemble
         shell: bash
         env:
@@ -106,6 +107,13 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
+      - if: matrix.feature == 'lean4_standalone'
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
+        with:
+          lake-package-directory: tools/lean4-standalone/lean
+          auto-config: false
+          build: true
+          use-github-cache: false
       - name: Independent source CPU gate
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
       - if: always()
@@ -143,6 +151,13 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
+      - if: needs.prepare.outputs.has_lean == 'true'
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
+        with:
+          lake-package-directory: tools/lean4-standalone/lean
+          auto-config: false
+          build: true
+          use-github-cache: false
       - id: check
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
       - if: always()

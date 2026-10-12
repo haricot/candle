@@ -75,12 +75,21 @@
       "cuda_features": [
         "cuda"
       ]
+    },
+    {
+      "feature": "lean4_standalone",
+      "source_ref": "lean4_standalone",
+      "target_ref": "lean4_standalone",
+      "review_source_sha": "f6ea53e4f91d659282e0bcf0a416263302012396",
+      "pin_source_sha": true,
+      "cpu_tests": "lean4-contracts",
+      "cuda_features": []
     }
   ],
   "publication": {
     "type": "atomic",
     "publish_only_after": [
-      "seven_independent_cpu_pass",
+      "all_independent_cpu_pass",
       "combined_hosted_cpu_pass",
       "combined_hosted_cuda_sm61_compiles",
       "physical_sm61_extended_pass"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build the seven-source Extended candidate from exact standalone deltas.
-# The first five inputs are validated Legacy CUDA sources; sixth ASD-Core V3;
-# seventh EmbeddingGemma 2 (text-only Candle). Publish immutable refs only.
+# Build a manifest-driven Extended candidate from exact standalone deltas.
+# The number and order of sources are taken exclusively from the reviewed manifest.
+# Preserve the exact-delta and atomic publication safeguards.
 set -euo pipefail
 umask 077
 : "${CAMPAIGN:?}" "${STRATEGY:?}" "${PUBLISH:?}" "${GITHUB_REPOSITORY:?}"
@@ -11,16 +11,26 @@ umask 077
 
 cfg=.github/extended-sources.json
 jq -e '
-  .schema_version==1 and .kind=="extended-main-exact-delta" and
-  .integration_target=="extended" and
-  [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
-    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone",
-    "embeddinggemma2"] and
+  .schema_version == 1 and .kind == "extended-main-exact-delta" and
+  .integration_target == "extended" and
+  (.features | type == "array" and length > 0) and
+  ([.features[].feature] | length) == ([.features[].feature] | unique | length) and
+  ([.features[].target_ref] | length) == ([.features[].target_ref] | unique | length) and
   all(.features[];
-    (.source_ref|type)=="string" and
-    (.target_ref|type)=="string" and
-    (.review_source_sha|test("^[a-f0-9]{40}$")))
+    (.feature | test("^[a-z][a-z0-9_]{0,63}$")) and
+    (.source_ref | type == "string" and test("^[A-Za-z0-9_./-]+$")) and
+    (.target_ref | type == "string" and test("^[A-Za-z0-9_./-]+$")) and
+    (.review_source_sha | type == "string" and test("^[a-f0-9]{40}$")) and
+    (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
+      "embedding-gemma2-native","moe-selection","lean4-contracts"] | index($tests) != null) and
+    (.cuda_features | type == "array" and all(.[]; type == "string" and test("^[a-z0-9_-]+$"))) and
+    ((.pin_source_sha // false) | type == "boolean"))
 ' "$cfg" >/dev/null
+jq -r '.features[] | .source_ref, .target_ref' "$cfg" |
+while IFS= read -r ref; do
+  git check-ref-format "refs/heads/$ref" || exit 3
+done
+
 
 report="$RUNNER_TEMP/candle-extended"
 scratch="$RUNNER_TEMP/candle-extended-worktrees"
@@ -52,9 +62,12 @@ for feature in "${features[@]}"; do
   git fetch --no-tags origin "+refs/heads/${source_ref[$feature]}:refs/remotes/origin/extended-$feature"
   pinned[$feature]="$(git rev-parse "refs/remotes/origin/extended-$feature")"
   git merge-base "$base" "${pinned[$feature]}" >/dev/null || exit 3
-  # Pin the new feature to the reviewed commit; reject silent branch movement.
-  if [[ "$feature" == embeddinggemma2 && "${pinned[$feature]}" != "${review[$feature]}" ]]; then
-    echo "::error::EmbeddingGemma 2 ref moved since review SHA ${review[$feature]}"; exit 3
+  # Sources opting into strict SHA pinning may never move without review.
+  pinned_required="$(jq -r --arg f "$feature" '.features[]|select(.feature==$f)|.pin_source_sha // false' "$cfg")"
+  if [[ "$feature" == embeddinggemma2 || "$pinned_required" == true ]]; then
+    if [[ "${pinned[$feature]}" != "${review[$feature]}" ]]; then
+      echo "::error::Pinned source $feature moved from reviewed SHA ${review[$feature]}"; exit 3
+    fi
   fi
 done
 
@@ -167,7 +180,7 @@ for feature in "${features[@]}"; do
 done
 
 mkdir -p "$aggregate/candle-integration"
-jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-seven",main_sha:$main_sha,
+jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
@@ -175,7 +188,7 @@ jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRAT
 cp "$aggregate/candle-integration/extended.json" "$report/extended.json"
 git -C "$aggregate" add candle-integration/extended.json
 git -C "$aggregate" diff --cached --check
-git -C "$aggregate" commit -m "integrate: lock seven Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
+git -C "$aggregate" commit -m "integrate: lock ${#features[@]} Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
 
 sha="$(git -C "$aggregate" rev-parse HEAD)"
 echo "candidate_sha=$sha" >> "$GITHUB_OUTPUT"
@@ -183,12 +196,12 @@ echo "candidate_ref=$target" >> "$GITHUB_OUTPUT"
 echo "manifest_sha256=$(sha256sum "$report/extended.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
 jq -cn '[inputs | {feature,source_sha,prepared_sha,preparation_ref}] | {include:.}'   < "$report/sources.ndjson" > "$report/matrix.json"
-jq -e '
-  (.include|length)==7 and
-  [.include[].feature]==["bf16_candle","fp8_candle","fp4_candle",
-    "cudnn_fallback_candle","moe_simt_f16_candle","asd_core_v3_standalone",
-    "embeddinggemma2"]
+jq -e --argjson count "${#features[@]}" '
+  (.include | length) == $count and
+  ([.include[].feature] | unique | length) == $count
 ' "$report/matrix.json" >/dev/null
+echo "has_lean=$(jq -r '[.features[].feature] | index("lean4_standalone") != null' "$cfg")" >> "$GITHUB_OUTPUT"
+
 echo "matrix=$(cat "$report/matrix.json")" >> "$GITHUB_OUTPUT"
 
 if [[ "$PUBLISH" != true ]]; then
@@ -212,4 +225,4 @@ git push --atomic origin "${refs[@]}" > "$report/logs/publish.log" 2>&1 || {
   echo "::error::Atomic temporary publish failed; stable refs untouched"; exit 3
 }
 echo "published=true" >> "$GITHUB_OUTPUT"
-echo "Published seven prepared refs plus one immutable Extended candidate; stable refs untouched"   >> "$GITHUB_STEP_SUMMARY"
+echo "Published ${#features[@]} prepared refs plus one immutable Extended candidate; stable refs untouched"   >> "$GITHUB_STEP_SUMMARY"
