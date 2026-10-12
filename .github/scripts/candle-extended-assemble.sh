@@ -115,8 +115,10 @@ for feature in "${features[@]}"; do
     echo "::error::Prepared $feature changed its exact standalone delta"; exit 3
   fi
 
-  jq -cn --arg feature "$feature"     --arg source_ref "${source_ref[$feature]}"     --arg target_ref "${target_ref[$feature]}"     --arg source_sha "$sha"     --arg review_source_sha "${review[$feature]}"     --arg prepared_sha "${prepared[$feature]}"     --arg preparation_ref "prepare/extended/$CAMPAIGN/$feature"     --arg common_base_sha "$common"     --arg source_patch_sha256 "$source_patch_sha"     --arg prepared_patch_sha256 "$prepared_patch_sha"     '{feature:$feature,source_ref:$source_ref,target_ref:$target_ref,
+  jq -cn --arg feature "$feature"     --arg source_ref "${source_ref[$feature]}"     --arg target_ref "${target_ref[$feature]}"     --arg source_sha "$sha"     --arg review_source_sha "${review[$feature]}"     --arg prepared_sha "${prepared[$feature]}"     --arg preparation_ref "prepare/extended/$CAMPAIGN/$feature"     --arg common_base_sha "$common"     --arg source_patch_sha256 "$source_patch_sha"     --arg prepared_patch_sha256 "$prepared_patch_sha"     --argjson cuda_features "$(jq -c --arg f "$feature" '.features[] | select(.feature == $f) | .cuda_features' "$cfg")" \
+    '{feature:$feature,source_ref:$source_ref,target_ref:$target_ref,
       source_sha:$source_sha,review_source_sha:$review_source_sha,
+      cuda_features:$cuda_features,
       prepared_sha:$prepared_sha,preparation_ref:$preparation_ref,
       common_base_sha:$common_base_sha,
       source_patch_sha256:$source_patch_sha256,
@@ -186,6 +188,18 @@ jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRAT
     source_config_sha256:$config_sha256,
     validation_state:"UNVALIDATED_CANDIDATE",features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/extended.json"
 cp "$aggregate/candle-integration/extended.json" "$report/extended.json"
+# Fail before publishing or starting expensive CUDA jobs if a reviewed capability
+# has been lost while copying metadata into the immutable candidate.
+jq -e --slurpfile cfg "$cfg" '
+  .schema_version == 1 and .kind == "extended-multi" and
+  .feature_count == ($cfg[0].features | length) and
+  [.features[] | {feature,cuda_features}] ==
+    [$cfg[0].features[] | {feature,cuda_features}] and
+  all(.features[]; (.cuda_features | type) == "array") and
+  ([.features[].cuda_features[]] | length > 0)
+' "$report/extended.json" >/dev/null || {
+  echo "::error::Extended manifest dropped or changed reviewed CUDA capabilities"; exit 3;
+}
 git -C "$aggregate" add candle-integration/extended.json
 git -C "$aggregate" diff --cached --check
 git -C "$aggregate" commit -m "integrate: lock ${#features[@]} Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1

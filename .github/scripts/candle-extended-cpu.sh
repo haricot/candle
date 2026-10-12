@@ -17,7 +17,10 @@ elif [[ "$MODE" == integrated ]]; then
     .integration_target == "extended" and
     .feature_count == (.features | length) and
     .feature_count > 0 and
-    [.features[].feature] == [$sources[0].features[].feature]
+    [.features[] | {feature,cuda_features}] ==
+      [$sources[0].features[] | {feature,cuda_features}] and
+    all(.features[]; (.cuda_features | type) == "array") and
+    ([.features[].cuda_features[]] | length > 0)
   ' "$manifest" >/dev/null || exit 3
   while IFS=$'\t' read -r feature prepared; do
     git merge-base --is-ancestor "$prepared" HEAD || {

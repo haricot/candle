@@ -26,7 +26,9 @@ jq -e '
   .integration_target == "extended" and
   (.features | type == "array" and length > 0) and
   .feature_count == (.features | length) and
-  ([.features[].feature] | unique | length) == .feature_count
+  ([.features[].feature] | unique | length) == .feature_count and
+  all(.features[]; (.cuda_features | type) == "array") and
+  ([.features[].cuda_features[]] | length > 0)
 ' "$manifest" >/dev/null || fail "invalid Extended manifest"
 has_feature() {
   jq -e --arg feature "$1" '.features | any(.feature == $feature)' "$manifest" >/dev/null

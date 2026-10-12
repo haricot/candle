@@ -31,12 +31,22 @@ for count in 6 7 8; do
   ' "$scratch/config.json" >/dev/null
   jq --argjson count "$count" '
     {schema_version:1,kind:"extended-multi",integration_target:"extended",
-     feature_count:$count,features:[.features[]|{feature,source_ref,target_ref,review_source_sha}]}
+     feature_count:$count,features:[.features[]|{feature,source_ref,target_ref,review_source_sha,cuda_features}]}
   ' "$scratch/config.json" > "$scratch/integration.json"
   jq -e --slurpfile cfg "$scratch/config.json" '
     .feature_count == (.features | length) and
-    [.features[].feature] == [$cfg[0].features[].feature]
+    [.features[]|{feature,cuda_features}] ==
+      [$cfg[0].features[]|{feature,cuda_features}] and
+    all(.features[]; (.cuda_features|type)=="array") and
+    ([.features[].cuda_features[]] | length > 0)
   ' "$scratch/integration.json" >/dev/null
+  # Regression: CUDA consumers must never receive a null capabilities field.
+  jq 'del(.features[0].cuda_features)' "$scratch/integration.json" > "$scratch/missing.json"
+  if jq -e 'all(.features[]; (.cuda_features | type) == "array")' \
+      "$scratch/missing.json" >/dev/null; then
+    echo "DYNAMIC_EXTENDED_MISSING_CUDA_METADATA=FAIL" >&2
+    exit 1
+  fi
   echo "DYNAMIC_EXTENDED_COUNT_$count=PASS"
 done
 
