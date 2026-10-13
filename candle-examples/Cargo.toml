@@ -79,6 +79,8 @@ cuda = [
 ]
 cudnn = ["candle/cudnn", "candle-nn/cudnn", "candle-transformers/cudnn"]
 flash-attn = ["cuda", "candle-transformers/flash-attn", "dep:candle-flash-attn"]
+# Forward SM61 FP8 support to candle-core when examples select this feature.
+cuda-legacy-fp8 = ["cuda", "candle/cuda-legacy-fp8"]
 mkl = [
     "dep:intel-mkl-src",
     "candle/mkl",
