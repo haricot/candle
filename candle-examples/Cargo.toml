@@ -78,10 +78,6 @@ cuda = [
     "dep:cudaforge",
 ]
 cudnn = ["candle/cudnn", "candle-nn/cudnn", "candle-transformers/cudnn"]
-# Forward SM61 legacy features to candle-core; keep the existing CUDA stack.
-cuda-legacy-bf16 = ["cuda", "candle/cuda-legacy-bf16"]
-cuda-legacy-fp8 = ["cuda", "candle/cuda-legacy-fp8"]
-cuda-legacy-fp4 = ["cuda", "candle/cuda-legacy-fp4"]
 flash-attn = ["cuda", "candle-transformers/flash-attn", "dep:candle-flash-attn"]
 mkl = [
     "dep:intel-mkl-src",
@@ -100,6 +96,8 @@ snac = ["cpal", "symphonia", "rubato"]
 depth_anything_v2 = ["palette", "enterpolation"]
 tekken = ["tekken-rs"]
 buildtime-download = ["dep:hf-hub"]
+# Propagate the physical Pascal MXFP4 capability from the example package.
+cuda-legacy-fp4 = ["cuda", "candle/cuda-legacy-fp4"]
 
 [[example]]
 name = "llama_multiprocess"
