@@ -23,20 +23,19 @@ pub mod tokenizer;
 mod metal {
     pub use super::dummy_metal::*;
 }
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
-pub mod nvfp4_arch_e6;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
-pub mod nvfp4_arch_e7;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
-pub mod fp4_e7c_runtime;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
-pub mod nvfp4_e7c_safetensors;
 #[cfg(feature = "cuda")]
 pub mod cuda;
 #[cfg(feature = "cuda")]
 pub mod fast_mmq;
 #[cfg(feature = "cuda")]
 pub mod fast_mmvq;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+pub mod fp4_e7c_runtime;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+pub mod nvfp4_arch_e6;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+pub mod nvfp4_arch_e7;
+pub mod nvfp4_e7c_safetensors;
 #[cfg(not(feature = "cuda"))]
 mod cuda {
     pub use super::dummy_cuda::*;
