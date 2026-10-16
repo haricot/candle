@@ -215,6 +215,44 @@ fn bf16_matmul_case() -> Result<()> {
     Ok(())
 }
 
+// Regression for the pre-Ampere F32 GEMM fallback. Powers outside the
+// FP16 range make an accidental BF16 -> FP16 intermediate fail decisively.
+#[test]
+fn cuda_legacy_bf16_matmul_exponent_range_and_views() -> Result<()> {
+    let device = Device::new_cuda(0)?;
+    let large = 2f32.powi(80);
+    let small = 2f32.powi(-80);
+    let values = [0., 0., 0., large, 0., small, 0., large, small, 0., 0., 0.];
+    let a = Tensor::from_slice(&values, (4, 3), &device)?
+        .to_dtype(DType::BF16)?
+        .narrow(0, 1, 2)?;
+    let right = [small, 0., large, 0., small, large];
+    let right = Tensor::from_slice(&right, (2, 3), &device)?
+        .to_dtype(DType::BF16)?
+        .t()?;
+    let result = a.matmul(&right)?;
+    assert_eq!(result.dtype(), DType::BF16);
+    assert_eq!(result.dims(), &[2, 2]);
+    assert_eq!(as_f32_vec(&result)?, vec![2., 1., 1., 2.]);
+    Ok(())
+}
+
+#[test]
+fn cuda_legacy_bf16_matmul_batched_broadcast() -> Result<()> {
+    let device = Device::new_cuda(0)?;
+    let a = Tensor::from_slice(&[1f32, 2., 3., 4., 5., 6., 7., 8.], (2, 2, 2), &device)?
+        .to_dtype(DType::BF16)?;
+    let b = Tensor::from_slice(&[2f32, 0., 0., 3.], (1, 2, 2), &device)?.to_dtype(DType::BF16)?;
+    let result = a.broadcast_matmul(&b)?;
+    assert_eq!(result.dtype(), DType::BF16);
+    assert_eq!(result.dims(), &[2, 2, 2]);
+    assert_eq!(
+        as_f32_vec(&result)?,
+        vec![2., 6., 6., 12., 10., 18., 14., 24.]
+    );
+    Ok(())
+}
+
 fn bf16_memory_ops_case() -> Result<()> {
     let dev = CudaDevice::new_with_stream(0)?;
 
