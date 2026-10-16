@@ -96,7 +96,7 @@ snac = ["cpal", "symphonia", "rubato"]
 depth_anything_v2 = ["palette", "enterpolation"]
 tekken = ["tekken-rs"]
 buildtime-download = ["dep:hf-hub"]
-# Propagate the physical Pascal MXFP4 capability from the example package.
+# Forward the opt-in software NVFP4 backend from the example package.
 cuda-legacy-fp4 = ["cuda", "candle/cuda-legacy-fp4"]
 
 [[example]]

@@ -1840,6 +1840,114 @@ extern "C" __global__ void nvfp4_mat_vec_q8_1_predecoded_cuda1(
     }
 }
 
+// ARCH-E3 NVFP4 packed E2M1 + E4M3FN scale + global FP32 scale.
+// Experimental, opt-in; preserves original NVFP4 prefill kernel ABI and symbols.
+// Each warp owns one output row; one decoded 32-weight group is shared in
+// registers across COLS Q8_1 activation rows. No HW FP4 assumption (SM61+).
+template<int ROWS, int COLS>
+static __device__ __forceinline__ void arch_e3_nvfp4_tiled(
+    const uint8_t * __restrict__ packed,
+    const uint8_t * __restrict__ scales_e4m3,
+    const float global_scale,
+    const void * __restrict__ activations_v,
+    float * __restrict__ dst,
+    const int ncols_x, const int nrows_x,
+    const int ncols_y, const int nrows_y, const int nrows_dst) {
+    const int row = ROWS * (int)blockIdx.x + (int)threadIdx.y;
+    const int lane = (int)threadIdx.x;
+    const int col_base = COLS * (int)blockIdx.y;
+    if (row >= nrows_x) return;
+    const int weight_blocks = ncols_x / QK_NVFP4;
+    const int packed_row_bytes = weight_blocks * NVFP4_PACKED_BYTES_PER_BLOCK;
+    const int q8_blocks_per_row = nrows_y / QK8_1;
+    const uint8_t *row_packed = packed + (size_t)row * packed_row_bytes;
+    const uint8_t *row_scales = scales_e4m3 + (size_t)row * weight_blocks;
+    const block_q8_1 *activations = (const block_q8_1 *)activations_v;
+    float sums[COLS];
+#pragma unroll
+    for (int t = 0; t < COLS; ++t) sums[t] = 0.0f;
+    for (int kb = lane; kb < ncols_x / QK8_1; kb += WARP_SIZE) {
+        const uint8_t *wp = row_packed + (size_t)kb * 2 * NVFP4_PACKED_BYTES_PER_BLOCK;
+        const int2 w0 = nvfp4_decode_contiguous_8(wp + 0);
+        const int2 w1 = nvfp4_decode_contiguous_8(wp + 4);
+        const int2 w2 = nvfp4_decode_contiguous_8(wp + 8);
+        const int2 w3 = nvfp4_decode_contiguous_8(wp + 12);
+        const float d0 = nvfp4_e4m3fn_to_f32(row_scales[2*kb]) * global_scale * 0.5f;
+        const float d1 = nvfp4_e4m3fn_to_f32(row_scales[2*kb+1]) * global_scale * 0.5f;
+#pragma unroll
+        for (int t = 0; t < COLS; ++t) {
+            const int col = col_base + t;
+            if (col < ncols_y) {
+                const block_q8_1 *a = activations + (size_t)col * q8_blocks_per_row + kb;
+                const int *q8 = (const int*)a->qs;
+                int dot0 = ggml_cuda_dp4a(w0.x,q8[0],0);
+                dot0 = ggml_cuda_dp4a(w0.y,q8[1],dot0);
+                dot0 = ggml_cuda_dp4a(w1.x,q8[2],dot0);
+                dot0 = ggml_cuda_dp4a(w1.y,q8[3],dot0);
+                int dot1 = ggml_cuda_dp4a(w2.x,q8[4],0);
+                dot1 = ggml_cuda_dp4a(w2.y,q8[5],dot1);
+                dot1 = ggml_cuda_dp4a(w3.x,q8[6],dot1);
+                dot1 = ggml_cuda_dp4a(w3.y,q8[7],dot1);
+                const float ad = __low2float(a->ds);
+                sums[t] += (d0 * ad) * (float)dot0 + (d1 * ad) * (float)dot1;
+            }
+        }
+    }
+#pragma unroll
+    for (int t = 0; t < COLS; ++t) {
+        const int col = col_base + t;
+        if (col < ncols_y) {
+            const float sum = warp_reduce_sum(sums[t]);
+            if (lane == 0) dst[(size_t)col*nrows_dst + row] = sum;
+        }
+    }
+}
+extern "C" __global__ void nvfp4_mat_mul_q8_1_tiled4x8(
+    const uint8_t *packed, const uint8_t *scales_e4m3, const float global_scale,
+    const void *activations, float *dst,
+    int ncols_x, int nrows_x, int ncols_y, int nrows_y, int nrows_dst) {
+    arch_e3_nvfp4_tiled<4,8>(packed,scales_e4m3,global_scale,activations,dst,
+                             ncols_x,nrows_x,ncols_y,nrows_y,nrows_dst);
+}
+
+
+// ARCH-E6: diagnostic W4A16 and FP16->F32 preprocessing; feature gated by
+// CANDLE_CUDA_LEGACY_FP4, injected before original nvfp4_mat_mul_q8_1.
+// W4A16 is a *scalar software reference* (not a tuned WMMA/TensorCore GEMM).
+extern "C" __global__ void nvfp4_arch_e6_f16_to_f32(
+    const half * __restrict__ input, float * __restrict__ output, const int count) {
+    const int i = (int)(blockIdx.x * blockDim.x + threadIdx.x);
+    if (i < count) output[i] = __half2float(input[i]);
+}
+
+extern "C" __global__ void nvfp4_arch_e6_w4a16_scalar(
+    const uint8_t * __restrict__ packed, const uint8_t * __restrict__ scales_e4m3,
+    const float global_scale, const half * __restrict__ x, float * __restrict__ dst,
+    const int n, const int k, const int batch) {
+    const int output_index = (int)(blockIdx.x * blockDim.x + threadIdx.x);
+    if (output_index >= n * batch) return;
+    const int row = output_index % n;
+    const int token = output_index / n;
+    const size_t row_packed_offset = (size_t)row * (size_t)(k/2);
+    const size_t row_scale_offset = (size_t)row * (size_t)(k/16);
+    float sum = 0.0f;
+    for (int blk = 0; blk < k/16; ++blk) {
+        const uint8_t *w = packed + row_packed_offset + (size_t)blk*8;
+        const int2 q0 = nvfp4_decode_contiguous_8(w);
+        const int2 q1 = nvfp4_decode_contiguous_8(w+4);
+        const int words[4] = {q0.x,q0.y,q1.x,q1.y};
+        const float d = nvfp4_e4m3fn_to_f32(scales_e4m3[row_scale_offset+blk]) * global_scale * 0.5f;
+#pragma unroll
+        for (int j=0;j<16;++j) {
+            const int word=words[j/4];
+            const int8_t doubled = (int8_t)((word >> (8*(j%4))) & 0xff);
+            const float a = __half2float(x[(size_t)token*k + (size_t)blk*16+j]);
+            sum += ((float)doubled*d)*a;
+        }
+    }
+    dst[(size_t)token*n+row]=sum;
+}
+
 extern "C" __global__ void nvfp4_mat_mul_q8_1(
     const uint8_t * __restrict__ packed,
     const uint8_t * __restrict__ scales_e4m3,

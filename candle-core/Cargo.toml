@@ -40,6 +40,7 @@ parking_lot = "0.12.5"
 tokenizers = { workspace = true, features = ["fancy-regex"] }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 criterion = { workspace = true }
