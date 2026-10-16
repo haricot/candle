@@ -1,0 +1,58 @@
+name: Retire Redundant Candle Mistral Bridge Branch
+on:
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/workflows/retire-candle-mistralrs-bridge-20261016.yml
+permissions:
+  contents: read
+concurrency:
+  group: retire-candle-for-mistralrs-20261016
+  cancel-in-progress: false
+jobs:
+  retire_exact_ref:
+    if: >-
+      github.repository == 'haricot/candle' &&
+      github.ref == 'refs/heads/mirror_orch' &&
+      github.event.head_commit.message == 'ci: retire redundant candle_for_mistralrs branch after Mistral switches to extended'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout cleanup controller at approved SHA
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify archived CUDA proof and delete only redundant branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "haricot/candle" ]]
+          [[ "$GITHUB_REF" == "refs/heads/mirror_orch" ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          PIN="f5ce7f6f8b7a68d14a55419f9f221e1ae3537fd3"
+          DUP="candle_for_mistralrs"
+          TAG="refs/tags/archive/candle-pruned-20261016/archive/extended/sm61-validated-38898680839-2"
+          canon="$(git ls-remote --heads origin refs/heads/extended | awk '$2=="refs/heads/extended"{print $1}')"
+          duplicate="$(git ls-remote --heads origin "refs/heads/$DUP" | awk -v r="refs/heads/$DUP" '$2==r{print $1}')"
+          archived="$(git ls-remote --tags origin "${TAG}^{}" | awk -v r="${TAG}^{}" '$2==r{print $1}')"
+          [[ "$canon" == "$PIN" && "$duplicate" == "$PIN" && "$archived" == "$PIN" ]] || {
+            echo "::error::Protected Candle Extended SM61 SHA mismatch"; exit 3;
+          }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/38898680839" |
+            jq -e '.status=="completed" and .conclusion=="success"' >/dev/null
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" |
+            jq -s 'add // []' |
+            jq -e --arg ref "$DUP" 'all(.[]; .head.ref!=$ref and .base.ref!=$ref)' >/dev/null
+          gh auth setup-git
+          git push --force-with-lease="refs/heads/$DUP:$PIN" origin ":refs/heads/$DUP"
+          [[ -z "$(git ls-remote --heads origin "refs/heads/$DUP")" ]] || {
+            echo "::error::Duplicate Candle branch still present"; exit 3;
+          }
+          [[ "$(git ls-remote --heads origin refs/heads/extended | cut -f1)" == "$PIN" ]] || exit 3
+          echo "RETIRE_REDUNDANT_CANDLE=PASS branch=$DUP archived_tag_preserved=$TAG sha=$PIN" >> "$GITHUB_STEP_SUMMARY"
