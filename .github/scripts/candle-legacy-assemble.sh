@@ -11,7 +11,7 @@ umask 077
 cfg=.github/legacy-cuda-sources.json
 jq -e '
   .schema_version==1 and .kind=="legacy-cuda-main-exact-delta" and
-  .integration_target=="legacy-cuda" and
+  .integration_target=="legacy-cuda" and .promotion_target=="cuda_legacy" and
   [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
     "cudnn_fallback_candle","moe_simt_f16_candle"] and
   all(.features[];
@@ -149,7 +149,7 @@ done
 
 mkdir -p "$aggregate/candle-integration"
 jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"legacy-cuda-five",main_sha:$main_sha,
-    campaign:$campaign,strategy:$strategy,integration_target:"cuda_legacy",
+    campaign:$campaign,strategy:$strategy,integration_target:"legacy-cuda",promotion_target:"cuda_legacy",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
     validation_state:"UNVALIDATED_CANDIDATE",features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/legacy-cuda.json"

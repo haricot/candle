@@ -5,8 +5,8 @@ set -euo pipefail
 work="$1"; source_bf16="$2"; source_fp8="$3"; report="$4"
 root=".github/resolutions/bf16-fp8-exact-v1"
 manifest="$root/stage-manifest.json"
-[[ "$source_bf16" == 07980b71e52cfccc4c95c0c747043c9fb985dcab &&
-   "$source_fp8" == 121f14beb269754ff9edcb3a33e77c38844d5c26 ]] || exit 3
+[[ "$source_bf16" == c146a477591c4be1104f189f5809a974664a28d8 &&
+   "$source_fp8" == e7d2a9d615853dca263c236e381e5e76f45fec9f ]] || exit 3
 jq -e --arg b "$source_bf16" --arg f "$source_fp8" \
   '.schema_version==1 and .source_bf16==$b and .source_fp8==$f and
   (.files|length)==4' "$manifest" >/dev/null
