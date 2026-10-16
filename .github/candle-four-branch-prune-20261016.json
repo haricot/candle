@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "repo": "haricot/candle",
+  "reason": "four-redundant-branches-20261016",
+  "targets": [
+    {
+      "ref": "ci/cuda1292-ubuntu2604-sm61-20260927",
+      "sha": "7b1ccb1391d401a86d2c5946759213c0bb04f98b",
+      "preserved_in": "mirror_orch"
+    },
+    {
+      "ref": "orch/extended-cuda-manifest-fix",
+      "sha": "56630c263e99673aa91ec254c58583ea5a2b78f9",
+      "preserved_in": "orch/extended-v1"
+    },
+    {
+      "ref": "orch/extended-dynamic-v2",
+      "sha": "86a4384b674c21351432b224df715780ac7c0fdc",
+      "preserved_in": "orch/extended-v1"
+    },
+    {
+      "ref": "grouped_cudnn_pr_sm61_validation",
+      "sha": "3910451b498ca37149bcd1f441fad963b7e45f28",
+      "preserved_in": "grouped_conv_transpose_pr_v4_validation"
+    }
+  ],
+  "protected_heads": {
+    "cuda_legacy": "bfce966ad4d61a48801eb6af4db8b8eabebc01a8",
+    "extended": "f5ce7f6f8b7a68d14a55419f9f221e1ae3537fd3",
+    "fp4_candle": "191352522f51985d4139ef74d133a68c226d1fe7",
+    "fp8_candle": "8262854dd58138baf6f424951dc91a5197b33cb6",
+    "orch/legacy-cuda-v1": "fc84c056ae6d8cfd3d75da858924823b3ffbfab9",
+    "orch/extended-v1": "c308442de25c4767f6e42c4de505a395270e58a9",
+    "grouped_conv_transpose_pr_v4_validation": "fa8d92f54559feacb8cba6e7a6b9c9a7859c9eb2"
+  }
+}

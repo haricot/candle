@@ -1,0 +1,129 @@
+name: Candle Four Redundant Branch Cleanup
+on:
+  push:
+    branches: [mirror_orch]
+    paths:
+      - .github/workflows/candle-prune-four-20261016.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candle-four-20261016-prune
+  cancel-in-progress: false
+
+jobs:
+  archive_and_delete_four:
+    if: >-
+      github.repository == 'haricot/candle' &&
+      github.ref == 'refs/heads/mirror_orch' &&
+      github.event.head_commit.message == 'ci: archive and prune four redundant Candle refs without merging PR 26'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact approved manifest
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check SHA ancestry and PR usage; archive and prune
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = haricot/candle
+          test "$GITHUB_REF" = refs/heads/mirror_orch
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          m=.github/candle-four-branch-prune-20261016.json
+          jq -e '
+           .schema_version==1 and .repo=="haricot/candle" and
+           .reason=="four-redundant-branches-20261016" and
+           (.targets|length)==4 and
+           ([.targets[].ref]|unique|length)==4 and
+           (.protected_heads|length)==7 and
+           all(.targets[];
+             (.sha|test("^[0-9a-f]{40}$")) and
+             (.ref|IN("ci/cuda1292-ubuntu2604-sm61-20260927",
+                      "orch/extended-cuda-manifest-fix",
+                      "orch/extended-dynamic-v2",
+                      "grouped_cudnn_pr_sm61_validation")) and
+             (.preserved_in|IN("mirror_orch","orch/extended-v1","grouped_conv_transpose_pr_v4_validation")))
+          ' "$m" >/dev/null
+          mkdir -p "$RUNNER_TEMP/candle-four-prune"
+          e="$RUNNER_TEMP/candle-four-prune"
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          git ls-remote --heads origin > "$e/heads"
+          sha_of() { awk -v n="refs/heads/$1" '$2==n {print $1}' "$e/heads"; }
+          check_protected() {
+           while IFS=$'\t' read -r ref sha; do
+             [[ "$(sha_of "$ref")" == "$sha" ]] || { echo "::error::Protected branch changed: $ref"; exit 3; }
+           done < <(jq -r '.protected_heads|to_entries[]|[.key,.value]|@tsv' "$m")
+          }
+          check_protected
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" |
+            jq -s 'add // []' > "$e/open-prs.json"
+          while IFS=$'\t' read -r ref sha parent; do
+           [[ "$(sha_of "$ref")" == "$sha" ]] || { echo "::error::Target moved: $ref"; exit 3; }
+           [[ "$(jq -r --arg n "$ref" '.protected_heads|has($n)' "$m")" == false ]] || exit 3
+           jq -e --arg n "$ref" 'any(.[]; .head.ref==$n or .base.ref==$n)' "$e/open-prs.json" >/dev/null &&
+             { echo "::error::PR uses $ref"; exit 3; }
+           git merge-base --is-ancestor "$sha" "refs/remotes/origin/$parent" || {
+             echo "::error::Unpreserved commit in $ref versus $parent"; exit 3;
+           }
+           echo "ELIGIBLE $ref $sha retained_in=$parent"
+          done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
+          echo "PRUNE_FOUR_PREFLIGHT=PASS" | tee -a "$GITHUB_STEP_SUMMARY"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git
+          git ls-remote --tags origin 'refs/tags/archive/candle-pruned-20261016/*' > "$e/tags"
+          tag_sha() { awk -v n="refs/tags/$1^{}" '$2==n {print $1}' "$e/tags"; }
+          specs=()
+          while IFS=$'\t' read -r ref sha parent; do
+           tag="archive/candle-pruned-20261016/$ref"
+           git check-ref-format "refs/tags/$tag"
+           old="$(tag_sha "$tag")"
+           if [[ -n "$old" ]]; then
+             [[ "$old" == "$sha" ]] || { echo "::error::Tag collision: $tag"; exit 3; }
+           else
+             [[ -z "$(awk -v n="refs/tags/$tag" '$2==n {print $1}' "$e/tags")" ]] || exit 3
+             git cat-file -e "$sha^{commit}"
+             git tag -a "$tag" "$sha" -m "Preserve $ref at $sha before cleanup"
+             specs+=("refs/tags/$tag:refs/tags/$tag")
+           fi
+          done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
+          if (( \${#specs[@]} )); then git push --atomic origin "\${specs[@]}"; fi
+          git ls-remote --tags origin 'refs/tags/archive/candle-pruned-20261016/*' > "$e/tags"
+          while IFS=$'\t' read -r ref sha parent; do
+           [[ "$(tag_sha "archive/candle-pruned-20261016/$ref")" == "$sha" ]] || {
+             echo "::error::Archive not verified: $ref"; exit 3;
+           }
+          done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
+          git ls-remote --heads origin > "$e/heads"
+          check_protected
+          leases=(); deletes=()
+          while IFS=$'\t' read -r ref sha parent; do
+           [[ "$(sha_of "$ref")" == "$sha" ]] || { echo "::error::Target moved: $ref"; exit 3; }
+           leases+=("--force-with-lease=refs/heads/$ref:$sha")
+           deletes+=(":refs/heads/$ref")
+          done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
+          [[ "\${#deletes[@]}" == 4 ]] || exit 3
+          git push --atomic "\${leases[@]}" origin "\${deletes[@]}"
+          git ls-remote --heads origin > "$e/heads"
+          while IFS=$'\t' read -r ref sha parent; do
+           [[ -z "$(sha_of "$ref")" ]] || { echo "::error::Still present: $ref"; exit 3; }
+          done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
+          check_protected
+          echo "PRUNE_FOUR=PASS archive_tags=4 deleted_branches=4" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload deletion evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-four-branch-prune-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candle-four-prune/
+          if-no-files-found: warn
+          retention-days: 90
