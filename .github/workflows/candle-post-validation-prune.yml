@@ -1,0 +1,53 @@
+name: Candle Post-Validation Branch Prune
+# Manual only. Legacy and Extended runs must already have validated AND promoted.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview; do not write tags or delete branches
+        required: true
+        type: boolean
+        default: true
+      confirmation:
+        description: For apply only, type ARCHIVE_AND_DELETE_99
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candle-post-validation-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.repository == 'haricot/candle' && github.ref == 'refs/heads/mirror_orch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PRUNE_DRY_RUN: ${{ inputs.dry_run }}
+      PRUNE_CONFIRM: ${{ inputs.confirmation }}
+    steps:
+      - name: Checkout exact reviewed orchestration
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: mirror_orch
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Revalidate physical SM61 proofs and preview or archive/prune
+        shell: bash
+        run: bash .github/scripts/candle-post-validation-prune.sh
+      - name: Upload cleanup preflight evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: post-validation-prune-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candle-prune/
+          if-no-files-found: warn
+          retention-days: 90
