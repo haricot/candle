@@ -68,7 +68,12 @@ cargo check -p candle-core -p candle-nn --lib --tests \
 
 if [[ "$CHECK_BRANCH" == extended_integration && "$build_rc" -eq 0 ]]; then
   qwen3_rc=0
-  cargo check -p candle-examples --example quantized-qwen3 --features cuda --locked \
+  qwen3_features=cuda
+  if jq -e '[.features[].feature] | (index("bf16_candle") != null) and
+      (index("fp8_candle") != null) and (index("fp4_candle") != null)' "$manifest" >/dev/null; then
+    qwen3_features=cuda,cuda-legacy-bf16,cuda-legacy-fp8,cuda-legacy-fp4
+  fi
+  cargo check -p candle-examples --example quantized-qwen3 --features "$qwen3_features" --locked \
     > "$report/qwen3-cuda-check.log" 2>&1 || qwen3_rc=$?
   if ((qwen3_rc != 0)); then
     echo "::error::Extended downstream quantized-qwen3 CUDA compile failed"

@@ -105,11 +105,13 @@ if has_feature bf16_candle; then
 fi
 
 if has_feature fp8_candle; then
-  run_gate fp8 cargo test -p candle-core --release --features "$CORE_FEATURES" --test fp8_legacy_tests -- --nocapture
+  run_gate fp8 cargo test -p candle-core --release --features "$CORE_FEATURES" --test fp8_legacy_tests --test fp8_sm61_f8_tests \
+    --test fp8_r2_upstream_canary --test fp8_r4c_dispatch_tests \
+    --test fp8_r4c_loader_tests --test fp8_r4d_native_tests -- --nocapture
 fi
 
 if has_feature fp4_candle; then
-  run_gate fp4_mxfp4 cargo test -p candle-core --release --features "$CORE_FEATURES" --test mxfp4_tests -- --nocapture
+  run_gate fp4_mxfp4 cargo test -p candle-core --release --features "$CORE_FEATURES" --test mxfp4_tests --test fp4_e7c_contract --test nvfp4_loader_tests -- --nocapture
 fi
 
 if has_feature cudnn_fallback_candle; then

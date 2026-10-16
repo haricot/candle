@@ -68,8 +68,15 @@ if [[ "$MODE" == integrated ]]; then
   cargo test -p candle-core --no-default-features --locked --lib > "$report/core-lib-tests.log" 2>&1 || {
     tail -n 120 "$report/core-lib-tests.log"; exit 1;
   }
+  if has_feature fp8_candle; then
+    cargo test -p candle-core --no-default-features --locked \
+      --test fp8_r2_upstream_canary --test fp8_r4c_dispatch_tests \
+      --test fp8_r4c_loader_tests --test fp8_r4d_native_tests > "$report/fp8-dispatch-loader-tests.log" 2>&1 || {
+        tail -n 120 "$report/fp8-dispatch-loader-tests.log"; exit 1;
+      }
+  fi
   if has_feature fp4_candle; then
-    cargo test -p candle-core --no-default-features --locked --test mxfp4_tests --test nvfp4_experiment > "$report/fp4-reference-tests.log" 2>&1 || {
+    cargo test -p candle-core --no-default-features --locked --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests > "$report/fp4-reference-tests.log" 2>&1 || {
       tail -n 120 "$report/fp4-reference-tests.log"; exit 1;
     }
   fi
@@ -100,7 +107,7 @@ case "$FEATURE" in
   lean4_standalone)
     bash tools/lean4-standalone/scripts/check.sh > "$report/cpu-tests.log" 2>&1 ;;
   fp4_candle)
-    cargo test -p candle-core --no-default-features --locked       --test mxfp4_tests --test nvfp4_experiment > "$report/cpu-tests.log" 2>&1 ;;
+    cargo test -p candle-core --no-default-features --locked       --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests > "$report/cpu-tests.log" 2>&1 ;;
   asd_core_v3_standalone)
     cargo test -p candle-core --no-default-features --locked       --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests       -- --test-threads=1 > "$report/cpu-tests.log" 2>&1 &&
     cargo test -p candle-nn --no-default-features --locked --lib       >> "$report/cpu-tests.log" 2>&1 ;;
@@ -111,7 +118,12 @@ case "$FEATURE" in
   moe_simt_f16_candle)
     rustc --edition=2021 --test candle-kernels/src/moe_selection.rs       -o "$RUNNER_TEMP/extended-moe-selection" > "$report/cpu-tests.log" 2>&1 &&
     "$RUNNER_TEMP/extended-moe-selection" --nocapture >> "$report/cpu-tests.log" 2>&1 ;;
-  bf16_candle|fp8_candle|cudnn_fallback_candle)
+  fp8_candle)
+    cargo test -p candle-core --no-default-features --locked --lib \
+      --test fp8_r2_upstream_canary --test fp8_r4c_dispatch_tests \
+      --test fp8_r4c_loader_tests --test fp8_r4d_native_tests \
+      > "$report/cpu-tests.log" 2>&1 ;;
+  bf16_candle|cudnn_fallback_candle)
     cargo test -p candle-core --no-default-features --locked --lib       > "$report/cpu-tests.log" 2>&1 ;;
   *) echo "::error::Unsupported Extended standalone CPU suite $FEATURE"; exit 3 ;;
 esac || {

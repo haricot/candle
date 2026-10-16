@@ -45,9 +45,11 @@ git show "${CANDIDATE_SHA}:${MANIFEST_PATH}" > "$manifest" ||
 jq -e   --arg campaign "$CAMPAIGN"   --arg main "$BASE_SHA"   '.campaign == $campaign and .main_sha == $main and (.features | type == "array" and length > 0)'   "$manifest" >/dev/null ||
   fail "candidate manifest does not match campaign/base"
 
-manifest_target="$(jq -r '.integration_target' "$manifest")"
+# Keep the logical Legacy manifest identity required by runner v6 separate
+# from the reviewed stable Git ref. Extended retains its existing identity.
+manifest_target="$(jq -r '.promotion_target // .integration_target' "$manifest")"
 [[ "$manifest_target" == "$TARGET_BRANCH" ]] ||
-  fail "manifest integration_target=$manifest_target, expected $TARGET_BRANCH"
+  fail "manifest promotion target=$manifest_target, expected $TARGET_BRANCH"
 
 declare -a archive_specs=()
 declare -a promote_specs=()
