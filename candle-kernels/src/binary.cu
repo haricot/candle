@@ -15,6 +15,9 @@ BINARY_OP_OUT(__nv_bfloat16, uint8_t, le_bf16, x <= y)
 BINARY_OP_OUT(__nv_bfloat16, uint8_t, gt_bf16, x > y)
 BINARY_OP_OUT(__nv_bfloat16, uint8_t, ge_bf16, x >= y)
 
+#endif
+
+#if __CUDA_ARCH__ >= 800 || defined(CANDLE_CUDA_LEGACY_FP8)
 #define F8E4M3_TO_FLOAT(x) __half2float(__nv_cvt_fp8_to_halfraw(x.__x, __NV_E4M3))
 
 BINARY_OP(__nv_fp8_e4m3, badd_f8_e4m3, __nv_fp8_e4m3(F8E4M3_TO_FLOAT(x) + F8E4M3_TO_FLOAT(y)))
