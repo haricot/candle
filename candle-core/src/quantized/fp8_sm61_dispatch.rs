@@ -99,7 +99,7 @@ pub fn required_bytes(s: &Fp8LinearSpec) -> Outcome<(usize, usize)> {
         return Err(Fp8DispatchError("invalid FP8 tensor/block geometry"));
     }
     // CUDA F8E kernel requires K divisible by 128; fail early and deterministically.
-    if s.in_features % 128 != 0 {
+    if !s.in_features.is_multiple_of(128) {
         return Err(Fp8DispatchError("FP8 sm61 requires K divisible by 128"));
     }
     if s.out_features > i32::MAX as usize
@@ -118,8 +118,8 @@ pub fn required_bytes(s: &Fp8LinearSpec) -> Outcome<(usize, usize)> {
             "FP8 linear dimensions exceed CUDA launch contract",
         ));
     }
-    let nr = s.out_features / s.block_n + usize::from(s.out_features % s.block_n != 0);
-    let kr = s.in_features / s.block_k + usize::from(s.in_features % s.block_k != 0);
+    let nr = s.out_features.div_ceil(s.block_n);
+    let kr = s.in_features.div_ceil(s.block_k);
     let scale_count = nr
         .checked_mul(kr)
         .ok_or(Fp8DispatchError("FP8 scales overflow"))?;

@@ -122,9 +122,8 @@ fn parse_shards<'a>(buffers: &'a [Vec<u8>]) -> Result<Vec<SafeTensors<'a>>> {
     buffers
         .iter()
         .map(|bytes| {
-            SafeTensors::deserialize(bytes).map_err(|e| {
-                crate::Error::Msg(format!("F8E invalid SafeTensors shard: {e}").into())
-            })
+            SafeTensors::deserialize(bytes)
+                .map_err(|e| crate::Error::Msg(format!("F8E invalid SafeTensors shard: {e}")))
         })
         .collect()
 }
@@ -158,7 +157,7 @@ fn index_tensors(shards: &[SafeTensors<'_>]) -> Result<Vec<LocatedDescriptor>> {
         }
         let wt = shards[weight_shard]
             .tensor(name)
-            .map_err(|e| crate::Error::Msg(format!("F8E weight view: {e}").into()))?;
+            .map_err(|e| crate::Error::Msg(format!("F8E weight view: {e}")))?;
         let dt = format!("{:?}", wt.dtype());
         if dt != "F8_E4M3" && dt != "F8_E4M3FN" {
             continue;
@@ -174,11 +173,11 @@ fn index_tensors(shards: &[SafeTensors<'_>]) -> Result<Vec<LocatedDescriptor>> {
         let suffix = name.strip_suffix(".weight").expect("checked above");
         let scale_name = format!("{suffix}.weight_scale_inv");
         let &scale_shard = index.get(&scale_name).ok_or_else(|| {
-            crate::Error::Msg(format!("F8E FP8 projection without inverse scales: {name}").into())
+            crate::Error::Msg(format!("F8E FP8 projection without inverse scales: {name}"))
         })?;
         let scale = shards[scale_shard]
             .tensor(&scale_name)
-            .map_err(|e| crate::Error::Msg(format!("F8E scale view: {e}").into()))?;
+            .map_err(|e| crate::Error::Msg(format!("F8E scale view: {e}")))?;
         let (_, bn, bk) = decode_f8e_inverse_scales(n, k, &scale)?;
         // Reject malformed geometry before CUDA allocation.
         super::fp8_sm61_dispatch::required_bytes(&Fp8LinearSpec {
@@ -189,7 +188,7 @@ fn index_tensors(shards: &[SafeTensors<'_>]) -> Result<Vec<LocatedDescriptor>> {
             resident_calls: 0,
             profile: None,
         })
-        .map_err(|e| crate::Error::Msg(format!("F8E dispatch geometry: {e}").into()))?;
+        .map_err(|e| crate::Error::Msg(format!("F8E dispatch geometry: {e}")))?;
         descriptors.push(LocatedDescriptor {
             meta: Fp8TensorDescriptor {
                 identifier: suffix.to_owned(),
@@ -218,7 +217,7 @@ fn choose_dispatch(index: &[LocatedDescriptor], req: &Fp8LoadRequest) -> Result<
         }
         Fp8DispatchStrategy::ByGeometry => dispatch_residence(&specs, req.budget),
     };
-    result.map_err(|e| crate::Error::Msg(format!("F8E dispatch failed: {e}").into()))
+    result.map_err(|e| crate::Error::Msg(format!("F8E dispatch failed: {e}")))
 }
 
 /// CPU-side inventory, usable for arbitrary producer names and shard ordering.
@@ -254,10 +253,10 @@ pub fn load_cuda(
     for (item, decision) in index.iter().zip(&dispatch.entries) {
         let wt = shards[item.weight_shard]
             .tensor(&format!("{}.weight", item.meta.identifier))
-            .map_err(|e| crate::Error::Msg(format!("F8E weight view: {e}").into()))?;
+            .map_err(|e| crate::Error::Msg(format!("F8E weight view: {e}")))?;
         let scale = shards[item.scale_shard]
             .tensor(&format!("{}.weight_scale_inv", item.meta.identifier))
-            .map_err(|e| crate::Error::Msg(format!("F8E scale view: {e}").into()))?;
+            .map_err(|e| crate::Error::Msg(format!("F8E scale view: {e}")))?;
         let (scales, bn, bk) =
             decode_f8e_inverse_scales(item.meta.out_features, item.meta.in_features, &scale)?;
         if (bn, bk) != (item.meta.block_n, item.meta.block_k) {
@@ -391,9 +390,9 @@ impl Fp8NativeResidentModel {
         self.weights.get(identifier)
     }
     pub fn forward(&self, identifier: &str, input: &crate::Tensor) -> Result<crate::Tensor> {
-        let linear = self.linear(identifier).ok_or_else(|| {
-            crate::Error::Msg(format!("F8E unknown FP8 projection {identifier}").into())
-        })?;
+        let linear = self
+            .linear(identifier)
+            .ok_or_else(|| crate::Error::Msg(format!("F8E unknown FP8 projection {identifier}")))?;
         linear.forward(input)
     }
 }

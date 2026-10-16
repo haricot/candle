@@ -60,18 +60,21 @@ fn synthetic_uniform_dispatch_respects_memory_and_residence() {
         .collect();
     let total: usize = specs.iter().map(|s| required_bytes(s).unwrap().0).sum();
     let expanded: usize = specs.iter().map(|s| required_bytes(s).unwrap().1).sum();
-    let profile = Some(Fp8WorkloadProfile {
+    let profile = Fp8WorkloadProfile {
         simt_request_ms: 20.0,
         expanded_request_ms: 10.0,
         extra_initialization_ms: 100.0,
         planned_requests_while_resident: 50,
-    });
-    let simt = dispatch_uniform_residence(&specs, budget(total + 8192, false), profile).unwrap();
+    };
+    let simt =
+        dispatch_uniform_residence(&specs, budget(total + 8192, false), Some(profile)).unwrap();
     assert_eq!(simt.expanded_f16_count, 0);
     assert_eq!(simt.selected_total_bytes, total);
-    let low = dispatch_uniform_residence(&specs, budget(total + 8192, true), profile).unwrap();
+    let low =
+        dispatch_uniform_residence(&specs, budget(total + 8192, true), Some(profile)).unwrap();
     assert_eq!(low.expanded_f16_count, 0);
-    let high = dispatch_uniform_residence(&specs, budget(expanded + 8192, true), profile).unwrap();
+    let high =
+        dispatch_uniform_residence(&specs, budget(expanded + 8192, true), Some(profile)).unwrap();
     assert_eq!(high.expanded_f16_count, 3);
     assert!(high
         .entries
@@ -82,7 +85,7 @@ fn synthetic_uniform_dispatch_respects_memory_and_residence() {
         budget(expanded + 8192, true),
         Some(Fp8WorkloadProfile {
             planned_requests_while_resident: 1,
-            ..profile.unwrap()
+            ..profile
         }),
     )
     .unwrap();
