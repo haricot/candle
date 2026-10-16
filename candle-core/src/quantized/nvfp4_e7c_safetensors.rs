@@ -19,7 +19,7 @@ pub(crate) struct Nvfp4LaunchShape {
 
 pub(crate) fn checked_launch_shape(n: usize, k: usize, batch: usize) -> Result<Nvfp4LaunchShape> {
     let limit = i32::MAX as usize;
-    if n == 0 || k == 0 || k % 32 != 0 || batch == 0 || batch > 65535 {
+    if n == 0 || k == 0 || !k.is_multiple_of(32) || batch == 0 || batch > 65535 {
         crate::bail!("NVFP4 requires N>0, K divisible by 32, batch 1..65535");
     }
     let count = |a: usize, b: usize| -> Result<usize> {
@@ -64,7 +64,7 @@ pub(crate) fn validate_modelopt_payload(
         crate::bail!("NVFP4 invalid payload lengths or global multiplier");
     }
     const ABS_DOUBLED: [f32; 8] = [0., 1., 2., 3., 4., 6., 8., 12.];
-    for (&scale, block) in scales.iter().zip(packed.chunks_exact(8)) {
+    for (&scale, block) in scales.iter().zip(packed.as_chunks::<8>().0) {
         if scale & 0x80 != 0 || scale == 0x7f {
             crate::bail!("NVFP4 invalid signed/NaN E4M3FN scale");
         }
