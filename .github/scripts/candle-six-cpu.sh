@@ -44,7 +44,7 @@ cargo check -p candle-core -p candle-nn --no-default-features --locked \
 }
 if [[ "$MODE" == integrated ]]; then
   cargo test -p candle-core --no-default-features --locked \
-    --test mxfp4_tests --test nvfp4_experiment \
+    --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests \
     > "$report/fp4-reference-tests.log" 2>&1 || {
       tail -n 110 "$report/fp4-reference-tests.log"; exit 1
     }
@@ -64,7 +64,7 @@ fi
 case "$FEATURE" in
   fp4_candle)
     cargo test -p candle-core --no-default-features --locked \
-      --test mxfp4_tests --test nvfp4_experiment > "$report/cpu-tests.log" 2>&1 ;;
+      --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests > "$report/cpu-tests.log" 2>&1 ;;
   asd_core)
     cargo test -p candle-core --no-default-features --locked \
       --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests \
@@ -73,7 +73,12 @@ case "$FEATURE" in
     rustc --edition=2021 --test candle-kernels/src/moe_selection.rs \
       -o "$RUNNER_TEMP/standalone-moe-selection" > "$report/cpu-tests.log" 2>&1 &&
     "$RUNNER_TEMP/standalone-moe-selection" --nocapture >> "$report/cpu-tests.log" 2>&1 ;;
-  bf16_candle|fp8_candle|cudnn_fallback_candle)
+  fp8_candle)
+    cargo test -p candle-core --no-default-features --locked --lib \
+      --test fp8_r2_upstream_canary --test fp8_r4c_dispatch_tests \
+      --test fp8_r4c_loader_tests --test fp8_r4d_native_tests \
+      > "$report/cpu-tests.log" 2>&1 ;;
+  bf16_candle|cudnn_fallback_candle)
     cargo test -p candle-core --no-default-features --locked --lib \
       > "$report/cpu-tests.log" 2>&1 ;;
   *) echo "::error::Unsupported standalone CPU suite $FEATURE"; exit 3 ;;

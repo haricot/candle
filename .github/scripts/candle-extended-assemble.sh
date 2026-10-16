@@ -181,6 +181,31 @@ for feature in "${features[@]}"; do
   git -C "$aggregate" merge-base --is-ancestor "${prepared[$feature]}" HEAD || exit 3
 done
 
+# Verify that the independent BF16, FP8 and FP4 source deltas contributed
+# their own CUDA aliases to the integrated candle-examples Cargo manifest.
+# The aliases are source-owned: do not re-inject them into the candidate here.
+if jq -e '[.features[].feature] | (index("bf16_candle") != null) and
+    (index("fp8_candle") != null) and (index("fp4_candle") != null)' "$cfg" >/dev/null; then
+  python3 - "$aggregate/candle-examples/Cargo.toml" <<'PY' || {
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as file:
+    features = tomllib.load(file).get("features", {})
+
+for name in ("cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"):
+    expected = ["cuda", "candle/" + name]
+    actual = features.get(name)
+    if actual != expected:
+        raise SystemExit(f"EXTENDED_EXAMPLES_LEGACY_ALIASES=FAIL feature={name} actual={actual!r} expected={expected!r}")
+
+print("EXTENDED_EXAMPLES_LEGACY_ALIASES=PASS")
+PY
+    echo "::error::Integrated candle-examples lost BF16/FP8/FP4 feature aliases"
+    exit 3
+  }
+fi
+
 mkdir -p "$aggregate/candle-integration"
 jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",

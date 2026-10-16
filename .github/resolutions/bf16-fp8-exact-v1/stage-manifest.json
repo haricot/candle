@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "source_bf16": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
-  "source_fp8": "121f14beb269754ff9edcb3a33e77c38844d5c26",
+  "source_bf16": "c146a477591c4be1104f189f5809a974664a28d8",
+  "source_fp8": "e7d2a9d615853dca263c236e381e5e76f45fec9f",
   "files": {
     "candle-core/Cargo.toml": {
       "base": "b04c0b4e4dc158bccc6b72ab9d70e3f17914c673",

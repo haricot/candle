@@ -36,11 +36,11 @@ cargo check -p candle-core -p candle-nn --no-default-features --locked   > "$rep
     tail -n 120 "$report/cpu-check.log"; exit 1;
   }
 
-cargo test -p candle-core --no-default-features --locked --lib   > "$report/core-lib-tests.log" 2>&1 || {
+cargo test -p candle-core --no-default-features --locked --lib --test fp8_r2_upstream_canary --test fp8_r4c_dispatch_tests --test fp8_r4c_loader_tests --test fp8_r4d_native_tests   > "$report/core-lib-tests.log" 2>&1 || {
     tail -n 120 "$report/core-lib-tests.log"; exit 1;
   }
 
-cargo test -p candle-core --no-default-features --locked   --test mxfp4_tests --test nvfp4_experiment   > "$report/fp4-reference-tests.log" 2>&1 || {
+cargo test -p candle-core --no-default-features --locked   --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests   > "$report/fp4-reference-tests.log" 2>&1 || {
     tail -n 120 "$report/fp4-reference-tests.log"; exit 1;
   }
 

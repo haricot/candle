@@ -1,13 +1,18 @@
 {
   "schema_version": 1,
-  "source_bf16": "07980b71e52cfccc4c95c0c747043c9fb985dcab",
-  "source_fp8": "121f14beb269754ff9edcb3a33e77c38844d5c26",
-  "source_fp4": "2976961e97f0aff7a353e45b209653c392f2c657",
+  "source_bf16": "c146a477591c4be1104f189f5809a974664a28d8",
+  "source_fp8": "e7d2a9d615853dca263c236e381e5e76f45fec9f",
+  "source_fp4": "4487e9a719d71d09ab3e30874b756e0a5d17640c",
   "files": {
     "candle-core/Cargo.toml": {
       "base": "b04c0b4e4dc158bccc6b72ab9d70e3f17914c673",
       "ours": "28b6bfeb71452d221ac3b0c100e62d1f645c9aa3",
-      "theirs": "3feb9401f6b9eb002f3b17921a2f24964a508ecd"
+      "theirs": "2982475149d60eb9c74e4bc20f4ebf861cd68ee1"
+    },
+    "candle-core/src/quantized/mod.rs": {
+      "base": "38e923c83869aaf3957f8b4d20ee4c051b46d6f3",
+      "ours": "81e6e8c8b22a04cad6b5a39a7c23d743b4fd8893",
+      "theirs": "b8f3882ec7c8a1026637bc472bee468fed4eb00f"
     },
     "candle-kernels/Cargo.toml": {
       "base": "d59f9ee086139937cae9783bd08ff0642489c761",
@@ -18,7 +23,12 @@
       "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
       "ours": "a3536aa28e40f4f604cd43069990fe2da75c2c30",
       "theirs": "d25975d162a5cc8891eb91a84292146baae1addd"
+    },
+    "candle-kernels/src/quantized.cu": {
+      "base": "a9f24900b9e82fb10451f0c6d339bc119cfc9ac4",
+      "ours": "3dacbd5f2d89cfca726036180c3e7d660c856d38",
+      "theirs": "beac43f27c3eafd8b62e0d50417f507bf6d02c7a"
     }
   },
-  "review_note": "exact-delta preparation restores clean main as the merge base; reviewed ours/theirs/postimage unchanged"
+  "review_note": "Closure 2026-10-16: preserve both FP8 R4D and FP4 source-owned modules and kernels, plus FP4 serde_json tests; exact three-stage inputs only."
 }

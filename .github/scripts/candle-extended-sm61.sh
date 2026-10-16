@@ -79,8 +79,14 @@ run_gate combined_compile   cargo check -p candle-core -p candle-nn --release --
 # and the concrete quantized Qwen3 CUDA consumer that exposed the previous gap.
 run_gate downstream_transformers_compile \
   cargo check -p candle-transformers --lib --release --locked
+# Smoke the *examples* feature surface, not just candle-core. This catches
+# unknown --features cuda-legacy-* on the composed candidate.
+EXAMPLE_CUDA_FEATURES=cuda
+if has_feature bf16_candle && has_feature fp8_candle && has_feature fp4_candle; then
+  EXAMPLE_CUDA_FEATURES=cuda,cuda-legacy-bf16,cuda-legacy-fp8,cuda-legacy-fp4
+fi
 run_gate downstream_qwen3_cuda_compile \
-  cargo check -p candle-examples --example quantized-qwen3 --features cuda --release --locked
+  cargo check -p candle-examples --example quantized-qwen3 --features "$EXAMPLE_CUDA_FEATURES" --release --locked
 
 # Feature-specific smoke gates; do not assume seven/eight sources.
 if has_feature embeddinggemma2; then
@@ -99,11 +105,13 @@ if has_feature bf16_candle; then
 fi
 
 if has_feature fp8_candle; then
-  run_gate fp8 cargo test -p candle-core --release --features "$CORE_FEATURES" --test fp8_legacy_tests -- --nocapture
+  run_gate fp8 cargo test -p candle-core --release --features "$CORE_FEATURES" --test fp8_legacy_tests --test fp8_sm61_f8_tests \
+    --test fp8_r2_upstream_canary --test fp8_r4c_dispatch_tests \
+    --test fp8_r4c_loader_tests --test fp8_r4d_native_tests -- --nocapture
 fi
 
 if has_feature fp4_candle; then
-  run_gate fp4_mxfp4 cargo test -p candle-core --release --features "$CORE_FEATURES" --test mxfp4_tests -- --nocapture
+  run_gate fp4_mxfp4 cargo test -p candle-core --release --features "$CORE_FEATURES" --test mxfp4_tests --test fp4_e7c_contract --test nvfp4_loader_tests -- --nocapture
 fi
 
 if has_feature cudnn_fallback_candle; then
