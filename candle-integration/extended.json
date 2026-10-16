@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "kind": "extended-multi",
+  "feature_count": 8,
+  "main_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+  "campaign": "extended-38898680839-1",
+  "strategy": "exact-delta",
+  "integration_target": "extended",
+  "old_integration_sha": "c370185b1de24eb0ba2a5a0bb708babe59986781",
+  "source_config_sha256": "d02dc7d545ab6b799b8bb3ffda256c398adf7093cfd09c6db16d450223d77dfa",
+  "validation_state": "UNVALIDATED_CANDIDATE",
+  "features": [
+    {
+      "feature": "bf16_candle",
+      "source_ref": "bf16_candle",
+      "target_ref": "bf16_candle",
+      "source_sha": "342d6aeec3aae0fa95ca8029f6da94366e9e733f",
+      "review_source_sha": "c146a477591c4be1104f189f5809a974664a28d8",
+      "cuda_features": [
+        "cuda-legacy-bf16"
+      ],
+      "prepared_sha": "deeef975e3352f48404f7dab33528630b8d83387",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/bf16_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "c10b86bfca090f47bcf2c05e971745441e832e72055521ac30c19d204c138105",
+      "prepared_patch_sha256": "c10b86bfca090f47bcf2c05e971745441e832e72055521ac30c19d204c138105"
+    },
+    {
+      "feature": "fp8_candle",
+      "source_ref": "fp8_candle",
+      "target_ref": "fp8_candle",
+      "source_sha": "4354cd51f4b802753e690908e443337e7b007ee0",
+      "review_source_sha": "e7d2a9d615853dca263c236e381e5e76f45fec9f",
+      "cuda_features": [
+        "cuda-legacy-fp8"
+      ],
+      "prepared_sha": "4b7bdb29d6c48dc7e7503e0e2cba56da0af6e853",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/fp8_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "61ffd1ab0fef22898a203ffac3f9ff858a5d0ef57cc3eda96ee2cc6e933c4b95",
+      "prepared_patch_sha256": "61ffd1ab0fef22898a203ffac3f9ff858a5d0ef57cc3eda96ee2cc6e933c4b95"
+    },
+    {
+      "feature": "fp4_candle",
+      "source_ref": "fp4_candle",
+      "target_ref": "fp4_candle",
+      "source_sha": "87fc41c18e550c72120a3a565b65a809e4d97b6e",
+      "review_source_sha": "4487e9a719d71d09ab3e30874b756e0a5d17640c",
+      "cuda_features": [
+        "cuda-legacy-fp4"
+      ],
+      "prepared_sha": "332dbf40b1386c2e407768cb80f603f61a257648",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/fp4_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "44eb6dc676db4d55186dacfcecd5cfebf45e4fc6118f95b1d68cc9a1a5c17012",
+      "prepared_patch_sha256": "44eb6dc676db4d55186dacfcecd5cfebf45e4fc6118f95b1d68cc9a1a5c17012"
+    },
+    {
+      "feature": "cudnn_fallback_candle",
+      "source_ref": "cudnn_fallback_candle",
+      "target_ref": "cudnn_fallback_candle",
+      "source_sha": "30bc593ba8b6985d2147c7035d3d1d964393acf4",
+      "review_source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+      "cuda_features": [
+        "cudnn"
+      ],
+      "prepared_sha": "f2b7f3599ce6c28e519547a1474f026696dc6d74",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/cudnn_fallback_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "8c40b61afe81830619bcc4ef395149829a3edd39127608a80bc698e1d13365c3",
+      "prepared_patch_sha256": "8c40b61afe81830619bcc4ef395149829a3edd39127608a80bc698e1d13365c3"
+    },
+    {
+      "feature": "moe_simt_f16_candle",
+      "source_ref": "moe_simt_f16_candle",
+      "target_ref": "moe_simt_f16_candle",
+      "source_sha": "721f8bf1cdcad163202eca8949a467d89be1866b",
+      "review_source_sha": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+      "cuda_features": [
+        "cuda"
+      ],
+      "prepared_sha": "a9d8e5c2f43815e9ff5629fed8da651e609b01ca",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/moe_simt_f16_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "b5f1c835a067f668cfb7878eb5aa643592350dde60009f27fdd771e62a3f5c5f",
+      "prepared_patch_sha256": "b5f1c835a067f668cfb7878eb5aa643592350dde60009f27fdd771e62a3f5c5f"
+    },
+    {
+      "feature": "asd_core_v3_standalone",
+      "source_ref": "asd_core_v3_standalone",
+      "target_ref": "asd_core_v3_standalone",
+      "source_sha": "653871d0d29ef9f29eb53390c126254b8394a0aa",
+      "review_source_sha": "4583ded4513f92f72aae658d2cf3db0db1542b5e",
+      "cuda_features": [
+        "cuda",
+        "cudnn"
+      ],
+      "prepared_sha": "cd43774bef2385648a18d76617d15aca0c7f9422",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/asd_core_v3_standalone",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "62fa8181d81704052b8861b563bff7fa61be6de4929bee24a721080c1b8df885",
+      "prepared_patch_sha256": "62fa8181d81704052b8861b563bff7fa61be6de4929bee24a721080c1b8df885"
+    },
+    {
+      "feature": "embeddinggemma2",
+      "source_ref": "embeddinggemma2",
+      "target_ref": "embeddinggemma2",
+      "source_sha": "0b9b9935d3b9d0e63e8c0d4bccbd13bb2ed7ce23",
+      "review_source_sha": "0b9b9935d3b9d0e63e8c0d4bccbd13bb2ed7ce23",
+      "cuda_features": [
+        "cuda"
+      ],
+      "prepared_sha": "806a44bae9e539f59ad088c4d72922433c6a9018",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/embeddinggemma2",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "85c3e81433d1c6fa5b8679e0fab44799068f3118add5e5dd573dba51f9b20711",
+      "prepared_patch_sha256": "85c3e81433d1c6fa5b8679e0fab44799068f3118add5e5dd573dba51f9b20711"
+    },
+    {
+      "feature": "lean4_standalone",
+      "source_ref": "lean4_standalone",
+      "target_ref": "lean4_standalone",
+      "source_sha": "d175523d14c792042eab1d5ff375d6baae5b660c",
+      "review_source_sha": "d175523d14c792042eab1d5ff375d6baae5b660c",
+      "cuda_features": [],
+      "prepared_sha": "1e19833d48f98ae7c9e978edd5665725df0adaf6",
+      "preparation_ref": "prepare/extended/extended-38898680839-1/lean4_standalone",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "55631f708939d8f3f780877281b7a7ea482f3643888e42424d7b30a29cb6a7ed",
+      "prepared_patch_sha256": "55631f708939d8f3f780877281b7a7ea482f3643888e42424d7b30a29cb6a7ed"
+    }
+  ]
+}
