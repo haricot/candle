@@ -17,7 +17,7 @@ jobs:
     if: >-
       github.repository == 'haricot/candle' &&
       github.ref == 'refs/heads/mirror_orch' &&
-      github.event.head_commit.message == 'ci: archive and prune four redundant Candle refs without merging PR 26'
+      github.event.head_commit.message == 'ci: fix four-branch cleanup shell array expansion'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
@@ -96,7 +96,7 @@ jobs:
              specs+=("refs/tags/$tag:refs/tags/$tag")
            fi
           done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
-          if (( \${#specs[@]} )); then git push --atomic origin "\${specs[@]}"; fi
+          if (( ${#specs[@]} )); then git push --atomic origin "${specs[@]}"; fi
           git ls-remote --tags origin 'refs/tags/archive/candle-pruned-20261016/*' > "$e/tags"
           while IFS=$'\t' read -r ref sha parent; do
            [[ "$(tag_sha "archive/candle-pruned-20261016/$ref")" == "$sha" ]] || {
@@ -111,8 +111,8 @@ jobs:
            leases+=("--force-with-lease=refs/heads/$ref:$sha")
            deletes+=(":refs/heads/$ref")
           done < <(jq -r '.targets[]|[.ref,.sha,.preserved_in]|@tsv' "$m")
-          [[ "\${#deletes[@]}" == 4 ]] || exit 3
-          git push --atomic "\${leases[@]}" origin "\${deletes[@]}"
+          [[ "${#deletes[@]}" == 4 ]] || exit 3
+          git push --atomic "${leases[@]}" origin "${deletes[@]}"
           git ls-remote --heads origin > "$e/heads"
           while IFS=$'\t' read -r ref sha parent; do
            [[ -z "$(sha_of "$ref")" ]] || { echo "::error::Still present: $ref"; exit 3; }
