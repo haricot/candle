@@ -16,7 +16,10 @@ concurrency:
 
 jobs:
   archive_and_prune:
-    if: github.repository == 'haricot/candle' && github.ref == 'refs/heads/mirror_orch' && github.event.head_commit.message == 'ci: execute audited post-SM61 historical cleanup without merging PR 26'
+    if: >-
+      github.repository == 'haricot/candle' &&
+      github.ref == 'refs/heads/mirror_orch' &&
+      github.event.head_commit.message == 'ci: execute audited SM61 cleanup, fix workflow validation'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
