@@ -183,3 +183,6 @@ impl<M: Module> ModuleT for M {
         self.forward(xs)
     }
 }
+pub mod diagnostics;
+
+pub mod stateful;

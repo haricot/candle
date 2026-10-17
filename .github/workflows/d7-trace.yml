@@ -1,0 +1,22 @@
+name: D7 generic trace and ShortConv reference
+on:
+  push:
+    branches: [d7-trace-t123, d7-trace-extended]
+  pull_request:
+    branches: [asd_core_v3_standalone]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - run: cargo check -p candle-core --no-default-features
+      - run: cargo test -p candle-core --features d7-trace --test d7_diagnostics
+      - run: cargo run -p candle-core --features d7-trace --example d7_shortconv_validate -- cpu "$RUNNER_TEMP/d7-state-validation"
