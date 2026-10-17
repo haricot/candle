@@ -66,7 +66,22 @@ fn launch_plan(
         (S::F32(x), S::F32(w)) => {
             let mut b = func.builder();
             b.arg(x).arg(w).arg(&out);
-            unsafe { b.launch(cfg) }.w()?;
+            if let Err(err) = unsafe { b.launch(cfg) }.w() {
+                crate::diagnostics::event("asd.submission_error", || {
+                    crate::diagnostics::Payload::new().text("error", &err)
+                });
+                return Err(err);
+            }
+            crate::diagnostics::event("asd.submitted", || {
+                crate::diagnostics::Payload::new()
+                    .text("implementation", plan.selected.implementation_id())
+                    .text(
+                        "artifact_sha256",
+                        implementation.artifact_sha256().unwrap_or("unavailable"),
+                    )
+                    .text("provider", implementation.provider_name())
+                    .text("completion", "unobserved")
+            });
             S::F32(out)
         }
         _ => crate::bail!("ASD exact CUDA executor dtype mismatch"),
@@ -144,6 +159,7 @@ struct PlanCacheEntry {
     generation: u64,
     call: candle_kernels::asd_exact::ExactOperationCall,
     plan: Option<Arc<ResolvedAsdPlan>>,
+    reason: &'static str,
 }
 
 thread_local! {
@@ -215,17 +231,26 @@ fn resolved_plan(
             .filter(|entry| {
                 entry.device_id == device_id && entry.generation == generation && entry.call == call
             })
-            .map(|entry| entry.plan.clone())
+            .map(|entry| (entry.plan.clone(), entry.reason))
     }) {
-        return Ok(hit);
+        crate::diagnostics::event("asd.decision", || {
+            crate::diagnostics::Payload::new()
+                .text("reason", hit.1)
+                .boolean("plan_cache_hit", true)
+                .boolean("selected", hit.0.is_some())
+                .number("generation", generation)
+        });
+        return Ok(hit.0);
     }
 
     let specialized_disabled = super::grouped_transpose_dispatch::specialized_cuda_disabled();
     let exact_disabled = super::grouped_transpose_dispatch::exact_disabled();
     let trace_enabled = super::grouped_transpose_dispatch::asd_exact_cuda_trace_enabled();
 
-    let plan = if exact_disabled {
-        None
+    let (plan, reason) = if exact_disabled {
+        (None, "asd_disabled")
+    } else if specialized_disabled {
+        (None, "specialized_cuda_disabled")
     } else if let Some(selected) = selected(input, call, specialized_disabled)? {
         let implementation_id = selected.implementation_id().to_owned();
         let decision_identity_sha256 = selected.decision_identity_sha256().to_owned();
@@ -237,13 +262,16 @@ fn resolved_plan(
             Some(implementation) => {
                 let output_count = implementation.output_count();
                 let launch_config = implementation.launch_config();
-                Some(Arc::new(ResolvedAsdPlan {
-                    selected,
-                    implementation,
-                    output_count,
-                    launch_config,
-                    trace_enabled,
-                }))
+                (
+                    Some(Arc::new(ResolvedAsdPlan {
+                        selected,
+                        implementation,
+                        output_count,
+                        launch_config,
+                        trace_enabled,
+                    })),
+                    "selected",
+                )
             }
             None => {
                 if trace_enabled {
@@ -252,12 +280,26 @@ fn resolved_plan(
                         implementation_id,
                     );
                 }
-                None
+                (None, "external_artifact_missing")
             }
         }
     } else {
-        None
+        (
+            None,
+            if actual_uuid(input).is_none() {
+                "device_identity_unavailable"
+            } else {
+                "profile_miss"
+            },
+        )
     };
+    crate::diagnostics::event("asd.decision", || {
+        crate::diagnostics::Payload::new()
+            .text("reason", reason)
+            .boolean("selected", plan.is_some())
+            .boolean("plan_cache_hit", false)
+            .number("generation", generation)
+    });
 
     LAST_PLAN.with(|cache| {
         *cache.borrow_mut() = Some(PlanCacheEntry {
@@ -265,6 +307,7 @@ fn resolved_plan(
             generation,
             call,
             plan: plan.clone(),
+            reason,
         });
     });
 
@@ -433,6 +476,20 @@ pub(super) fn try_launch_conv1d(
     p: &ParamsConv1D,
 ) -> Result<Option<CudaStorage>> {
     if !eligible(input, input_l, kernel, kernel_l) {
+        crate::diagnostics::event("asd.decision", || {
+            crate::diagnostics::Payload::new()
+                .boolean("selected", false)
+                .text(
+                    "reason",
+                    if input.dtype() != DType::F32 || kernel.dtype() != DType::F32 {
+                        "unsupported_dtype"
+                    } else if !layout_ok(input_l) || !layout_ok(kernel_l) {
+                        "unsupported_layout"
+                    } else {
+                        "device_mismatch"
+                    },
+                )
+        });
         return Ok(None);
     }
     let c = call(
@@ -469,6 +526,20 @@ pub(super) fn try_launch_ct1d(
     p: &ParamsConvTranspose1D,
 ) -> Result<Option<CudaStorage>> {
     if !eligible(input, input_l, kernel, kernel_l) {
+        crate::diagnostics::event("asd.decision", || {
+            crate::diagnostics::Payload::new()
+                .boolean("selected", false)
+                .text(
+                    "reason",
+                    if input.dtype() != DType::F32 || kernel.dtype() != DType::F32 {
+                        "unsupported_dtype"
+                    } else if !layout_ok(input_l) || !layout_ok(kernel_l) {
+                        "unsupported_layout"
+                    } else {
+                        "device_mismatch"
+                    },
+                )
+        });
         return Ok(None);
     }
     let c = call(
@@ -505,6 +576,20 @@ pub(super) fn try_launch_ct2d(
     p: &ParamsConvTranspose2D,
 ) -> Result<Option<CudaStorage>> {
     if !eligible(input, input_l, kernel, kernel_l) {
+        crate::diagnostics::event("asd.decision", || {
+            crate::diagnostics::Payload::new()
+                .boolean("selected", false)
+                .text(
+                    "reason",
+                    if input.dtype() != DType::F32 || kernel.dtype() != DType::F32 {
+                        "unsupported_dtype"
+                    } else if !layout_ok(input_l) || !layout_ok(kernel_l) {
+                        "unsupported_layout"
+                    } else {
+                        "device_mismatch"
+                    },
+                )
+        });
         return Ok(None);
     }
     let c = call(
