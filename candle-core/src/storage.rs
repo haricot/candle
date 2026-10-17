@@ -20,6 +20,11 @@ pub type StorageMutRef<'a> = RwLockWriteGuard<'a, Storage>;
 
 impl Storage {
     pub fn try_clone(&self, layout: &Layout) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "try_clone")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         match self {
             Self::Cpu(storage) => Ok(Self::Cpu(storage.clone())),
             Self::Cuda(storage) => {
@@ -80,6 +85,11 @@ impl Storage {
     }
 
     pub(crate) fn const_set(&mut self, v: Scalar, l: &Layout) -> Result<()> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "const_set")
+                .object("input", crate::diagnostics::storage(self, l))
+        });
         match self {
             Storage::Cpu(storage) => storage.const_set(v, l),
             Storage::Cuda(storage) => storage.const_set(v, l),
@@ -88,6 +98,13 @@ impl Storage {
     }
 
     pub(crate) fn affine(&self, layout: &Layout, mul: f64, add: f64) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "affine")
+                .object("input", crate::diagnostics::storage(self, layout))
+                .text("mul", mul)
+                .text("add", add)
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.affine(layout, mul, add)?;
@@ -105,6 +122,12 @@ impl Storage {
     }
 
     pub(crate) fn powf(&self, layout: &Layout, alpha: f64) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "powf")
+                .object("input", crate::diagnostics::storage(self, layout))
+                .text("alpha", alpha)
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.powf(layout, alpha)?;
@@ -122,6 +145,12 @@ impl Storage {
     }
 
     pub(crate) fn elu(&self, layout: &Layout, alpha: f64) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "elu")
+                .object("input", crate::diagnostics::storage(self, layout))
+                .text("alpha", alpha)
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.elu(layout, alpha)?;
@@ -145,6 +174,23 @@ impl Storage {
         lhs_layout: &Layout,
         rhs_layout: &Layout,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "cmp")
+                .object("input", crate::diagnostics::storage(self, lhs_layout))
+                .text(
+                    "operator",
+                    match op {
+                        CmpOp::Eq => "eq",
+                        CmpOp::Ne => "ne",
+                        CmpOp::Lt => "lt",
+                        CmpOp::Le => "le",
+                        CmpOp::Gt => "gt",
+                        CmpOp::Ge => "ge",
+                    },
+                )
+                .object("rhs", crate::diagnostics::storage(rhs, rhs_layout))
+        });
         self.same_device(rhs, "cmp")?;
         self.same_dtype(rhs, "cmp")?;
         match (self, rhs) {
@@ -174,6 +220,13 @@ impl Storage {
     }
 
     pub(crate) fn reduce_op(&self, op: ReduceOp, layout: &Layout, s: &[usize]) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "reduce_op")
+                .object("input", crate::diagnostics::storage(self, layout))
+                .text("operator", format!("{op:?}"))
+                .numbers("reduced_dims", s)
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.reduce_op(op, layout, s)?;
@@ -191,6 +244,12 @@ impl Storage {
     }
 
     pub(crate) fn to_dtype(&self, layout: &Layout, dtype: DType) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "to_dtype")
+                .object("input", crate::diagnostics::storage(self, layout))
+                .text("output_dtype", dtype.as_str())
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.to_dtype(layout, dtype)?;
@@ -208,6 +267,12 @@ impl Storage {
     }
 
     pub(crate) fn apply_op1(&self, l: &Layout, c: &dyn CustomOp1) -> Result<(Self, Shape)> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "apply_op1")
+                .object("input", crate::diagnostics::storage(self, l))
+                .text("custom_name", c.name())
+        });
         match self {
             Self::Cpu(storage) => {
                 let (storage, shape) = c.cpu_fwd(storage, l)?;
@@ -231,6 +296,13 @@ impl Storage {
         l2: &Layout,
         c: &dyn CustomOp2,
     ) -> Result<(Self, Shape)> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "apply_op2")
+                .object("input", crate::diagnostics::storage(self, l1))
+                .text("custom_name", c.name())
+                .object("rhs", crate::diagnostics::storage(t2, l2))
+        });
         self.same_device(t2, c.name())?;
         match (self, t2) {
             (Self::Cpu(s1), Self::Cpu(s2)) => {
@@ -258,6 +330,12 @@ impl Storage {
         l3: &Layout,
         c: &dyn CustomOp3,
     ) -> Result<(Self, Shape)> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "apply_op3")
+                .object("input", crate::diagnostics::storage(self, l1))
+                .text("custom_name", c.name())
+        });
         self.same_device(t2, c.name())?;
         self.same_device(t3, c.name())?;
         match (self, t2, t3) {
@@ -288,6 +366,11 @@ impl Storage {
         srcs: [(Src<'_, Storage>, &Layout); N],
         c: &C,
     ) -> Result<()> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "inplace_op")
+                .object("input", crate::diagnostics::storage(self, dst_l))
+        });
         // Aliased sources are `self`. Only distinct needs checking.
         for (s, _) in srcs.iter() {
             if let Src::Distinct(s) = s {
@@ -324,6 +407,12 @@ impl Storage {
     }
 
     pub(crate) fn unary_impl<B: op::UnaryOpT>(&self, layout: &Layout) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "unary_impl")
+                .object("input", crate::diagnostics::storage(self, layout))
+                .text("operator", B::NAME)
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.unary_impl::<B>(layout)?;
@@ -346,6 +435,13 @@ impl Storage {
         lhs_layout: &Layout,
         rhs_layout: &Layout,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "binary_impl")
+                .object("input", crate::diagnostics::storage(self, lhs_layout))
+                .text("operator", B::NAME)
+                .object("rhs", crate::diagnostics::storage(rhs, rhs_layout))
+        });
         self.same_device(rhs, B::NAME)?;
         self.same_dtype(rhs, B::NAME)?;
         match (self, rhs) {
@@ -381,6 +477,13 @@ impl Storage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConv1D,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "conv1d")
+                .object("input", crate::diagnostics::storage(self, l))
+                .object("weight", crate::diagnostics::storage(kernel, kernel_l))
+                .text("parameters", format!("{params:?}"))
+        });
         self.same_device(kernel, "conv1d")?;
         self.same_dtype(kernel, "conv1d")?;
         match (self, &kernel) {
@@ -412,6 +515,13 @@ impl Storage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConvTranspose1D,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "conv_transpose1d")
+                .object("input", crate::diagnostics::storage(self, l))
+                .object("weight", crate::diagnostics::storage(kernel, kernel_l))
+                .text("parameters", format!("{params:?}"))
+        });
         self.same_device(kernel, "conv-transpose1d")?;
         self.same_dtype(kernel, "conv-transpose1d")?;
         match (self, &kernel) {
@@ -443,6 +553,13 @@ impl Storage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConv2D,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "conv2d")
+                .object("input", crate::diagnostics::storage(self, l))
+                .object("weight", crate::diagnostics::storage(kernel, kernel_l))
+                .text("parameters", format!("{params:?}"))
+        });
         self.same_device(kernel, "conv2d")?;
         self.same_dtype(kernel, "conv2d")?;
         match (self, &kernel) {
@@ -474,6 +591,13 @@ impl Storage {
         kernel_l: &Layout,
         params: &crate::conv::ParamsConvTranspose2D,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "conv_transpose2d")
+                .object("input", crate::diagnostics::storage(self, l))
+                .object("weight", crate::diagnostics::storage(kernel, kernel_l))
+                .text("parameters", format!("{params:?}"))
+        });
         self.same_device(kernel, "conv_transpose2d")?;
         self.same_dtype(kernel, "conv_transpose2d")?;
         match (self, &kernel) {
@@ -504,6 +628,11 @@ impl Storage {
         kernel_size: (usize, usize),
         stride: (usize, usize),
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "avg_pool2d")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.avg_pool2d(layout, kernel_size, stride)?;
@@ -526,6 +655,11 @@ impl Storage {
         kernel_size: (usize, usize),
         stride: (usize, usize),
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "max_pool2d")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.max_pool2d(layout, kernel_size, stride)?;
@@ -543,6 +677,11 @@ impl Storage {
     }
 
     pub(crate) fn upsample_nearest1d(&self, layout: &Layout, sz: usize) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "upsample_nearest1d")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.upsample_nearest1d(layout, sz)?;
@@ -560,6 +699,11 @@ impl Storage {
     }
 
     pub(crate) fn upsample_nearest2d(&self, layout: &Layout, h: usize, w: usize) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "upsample_nearest2d")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage = storage.upsample_nearest2d(layout, h, w)?;
@@ -585,6 +729,11 @@ impl Storage {
         scale_h: Option<f64>,
         scale_w: Option<f64>,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "upsample_bilinear2d")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         match self {
             Storage::Cpu(storage) => {
                 let storage =
@@ -612,6 +761,11 @@ impl Storage {
         f: &Self,
         layout_f: &Layout,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "where_cond")
+                .object("input", crate::diagnostics::storage(self, layout))
+        });
         self.same_device(t, "where")?;
         self.same_device(f, "where")?;
         t.same_dtype(f, "where")?;
@@ -644,6 +798,12 @@ impl Storage {
         indexes_l: &Layout,
         d: usize,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "gather")
+                .object("input", crate::diagnostics::storage(self, l))
+                .number("dimension", d as u64)
+        });
         self.same_device(indexes, "index-add")?;
         match (self, indexes) {
             (Self::Cpu(s), Self::Cpu(indexes)) => {
@@ -671,6 +831,12 @@ impl Storage {
         source_l: &Layout,
         d: usize,
     ) -> Result<()> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "scatter_set")
+                .object("input", crate::diagnostics::storage(self, l))
+                .number("dimension", d as u64)
+        });
         self.same_device(indexes, "scatter-set")?;
         self.same_device(source, "scatter-set")?;
         match (self, indexes, source) {
@@ -697,6 +863,12 @@ impl Storage {
         source_l: &Layout,
         d: usize,
     ) -> Result<()> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "scatter_add")
+                .object("input", crate::diagnostics::storage(self, l))
+                .number("dimension", d as u64)
+        });
         self.same_device(indexes, "scatter-add")?;
         self.same_device(source, "scatter-add")?;
         match (self, indexes, source) {
@@ -723,6 +895,12 @@ impl Storage {
         source_l: &Layout,
         d: usize,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "index_add")
+                .object("input", crate::diagnostics::storage(self, l))
+                .number("dimension", d as u64)
+        });
         self.same_device(indexes, "index-add")?;
         self.same_device(source, "index-add")?;
         match (self, indexes, source) {
@@ -749,6 +927,11 @@ impl Storage {
         rhs_l: &Layout,
         d: usize,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "index_select")
+                .object("input", crate::diagnostics::storage(self, lhs_l))
+        });
         self.same_device(rhs, "index-select")?;
         match (self, rhs) {
             (Self::Cpu(lhs), Self::Cpu(rhs)) => {
@@ -779,6 +962,13 @@ impl Storage {
         lhs_layout: &Layout,
         rhs_layout: &Layout,
     ) -> Result<Self> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "matmul")
+                .object("input", crate::diagnostics::storage(self, lhs_layout))
+                .numbers("bmnk", &[bmnk.0, bmnk.1, bmnk.2, bmnk.3])
+                .object("rhs", crate::diagnostics::storage(rhs, rhs_layout))
+        });
         self.same_device(rhs, "matmul")?;
         self.same_dtype(rhs, "matmul")?;
         match (self, rhs) {
@@ -810,6 +1000,12 @@ impl Storage {
         dst_offset: usize,
         src_l: &Layout,
     ) -> Result<()> {
+        let _d7 = crate::diagnostics::scope("op", || {
+            crate::diagnostics::Payload::new()
+                .text("operation", "copy_strided_src")
+                .object("input", crate::diagnostics::storage(self, src_l))
+                .number("destination_offset", dst_offset as u64)
+        });
         match (self, dst) {
             (Self::Cpu(src), Self::Cpu(dst)) => src.copy_strided_src(dst, dst_offset, src_l),
             (Self::Cuda(src), Self::Cuda(dst)) => Ok(src.copy_strided_src(dst, dst_offset, src_l)?),
