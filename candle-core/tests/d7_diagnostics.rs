@@ -63,7 +63,7 @@ fn capture_and_immutable_state_contract() -> candle_core::Result<()> {
         serde_json::from_slice(&std::fs::read(out.join("trace-manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest["complete"], true);
     let events = std::fs::read_to_string(out.join("events.ndjson")).unwrap();
-    assert!(events.contains("stateful_abi_not_implemented"));
+    assert!(events.contains("unsupported_device"));
     assert!(events.contains("\"offset\":4"));
     assert!(events.contains("\"contiguous\":false"));
     let _ = std::fs::remove_dir_all(out);
