@@ -44,7 +44,22 @@ jobs:
           names=subprocess.check_output(['git','ls-files','half_duplex'],text=True).splitlines()
           audio=[p for p in names if pathlib.Path(p).suffix.lower() in ('.wav','.flac','.mp3','.m4a','.ogg')]
           assert audio==['half_duplex/tests/fixtures/hdb0-tone-16k.wav'],audio
+          # Fail closed for local recordings placed alongside Rust/Python fixtures.
+          forbidden=[
+              'half_duplex/tests/local/bluetooth.wav',
+              'half_duplex/tests/private/voice.wav',
+              'half_duplex/tests/recordings/audio.flac',
+              'half_duplex/tests/fixtures/personal.wav',
+              'half_duplex/tests/fixtures/personal.mp3'
+          ]
+          for path in forbidden:
+              blocked=subprocess.run(['git','check-ignore','--no-index','-q',path]).returncode==0
+              assert blocked, f'local audio is not ignored: {path}'
+          allowed='half_duplex/tests/fixtures/hdb0-tone-16k.wav'
+          is_ignored=subprocess.run(['git','check-ignore','--no-index','-q',allowed]).returncode==0
+          assert not is_ignored, f'synthetic test fixture unexpectedly ignored: {allowed}'
           print('HALF_DUPLEX_SOURCE_AUDIO=ONE_SYNTHETIC_FIXTURE_ONLY')
+          print('HALF_DUPLEX_LOCAL_AUDIO=GITIGNORE_GUARD_PASS')
           PY
   rust-c2-cpu:
     runs-on: ubuntu-24.04
