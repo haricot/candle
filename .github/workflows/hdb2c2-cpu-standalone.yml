@@ -29,6 +29,32 @@ jobs:
             echo 'bundle_present=false' >> "$GITHUB_OUTPUT"
             echo 'C2 full qualification NOT RUN: source ZIP not yet stored on branch.'
           fi
+  cameo-dataset-smoke:
+    name: French CAMEO corpus contract (no private recordings)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dataset reader only
+        run: python -m pip install 'datasets==3.6.0' 'soundfile' 'numpy'
+      - name: Validate offline selection rules
+        run: python -m unittest discover -s tools/hdb2c2-standalone -p 'test_cameo_subset.py' -v
+      - name: Verify real French CAMEO audio and transcript coverage
+        run: |
+          python tools/hdb2c2-standalone/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
+          python - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'
+          import json,sys,pathlib
+          m=json.loads(pathlib.Path(sys.argv[1]).read_text())
+          rows=m['rows']
+          assert len(rows)==14,len(rows)
+          assert {x['split'] for x in rows}=={'cafe','oreau'}
+          assert all(pathlib.Path(x['wav']).is_file() and pathlib.Path(x['reference_file']).is_file() for x in rows)
+          print('HDB2C2_DATASET=PASS_FRENCH_CAFE_OREAU_14_SAMPLES')
+          print('HDB2C2_ASR_NUMERIC_PARITY=NOT_RUN')
+          PY
   pinned-upstream-smoke:
     name: Pinned upstream CPU build (NOT C2 parity)
     needs: source-detection
