@@ -48,5 +48,9 @@ for i in "${!clips[@]}";do
   mkdir -p "$GITHUB_WORKSPACE/halfduplex-ci-published"
   cp "$report/c2_ab_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c2_ab_$i.json"
   cp "$report/c2c3_exact_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c2c3_$i.json"
+  # C3-A: the real NeMo log-Mel is injected bit-identically into the Rust encoder.
+  # Detect the FIRST mismatching encoder stage; keep raw activations local.
+  bash ci/ci_c3.sh "$report"
+  cp "$report/c3_layers_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_layers_$i.json"
 done
 echo 'HALF_DUPLEX_REAL_CPU=EXECUTED_REVIEW_NUMERIC_VALUES'
