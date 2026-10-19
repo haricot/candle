@@ -30,12 +30,14 @@ def select(rows, split, quota):
             return
 
 def pcm16(audio):
+    import io
     import numpy as np
-    if not isinstance(audio,dict) or audio.get("sampling_rate")!=16000 or "array" not in audio:
-        raise ValueError("Expected decoded CAMEO 16 kHz audio dict")
-    data=np.asarray(audio["array"],dtype=np.float32)
-    if data.ndim!=1 or len(data)<160 or not np.isfinite(data).all():
-        raise ValueError("Invalid mono audio")
+    import soundfile as sf
+    if not isinstance(audio,dict) or not audio.get("bytes"):
+        raise ValueError("Expected embedded CAMEO audio bytes (decode=False)")
+    data,sr=sf.read(io.BytesIO(audio["bytes"]),dtype="float32",always_2d=False)
+    if sr!=16000 or data.ndim!=1 or len(data)<160 or not np.isfinite(data).all():
+        raise ValueError("Invalid CAMEO mono 16 kHz audio")
     return np.clip(np.rint(data*32768),-32768,32767).astype("<i2").tobytes()
 
 def main():
@@ -50,7 +52,9 @@ def main():
     manifest=[]
     for split in ("cafe","oreau"):
         counts=Counter()
+        from datasets import Audio
         ds=load_dataset(REPO,split=split,streaming=True,revision=a.revision)
+        ds=ds.cast_column("audio", Audio(decode=False))
         for row in select(ds,split,a.per_emotion):
             emotion=str(row["emotion"]).casefold()
             pcm=pcm16(row["audio"])
