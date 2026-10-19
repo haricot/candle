@@ -1,0 +1,68 @@
+name: HDB2-C2 standalone CPU qualification
+on:
+  push:
+    branches: [hdb2c2_cpu_standalone]
+    paths:
+      - .github/workflows/hdb2c2-cpu-standalone.yml
+      - tools/hdb2c2-standalone/**
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hdb2c2-cpu-standalone
+  cancel-in-progress: false
+jobs:
+  source-detection:
+    name: Detect verified standalone source archive
+    runs-on: ubuntu-24.04
+    outputs:
+      bundle_present: ${{ steps.check.outputs.bundle_present }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          bash -n tools/hdb2c2-standalone/ci_cpu.sh
+          if test -f tools/hdb2c2-standalone/haricot-half-duplex-hdb2c-c2-standalone-v0.6.6.zip; then
+            echo 'bundle_present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'bundle_present=false' >> "$GITHUB_OUTPUT"
+            echo 'C2 full qualification NOT RUN: source ZIP not yet stored on branch.'
+          fi
+  pinned-upstream-smoke:
+    name: Pinned upstream CPU build (NOT C2 parity)
+    needs: source-detection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - name: Compile and test pinned public Parakeet upstream
+        run: bash tools/hdb2c2-standalone/ci_cpu.sh smoke
+  full-cpu-parity:
+    name: Real NeMo vs C2 CPU parity (requires source ZIP)
+    needs: source-detection
+    if: needs.source-detection.outputs.bundle_present == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install required system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg unzip libsndfile1-dev
+      - name: Real public-audio numerical qualification
+        run: bash tools/hdb2c2-standalone/ci_cpu.sh qualify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hdb2c2-cpu-json-reports
+          path: hdb2c2-ci-output/published/*.json
+          if-no-files-found: warn
+          retention-days: 14
