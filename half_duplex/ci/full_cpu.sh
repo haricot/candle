@@ -22,6 +22,10 @@ ln -sf "${archives[0]}" "$HDB2C_NEMO"
 ./run-hdb2a.sh bootstrap
 ./run-hdb2a.sh prepare-model "$HDB2C_NEMO"
 ./run-hdb2a.sh check-model-config
+# HDB2-B's in-process measurement hooks must be installed in the freshly
+# bootstrapped pinned runtime before its build gate checks the source marker.
+# This is idempotent and only edits $HDB2A_RUNTIME_DIR (the CI temp checkout).
+./run-hdb2b.sh repair-runtime
 ./run-hdb2b.sh build cpu
 "$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
 mapfile -t clips < <("$HDB2C_PYTHON" - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'
