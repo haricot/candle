@@ -10,6 +10,9 @@ OUT="$ROOT/hdb2c2-ci-output"
 mkdir -p "$OUT"
 case "${1:-smoke}" in
   smoke)
+    # Isolate the nested Cargo project from the haricot/candle workspace.
+    OUT="${RUNNER_TEMP:?RUNNER_TEMP required on GitHub Actions}/hdb2c2-upstream"
+    mkdir -p "$OUT"
     echo 'HDB2C2_STAGE=UPSTREAM_BASELINE_SMOKE_NOT_C2_QUALIFIED'
     git clone -q https://github.com/n0madic/parakeet-candle.git "$OUT/pinned-parakeet"
     git -C "$OUT/pinned-parakeet" checkout -q --detach "$PIN_PARAKEET"
