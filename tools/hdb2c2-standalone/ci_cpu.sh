@@ -13,6 +13,7 @@ case "${1:-smoke}" in
     # Isolate the nested Cargo project from the haricot/candle workspace.
     OUT="${RUNNER_TEMP:?RUNNER_TEMP required on GitHub Actions}/hdb2c2-upstream"
     mkdir -p "$OUT"
+    python3 -m unittest discover -s "$ROOT/tools/hdb2c2-standalone" -p 'test_cameo_subset.py' -v
     echo 'HDB2C2_STAGE=UPSTREAM_BASELINE_SMOKE_NOT_C2_QUALIFIED'
     git clone -q https://github.com/n0madic/parakeet-candle.git "$OUT/pinned-parakeet"
     git -C "$OUT/pinned-parakeet" checkout -q --detach "$PIN_PARAKEET"
@@ -48,14 +49,42 @@ case "${1:-smoke}" in
     ./run-hdb2a.sh check-model-config
     python3 scripts/hdb2a_cargo_lock.py --manifest-path "$HDB2A_RUNTIME_DIR/Cargo.toml"
     CARGO_TARGET_DIR="$HDB2A_RUNTIME_DIR/target/hdb2b-cpu" cargo build --release --manifest-path "$HDB2A_RUNTIME_DIR/Cargo.toml" --bin parakeet-candle
-    curl --fail --location --retry 3 --output "$OUT/public-test.wav" https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/samples/jfk.wav
-    ./run-hdb2c.sh c1 "$OUT/public-test.wav" --variant cpu --probes | tee "$OUT/c1.log"
-    REPORT="$(sed -n 's/^HDB2C_REPORT_DIR=//p' "$OUT/c1.log" | tail -1)"
-    test -n "$REPORT" && test -f "$REPORT/nemo_mel.npz"
-    ./install_update.sh --report "$REPORT" | tee "$OUT/c2.log"
-    test -s "$REPORT/c2_ab_cpu.json" && test -s "$REPORT/c2c3_exact_cpu.json"
-    mkdir -p "$OUT/published"
-    cp "$REPORT"/{c1_comparison.json,c2_ab_cpu.json,c2c3_exact_cpu.json,nemo_mel.json,nemo_encoder.json} "$OUT/published/"
+    # Dataset requires no user recordings; each sample has a real transcript.
+    uv pip install --python "$HDB2C_PYTHON" 'datasets==3.6.0' 'soundfile'
+    "$HDB2C_PYTHON" "$ROOT/tools/hdb2c2-standalone/cameo_subset.py" --out "$OUT/cameo" --per-emotion 1
+    "$HDB2C_PYTHON" - "$OUT/cameo/manifest.json" "$OUT" "$PROJECT" <<'PY'
+import json, pathlib, subprocess, sys
+manifest=pathlib.Path(sys.argv[1])
+out=pathlib.Path(sys.argv[2])
+project=pathlib.Path(sys.argv[3])
+records=json.loads(manifest.read_text())["rows"]
+reports=[]
+for i,sample in enumerate(records):
+    cmd=[str(project/"run-hdb2c.sh"),"c1",sample["wav"],"--variant","cpu",
+         "--reference-file",sample["reference_file"]]
+    if sample["emotion"]=="neutral":cmd.append("--probes")
+    run=subprocess.run(cmd,check=True,text=True,capture_output=True,cwd=project)
+    print(run.stdout,flush=True)
+    marker=[line.split("=",1)[1] for line in run.stdout.splitlines() if line.startswith("HDB2C_REPORT_DIR=")]
+    if len(marker)!=1:raise RuntimeError("C1 did not return one report directory")
+    report=pathlib.Path(marker[0])
+    c1=json.loads((report/"c1_comparison.json").read_text())
+    result={"split":sample["split"],"emotion":sample["emotion"],
+            "source_pcm_sha256":sample["pcm_sha256"],
+            "dataset_id":sample["id"],"c1":c1}
+    if sample["emotion"]=="neutral":
+        c2=subprocess.run([str(project/"install_update.sh"),"--report",str(report)],check=True,cwd=project,
+                          text=True,capture_output=True)
+        print(c2.stdout,flush=True)
+        result["c2"]=json.loads((report/"c2_ab_cpu.json").read_text())
+        result["c2c3"]=json.loads((report/"c2c3_exact_cpu.json").read_text())
+    reports.append(result)
+(out/"published").mkdir(exist_ok=True)
+(out/"published"/"cameo_results.json").write_text(json.dumps(
+    {"status":"REAL_OBSERVATIONS_PARITY_NOT_ASSUMED","dataset":"amu-cai/CAMEO","results":reports},
+    indent=2,ensure_ascii=False)+"\\n")
+PY
+    test -s "$OUT/published/cameo_results.json"
     echo 'HDB2C2_STAGE=REAL_CPU_COMPARISON_REVIEW_NUMERIC_STATUS'
     ;;
   *) echo "Usage: $0 smoke|qualify" >&2; exit 2 ;;
