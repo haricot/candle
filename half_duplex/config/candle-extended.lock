@@ -1,0 +1,6 @@
+# Verified 2026-10-17 via GitHub branch-head comparison.
+CANDLE_REPO=https://github.com/haricot/candle.git
+CANDLE_REF=extended
+CANDLE_COMMIT=f5ce7f6f8b7a68d14a55419f9f221e1ae3537fd3
+# Current HDB0 Rust workspace has no Candle dependency yet.
+# HDB2 will add pinned Candle crates at this exact revision.
