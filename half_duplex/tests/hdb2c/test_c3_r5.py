@@ -4,10 +4,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 from hdb2c.c3_r5 import (SIGNATURE, MARKER, transform_r5_attention,
-                          build_r5_candidate, compare_exact, summarize_r5)
+                          build_r5_candidate, compile_r5, compare_exact, summarize_r5)
 
 FREQUENCIES = '''        for i in 0..(d_model / 2) {
             let exp = -((10000.0f64).ln() / d_model as f64) * (2 * i) as f64;
@@ -16,6 +17,23 @@ FREQUENCIES = '''        for i in 0..(d_model / 2) {
 
 
 class R5Tests(unittest.TestCase):
+    def test_cargo_target_and_control_binary_are_isolated(self):
+        with tempfile.TemporaryDirectory() as temp:
+            reference, candidate = Path(temp)/'r4', Path(temp)/'r5'
+            control = reference/'target/r4-cpu/release/hdb2c_probe'
+            control.parent.mkdir(parents=True)
+            control.write_bytes(b'immutable R4 executable')
+            with patch('subprocess.run') as run:
+                target = compile_r5(reference, candidate)
+            self.assertEqual(target, candidate/'target/r5-cpu')
+            env = run.call_args.kwargs['env']
+            self.assertEqual(env['CARGO_TARGET_DIR'], str(target))
+            self.assertNotEqual(target, reference/'target/r4-cpu')
+            self.assertEqual(control.read_bytes(), b'immutable R4 executable')
+            with patch('subprocess.run', side_effect=lambda *a, **kw: control.write_bytes(b'changed')):
+                with self.assertRaisesRegex(RuntimeError, 'modified the R4 control'):
+                    compile_r5(reference, candidate)
+
     def test_pinned_frequency_change_is_scoped_and_rejects_drift(self):
         source = 'unchanged_before\n'+FREQUENCIES+'\nunchanged_after'
         changed = transform_r5_attention(source)

@@ -209,7 +209,9 @@ def compare_r4_control(masked_dir:Path,r4_dir:Path,encoder_frames:int):
         checks.append(row)
         if row['status']!='PASS_NUMERIC_PARITY' and first is None:first=name
     if first is not None:
-        raise RuntimeError('R4 instrumentation changed masked reference output at '+first)
+        failed=next(row for row in checks if row['name']==first)
+        raise RuntimeError('R4 instrumentation changed masked reference output at '+first+
+                           ' metrics='+json.dumps(failed,sort_keys=True))
     return {'status':'EXACT_26_STAGE_R3C_R4_INSTRUMENTATION_PARITY',
             'stages_checked':len(checks),'raw_values_exact_on_valid_frames':True}
 

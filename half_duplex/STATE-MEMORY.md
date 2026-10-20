@@ -175,3 +175,13 @@ C2 `install_update.sh` also runs `cargo test --release --lib hdb2c_nemo::tests` 
   TDT/GPU parity are separate fields. Do not promote a green diagnostic run.
 - Request and scope: `ci/real_cpu_qualification_request_20261020_r5.md`.
   Local source/gate tests pass; real Rust/NeMo qualification awaits CI results.
+
+R5 first CI attempt 39436600013: 124 Python tests and real R5 Rust builds pass.
+First clip confirms 700 training children after transcribe, reduced to 0 by
+recursive eval; C1/C3 reference exact. Scaling is bitwise equal in 17/17 cases;
+native positional values are not bitwise exact, long T=513 cases reach
+3.0517578e-5 and fail the fixed 1e-5 gate. Second clip stopped on strict R4
+instrumentation self-control after R5 used the R4 Cargo target directory.
+R5 correction isolates its entire Cargo target and checks R4 executable SHA
+before/after build. Keep all numerical and exact gates unchanged; rerun both
+clips. First-run report is partial, not an encoder or positional qualification.

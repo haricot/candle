@@ -24,6 +24,22 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def compile_r5(reference: Path, candidate: Path, *, skip_build=False):
+    """Keep root-crate Cargo outputs disjoint, including the library artifacts."""
+    import os
+    import subprocess
+    target = candidate/'target/r5-cpu'
+    control = reference/'target/r4-cpu/release/hdb2c_probe'
+    before = digest(control)
+    if not skip_build:
+        subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(candidate/'Cargo.toml'),
+                        '--bin', 'hdb2c_r5_probe', '--bin', 'hdb2c_positional'],
+                       check=True, env={**os.environ, 'CARGO_TARGET_DIR': str(target)})
+    if digest(control) != before:
+        raise RuntimeError('R5 compilation modified the R4 control executable')
+    return target
+
+
 def transform_r5_attention(source):
     """Match NeMo's f32 multiply THEN exp, preserving native Rust sin/cos."""
     if MARKER in source:
@@ -287,13 +303,7 @@ def execute(report: Path, *, skip_build=False):
     r4 = s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r4-v0.7.4')
     r5 = s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r5-v0.7.5')
     manifest = build_r5_candidate(r4, r5)
-    # Reuse dependencies while preserving the already-linked R4 executable.
-    # Distinct R5 binary names prevent either executable overwriting the other.
-    target = r4/'target/r4-cpu'
-    if not skip_build:
-        subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(r5/'Cargo.toml'),
-                        '--bin', 'hdb2c_r5_probe', '--bin', 'hdb2c_positional'],
-                       check=True, env={**os.environ, 'CARGO_TARGET_DIR': str(target)})
+    target = compile_r5(r4, r5, skip_build=skip_build)
     out = report/'c3_cpu'
     trace = out/'candle_r5_trace'
     probe = out/'candle_r5_probe'
