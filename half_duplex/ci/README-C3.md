@@ -45,3 +45,9 @@ GitHub Actions uses CaFE/Oréau via CAMEO. Personal microphone WAVs stay in loca
 ## C3-A-R1: NeMo self-reference preflight
 
 The first C3 diagnostic stopped before comparing NeMo/Candle because the fresh NeMo encoder output did not match its own C1 reference at an all-frame absolute tolerance of 1e-6. This release replays the C1 transcribe-then-encoder sequence and compares only the valid [B,D,T] frames, explicitly recording overall padding drift. Limits are max_abs <= 1e-4 and cosine >= 0.999999; any larger discrepancy still fails closed and prints actual metrics. CPU C2 and CUDA are unchanged.
+
+## C3-A-R2 — Explicit valid-frame propagation (CPU/CaFE)
+
+The initial C3-A diagnostics on two genuine CaFE excerpts found `pre_encode` as the first divergent stage (cosine approx 0.913 / 0.949), while the NeMo self-reference reproduced exactly. C3-A-R2 specifically rules out **missing propagation of NeMo valid Mel length**: the Rust C3 probe receives the already-verified bit-identical NeMo `[B,T,128]` Mel tensor plus `HDB2C3_NEMO_MEL_VALID_FRAMES`, validates `0 < valid <= total`, constructs a real Candle `Tensor<i64>` of shape `[1]`, and invokes `m.encoder.forward(&mel, Some(&lengths))`. It checks returned encoder valid frames against NeMo and publishes the recorded input and output lengths in the JSON stage report. The normal C2 probe and ASR remain untouched. R2 uses a separate immutable candidate `hdb2c-c3-r2-v0.7.1`.
+
+**Important limitation:** passing explicit lengths does not by itself prove equivalence of NeMo's internal padding or attention masks. The report marks `padding_mask_parity=NOT_ESTABLISHED_LENGTH_PROPAGATION_ONLY`. If `pre_encode` still differs, proceed to R3 convolution-level instrumentation; do not label TDT or full encoder parity PASS. The real CPU job runs on public CaFE neutral + sadness only, never personal WAVs.

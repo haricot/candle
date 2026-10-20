@@ -16,7 +16,7 @@ import sys
 import numpy as np
 from .cli import settings
 
-SIGNATURE = 'hdb2c3-exact-nemo-mel-layer-trace-v0.7.0'
+SIGNATURE = 'hdb2c3-r2-exact-mel-explicit-valid-frames-v0.7.1'
 STAGES = ['pre_encode', 'post_pos_enc'] + [f'layer_{i:02}' for i in range(24)]
 HELPER = r'''
 // HDB2C3_TRACE_INSTRUMENTATION_OFFLINE_CPU_V1
@@ -84,7 +84,45 @@ def transform_probe(source: str) -> str:
     } else {
         get_logmel(&audio,&pre,&dev)?
     };'''
-    return source.replace(original,injection,1)
+    # R2 preserves the exact injected Mel and ALSO propagates its real NeMo
+    # valid frame count into Candle. This modifies only the C3 probe executable,
+    # never the C2 runtime or its normal ASR path.
+    source=source.replace(original,injection,1)
+    length_anchor='    let (features,lengths)=match &mut model {'
+    if source.count(length_anchor)!=1:
+        raise ValueError('Missing pinned C2 encoder invocation anchor')
+    lengths_code='''    // HDB2-C3-A-R2: exact NeMo valid-Mel frame count; never derive from padding.
+    let injected_mel_valid_frames:Option<usize> =
+        if std::env::var_os("HDB2C3_NEMO_MEL_PATH").is_some() {
+            let valid:usize=std::env::var("HDB2C3_NEMO_MEL_VALID_FRAMES")
+                .context("Missing HDB2C3_NEMO_MEL_VALID_FRAMES")?.parse()?;
+            let (batch, time, features)=mel.dims3()?;
+            anyhow::ensure!(batch==1 && features==128 && valid>0 && valid<=time,
+                "Invalid injected NeMo Mel valid frame count: {valid} / {time}");
+            Some(valid)
+        } else {
+            anyhow::ensure!(std::env::var_os("HDB2C3_NEMO_MEL_VALID_FRAMES").is_none(),
+                "NeMo valid-frame env supplied without NeMo Mel injection");
+            None
+        };
+    let encoder_input_lengths=if let Some(valid)=injected_mel_valid_frames {
+        Some(Tensor::from_vec(vec![valid as i64],(1,),&dev)?)
+    } else {None};
+'''
+    source=source.replace(length_anchor,lengths_code+length_anchor,1)
+    forward_anchor='m.encoder.forward(&mel,None)?'
+    if source.count(forward_anchor)!=1:
+        raise ValueError('C3 requires exactly one pinned TDT encoder invocation')
+    source=source.replace(forward_anchor,
+        'm.encoder.forward(&mel,encoder_input_lengths.as_ref())?',1)
+    meta_anchor='        "mel":mel_meta,"encoder":feat_meta,"encoder_valid_frames":lengths[0],'
+    if source.count(meta_anchor)!=1:
+        raise ValueError('Pinned C2 probe metadata anchor changed')
+    source=source.replace(meta_anchor,
+        '        "mel":mel_meta,"encoder":feat_meta,"encoder_valid_frames":lengths[0],\n'
+        '        "injected_mel_valid_frames":injected_mel_valid_frames,'
+        '        "encoder_length_argument":"EXPLICIT_NEMO_VALID_FRAMES_IF_INJECTED",',1)
+    return source
 
 
 def build_candidate(c2: Path, c3: Path) -> None:
@@ -103,7 +141,7 @@ def build_candidate(c2: Path, c3: Path) -> None:
         'src/bin/hdb2c_probe.rs':hashlib.sha256(probe_src.encode()).hexdigest()}
     manifest={'signature':SIGNATURE,'parent':str(c2),
         'source_hashes':{'conformer':sha(original),'probe':sha(probe)},
-        'generated_hashes':generated,'scope':'CPU exact same NeMo logmel, no model mutation'}
+        'generated_hashes':generated,'scope':'CPU exact NeMo logmel + explicit NeMo Mel valid length; no C2 model mutation'}
     if c3.exists():
         stored=c3/'HDB2C3-MANIFEST.json'
         if not stored.is_file() or json.loads(stored.read_text())!=manifest:
@@ -165,6 +203,16 @@ def compare_stages(ne_dir:Path, ca_dir:Path, valid_frames:int, atol=0.001, min_c
         'note':'NeMo log-Mel injected bit-identically to Candle; raw traces deliberately kept local'}
 
 
+def validate_mel_valid_frames(frames: np.ndarray, total: int) -> int:
+    values=np.asarray(frames)
+    if values.shape!=(1,) or not np.issubdtype(values.dtype,np.integer):
+        raise ValueError('NeMo C1 Mel valid lengths must be one integer')
+    valid=int(values[0])
+    if not (0<valid<=total):
+        raise ValueError(f'NeMo Mel valid frames invalid: {valid}/{total}')
+    return valid
+
+
 def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     s=settings();reportdir=reportdir.resolve()
     r=json.loads((reportdir/'nemo_report.json').read_text())
@@ -176,7 +224,7 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     if conv.get('source_nemo_sha256')!=r['checkpoint_sha256'] or sha(s['nemo'])!=r['checkpoint_sha256']:
         raise ValueError('Checkpoint identity does not match C1/source conversion')
     c2=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c2-v0.6.6')
-    c3=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-v0.7.0')
+    c3=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r2-v0.7.1')
     build_candidate(c2,c3)
     target=c3/'target'/'c3-cpu'
     exe=target/'release/hdb2c_probe'
@@ -195,10 +243,13 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     mel=np.load(reportdir/'nemo_mel.npz')['values']
     if mel.ndim!=3 or mel.shape[0]!=1 or mel.shape[1]!=128:
         raise ValueError('Unexpected NeMo Mel layout; require B,128,T')
+    mel_valid_arr=np.load(reportdir/'nemo_mel.npz')['valid_frames']
+    mel_valid=validate_mel_valid_frames(mel_valid_arr,int(mel.shape[2]))
     mel_path=out/'nemo_mel_injected_BTD.f32le'
     mel.transpose(0,2,1).astype('<f4').tofile(mel_path)
     env=os.environ.copy();env.update(HDB2C3_TRACE_DIR=str(candle_dir),
-         HDB2C3_NEMO_MEL_PATH=str(mel_path),HDB2C3_NEMO_MEL_FRAMES=str(mel.shape[2]))
+         HDB2C3_NEMO_MEL_PATH=str(mel_path),HDB2C3_NEMO_MEL_FRAMES=str(mel.shape[2]),
+         HDB2C3_NEMO_MEL_VALID_FRAMES=str(mel_valid))
     probe_out=out/'candle_probe';probe_out.mkdir(exist_ok=True)
     subprocess.run([str(exe),'--model-dir',str(s['model']), '--input',str(reportdir/'input-16k.wav'),
       '--output',str(probe_out),'--cpu'],check=True,env=env)
@@ -207,10 +258,23 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     recorded=np.fromfile(probe_out/'candle_mel.f32le',dtype='<f4')
     if not np.array_equal(injected,recorded):
         raise ValueError('NeMo Mel injection did not reach the real Candle encoder')
+    probe_meta=json.loads((probe_out/'candle_probe.json').read_text())
+    if probe_meta.get('injected_mel_valid_frames')!=mel_valid:
+        raise ValueError('Candle C3 did not acknowledge the exact NeMo valid Mel length')
+    if probe_meta.get('encoder_length_argument')!='EXPLICIT_NEMO_VALID_FRAMES_IF_INJECTED':
+        raise ValueError('Candle C3 encoder length was not passed explicitly')
     valid=int(np.load(reportdir/'nemo_encoder.npz')['valid_frames'][0])
+    if probe_meta.get('encoder_valid_frames')!=valid:
+        raise ValueError(f'Encoder valid-frame lengths diverge NeMo={valid} Candle={probe_meta.get("encoder_valid_frames")}')
     result=compare_stages(nemo_dir,candle_dir,valid)
+    result['input_lengths']={'nemo_mel_valid_frames':mel_valid,
+                             'nemo_mel_total_frames':int(mel.shape[2]),
+                             'nemo_encoder_valid_frames':valid,
+                             'candle_encoder_valid_frames':probe_meta['encoder_valid_frames'],
+                             'state':'EXPLICIT_SHARED_NEMO_VALID_MEL_FRAMES_VERIFIED'}
+    result['padding_mask_parity']='NOT_ESTABLISHED_LENGTH_PROPAGATION_ONLY'
     result['pcm_sha256']=r['pcm_sha256'];result['checkpoint_sha256']=r['checkpoint_sha256']
-    result['mel_input']='EXACT_SHARED_NEMO_F32LE_VERIFIED'
+    result['mel_input']='EXACT_SHARED_NEMO_F32LE_VERIFIED'\n    result['revision']='HDB2-C3-A-R2'
     path=reportdir/'c3_layers_cpu.json';path.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print(f'HDB2C3_A={result["status"]} first_divergence={result["first_divergence"]}',flush=True)
     print(f'HDB2C3_REPORT={path}',flush=True)

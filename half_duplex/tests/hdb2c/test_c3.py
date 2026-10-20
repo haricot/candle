@@ -20,9 +20,23 @@ class C3Tests(unittest.TestCase):
         self.assertIn('format!("layer_{index:02}")',t)
         with self.assertRaises(ValueError):transform_conformer(t)
     def test_probe_requires_exact_anchor(self):
-        t=transform_probe('    let mel=get_logmel(&audio,&pre,&dev)?;')
+        pinned='''    let mel=get_logmel(&audio,&pre,&dev)?;
+    let (features,lengths)=match &mut model {
+        ParakeetModel::Tdt(m) => m.encoder.forward(&mel,None)?,
+        _ => bail!("not tdt"),
+    };
+    let meta=json!({"stage":"test",
+        "mel":mel_meta,"encoder":feat_meta,"encoder_valid_frames":lengths[0],
+        "note":"probe"});
+'''
+        t=transform_probe(pinned)
         self.assertIn('HDB2C3_NEMO_MEL_PATH',t)
+        self.assertIn('HDB2C3_NEMO_MEL_VALID_FRAMES',t)
+        self.assertIn('m.encoder.forward(&mel,encoder_input_lengths.as_ref())?',t)
+        self.assertIn('"injected_mel_valid_frames":injected_mel_valid_frames',t)
+        self.assertNotIn('m.encoder.forward(&mel,None)?',t)
         with self.assertRaises(ValueError):transform_probe('let mel=bad;')
+        with self.assertRaises(ValueError):transform_probe(t)
     def test_first_layer_divergence_detected(self):
         from tempfile import TemporaryDirectory
         import json
@@ -68,4 +82,16 @@ class C3Tests(unittest.TestCase):
                          'PASS_VALID_FRAMES_NUMERIC_REPRODUCIBILITY')
         self.assertEqual(compare_nemo_reference(a,b,6)['status'],
                          'SHAPE_OR_VALID_LENGTH_MISMATCH')
+    def test_c3_r2_signature_isolated_from_c2_and_r1(self):
+        from hdb2c.c3 import SIGNATURE
+        self.assertIn('r2',SIGNATURE)
+        self.assertIn('explicit-valid-frames',SIGNATURE)
+    def test_mel_valid_frame_gate(self):
+        from hdb2c.c3 import validate_mel_valid_frames
+        import numpy as np
+        self.assertEqual(validate_mel_valid_frames(np.array([10]),12),10)
+        for lengths,total in ((np.array([0]),12),(np.array([13]),12),
+                              (np.array([1,2]),12),(np.array([3]),0)):
+            with self.assertRaises(ValueError):
+                validate_mel_valid_frames(lengths,total)
 if __name__=='__main__':unittest.main()
