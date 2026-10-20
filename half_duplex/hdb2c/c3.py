@@ -274,7 +274,8 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
                              'state':'EXPLICIT_SHARED_NEMO_VALID_MEL_FRAMES_VERIFIED'}
     result['padding_mask_parity']='NOT_ESTABLISHED_LENGTH_PROPAGATION_ONLY'
     result['pcm_sha256']=r['pcm_sha256'];result['checkpoint_sha256']=r['checkpoint_sha256']
-    result['mel_input']='EXACT_SHARED_NEMO_F32LE_VERIFIED'\n    result['revision']='HDB2-C3-A-R2'
+    result['mel_input']='EXACT_SHARED_NEMO_F32LE_VERIFIED'
+    result['revision']='HDB2-C3-A-R2'
     path=reportdir/'c3_layers_cpu.json';path.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print(f'HDB2C3_A={result["status"]} first_divergence={result["first_divergence"]}',flush=True)
     print(f'HDB2C3_REPORT={path}',flush=True)
