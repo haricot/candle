@@ -12,6 +12,7 @@ from .nemo_runner import load_nemo, ensure_probe_eval
 from .c3_r3 import attach_nemo_hooks, verify_nemo_stages
 from .c3_r4 import attach_nemo_r4_hooks, verify_r4_hooks
 from .c3_r5 import attach_nemo_r5_hooks, prepare_positional_cases
+from .c3_r6 import attach_nemo_r6_hooks
 
 
 def save_stage(folder:Path, name:str, output) -> None:
@@ -85,6 +86,7 @@ def execute(nemo:Path,report:Path,output:Path):
     dw_hooks,dw_emitted=attach_nemo_hooks(enc,output)
     r4_hooks,r4_emitted=attach_nemo_r4_hooks(enc,output)
     r5_hooks,r5_emitted=attach_nemo_r5_hooks(enc,output)
+    r6_hooks,r6_emitted=attach_nemo_r6_hooks(enc,output)
     def hook(name):
         def fn(_module,_args,result):
             if name in emitted: raise RuntimeError(f'Duplicate stage {name}')
@@ -94,6 +96,7 @@ def execute(nemo:Path,report:Path,output:Path):
         hooks.extend(dw_hooks)
         hooks.extend(r4_hooks)
         hooks.extend(r5_hooks)
+        hooks.extend(r6_hooks)
         hooks.append(enc.pre_encode.register_forward_hook(hook('pre_encode')))
         hooks.append(enc.pos_enc.register_forward_hook(hook('post_pos_enc')))
         for i,layer in enumerate(enc.layers):
@@ -108,6 +111,8 @@ def execute(nemo:Path,report:Path,output:Path):
     verify_r4_hooks(r4_emitted)
     if r5_emitted!={'pos_input','pos_output'}:
         raise RuntimeError('R5 positional boundary hooks incomplete')
+    if r6_emitted!={'encoder_pad_mask','encoder_att_mask','block0_conv_after_mask'}:
+        raise RuntimeError('R6 padding mask hooks incomplete')
     # Compare the final forward output with original NeMo C1 encoder trace.
     base=np.load(report/'nemo_encoder.npz')
     orig=np.asarray(base['values'],dtype=np.float32)

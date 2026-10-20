@@ -118,7 +118,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg unzip libsndfile1-dev
-      - name: Real NeMo vs Candle C2-R5 positional parity on CaFE CPU
+      - name: Real NeMo vs Candle C2-R6 encoder padding parity on CaFE CPU
         run: bash half_duplex/ci/full_cpu.sh
       - uses: actions/upload-artifact@v4
         if: always()

@@ -75,5 +75,22 @@ assert r['encoder_positional_injection']=='NONE_NATIVE_COMPUTATION_ONLY'
 assert len(r['encoder_stages'])==26 and len(r['block0_stages'])==14
 print('HDB2C3_R5_DIAGNOSTIC=COMPLETE_REVIEW_NUMERIC_AND_BITWISE_GATES')
 PY
+  "$HDB2C_PYTHON" -m hdb2c.c3_r6 "$report"
+  cp "$report/c3_padding_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_padding_$i.json"
+  "$HDB2C_PYTHON" - "$report/c3_padding_cpu.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['revision']=='HDB2-C3-A-R6'
+assert [x['mode'] for x in r['modes']]==['none','attention','convolution','both']
+assert r['modes'][0]['off_control']['status']=='PASS_BITWISE_ALL_FRAMES'
+assert r['modes'][0]['off_control']['stages_checked']==26
+for row in r['modes']:
+    assert row['mask_bits']=='EXACT_NEMO_PAD_AND_ATTENTION_MASKS'
+    assert len(row['encoder_stages'])==26 and len(row['block0_stages'])==14
+    if r['padded_encoder_frames']==0:
+        assert row['no_padding_control']['status']=='PASS_BITWISE_ALL_FRAMES'
+assert r['encoder_internal_activation_or_positional_injection']=='NONE'
+print('HDB2C3_R6_DIAGNOSTIC=COMPLETE_2X2_MASK_ABLATION')
+PY
 done
 echo 'HALF_DUPLEX_REAL_CPU=EXECUTED_REVIEW_NUMERIC_VALUES'

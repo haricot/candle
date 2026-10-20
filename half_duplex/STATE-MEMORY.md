@@ -199,3 +199,17 @@ fails clip 1 (51/52 frames, max0.22318, cosine0.97509). Padding-mask parity is
 a next hypothesis, not proven attribution. Both clips still exceed the
 absolute pre_encode gate slightly (0.00146/0.00122); no all-stage promotion.
 Details and artifact links: `ci/RESULTS-HDB2-C3-A-R5.md`.
+
+## HDB2-C3-A-R6 — Encoder Padding Mask Parity
+
+User approves verifying the extra frame/masking hypothesis after R5. Implement
+an isolated native R6 candidate and 2x2 attention/convolution mask ablation on
+the same two real CaFE clips, using the existing branch/workflow. Observe
+actual NeMo masks and actual post-mask depthwise input. Native masks must
+match those bits exactly; mask-OFF must reproduce all 26 full-frame R5 traces.
+The no-padding clip must be bitwise invariant across all four modes. Separate
+R6 Cargo target; unchanged R5 executable SHA across build. Native unit tests
+cover padded queries/keys, masked scores/probabilities, and GLU-boundary zeroing.
+No internal activation injection, no threshold relaxation or GPU/TDT claim.
+Request: `ci/real_cpu_qualification_request_20261020_r6.md`. Local gate tests
+and real pinned-source transforms pass; real compilation/inference await CI.
