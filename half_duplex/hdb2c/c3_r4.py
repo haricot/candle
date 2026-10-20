@@ -97,15 +97,24 @@ def attach_nemo_r4_hooks(encoder,folder:Path):
         _dump(folder,name,tensor,'B,T,D')
         seen.add(name)
     def pre(name):
-        def fn(_module,args):
-            if len(args)<1:raise RuntimeError("R4 hook without input: "+name)
-            save(name,args[0])
+        def fn(_module, args, kwargs):
+            # NeMo calls ConformerLayer.forward(x=...), which leaves args empty.
+            # Keep both call conventions; reject missing or ambiguous inputs.
+            if args and 'x' in kwargs:
+                raise RuntimeError("R4 ambiguous positional/keyword input: "+name)
+            if args:
+                tensor=args[0]
+            elif 'x' in kwargs:
+                tensor=kwargs['x']
+            else:
+                raise RuntimeError("R4 hook without input: "+name)
+            save(name,tensor)
         return fn
     def post(name):
         def fn(_module,args,out):
             save(name,out)
         return fn
-    hooks.append(layer.register_forward_pre_hook(pre('block0_input')))
+    hooks.append(layer.register_forward_pre_hook(pre('block0_input'), with_kwargs=True))
     for name,attr in (
         ('block0_norm_ff1','norm_feed_forward1'),
         ('block0_ff1','feed_forward1'),
@@ -124,7 +133,7 @@ def attach_nemo_r4_hooks(encoder,folder:Path):
         ('block0_after_attention','norm_conv'),
         ('block0_after_convolution','norm_feed_forward2'),
         ('block0_after_ff2','norm_out')):
-        hooks.append(getattr(layer,attr).register_forward_pre_hook(pre(name)))
+        hooks.append(getattr(layer,attr).register_forward_pre_hook(pre(name), with_kwargs=True))
     def pos(_module,_args,out):
         if not isinstance(out,(tuple,list)) or len(out)<2:
             raise RuntimeError("R4 expected NeMo positional encoding (x,pos_emb)")
