@@ -40,8 +40,16 @@ def transform_masked_dw_source(source:str)->str:
          "        // HDB2C3_R3_DW_TRACE_CPU: reference trace retained in R3C.\n"
          "        // HDB2C3_R3C: NeMo masking before each Conv/ReLU, final output.",
          "R3 stage marker")
+    # DW.forward shadows input 'lengths' with the already-downsampled count:
+    # snapshot the ORIGINAL Mel lengths before the three stride updates.
+    once("""    fn forward(&self, x: &Tensor, lengths: &Tensor) -> Result<(Tensor, Tensor)> {
+        let mut lengths = lengths.to_dtype(DType::F32)?;""",
+         """    fn forward(&self, x: &Tensor, lengths: &Tensor) -> Result<(Tensor, Tensor)> {
+        let hdb2c3_original_mel_lengths=lengths.to_device(&candle::Device::Cpu)?.to_vec1::<i64>()?;
+        let mut lengths = lengths.to_dtype(DType::F32)?;""",
+         "capture original Mel length before shadowing")
     once("        let mut x = x.unsqueeze(1)?; // (B, 1, T, F)\n        for (idx, conv) in self.conv.iter().enumerate() {",
-         """        let initial=lengths.to_device(&candle::Device::Cpu)?.to_vec1::<i64>()?;
+         """        let initial=hdb2c3_original_mel_lengths;
         if initial.iter().any(|&v|v<=0){
             return Err(candle::Error::Msg("R3C invalid input Mel lengths".into()));
         }

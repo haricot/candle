@@ -158,7 +158,9 @@ class C3Tests(unittest.TestCase):
         self.assertEqual(metrics(x,y,axis=2,valid=3)['status'],'SHAPE_MISMATCH')
     def test_r3c_mask_exact_pinned_source_only(self):
         from hdb2c.c3_r3c import transform_masked_dw_source, MARKER
-        source='''        let mut x = x.unsqueeze(1)?; // (B, 1, T, F)
+        source='''    fn forward(&self, x: &Tensor, lengths: &Tensor) -> Result<(Tensor, Tensor)> {
+        let mut lengths = lengths.to_dtype(DType::F32)?;
+        let mut x = x.unsqueeze(1)?; // (B, 1, T, F)
         for (idx, conv) in self.conv.iter().enumerate() {
             x = conv.forward(&x)?;
             if idx == 0 || idx % 2 == 0 {
@@ -173,6 +175,8 @@ class C3Tests(unittest.TestCase):
         traced=transform_dw_source(source)
         masked=transform_masked_dw_source(traced)
         self.assertIn(MARKER,masked)
+        self.assertIn('let hdb2c3_original_mel_lengths=lengths.to_device(&candle::Device::Cpu)?.to_vec1::<i64>()?;',masked)
+        self.assertIn('let initial=hdb2c3_original_mel_lengths;',masked)
         self.assertEqual(masked.count('hdb2c3_r3c_mask_time(&x,&current)?'),3)
         self.assertIn('for v in current.iter_mut(){*v=(*v+1)/2;}',masked)
         with self.assertRaises(ValueError):transform_masked_dw_source(masked)
