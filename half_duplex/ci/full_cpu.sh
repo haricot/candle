@@ -55,5 +55,25 @@ for i in "${!clips[@]}";do
   cp "$report/c3_dw_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_dw_$i.json"
   cp "$report/c3_mask_ab_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_mask_ab_$i.json"
   cp "$report/c3_block0_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_block0_$i.json"
+  # R5: recursively verified NeMo eval + native f32 positional encoding A/B.
+  # Operator fixtures stay separate from uninjected full-encoder inference.
+  "$HDB2C_PYTHON" -m hdb2c.c3_r5 "$report"
+  cp "$report/c3_positional_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_positional_$i.json"
+  "$HDB2C_PYTHON" - "$report/c3_positional_cpu.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['revision']=='HDB2-C3-A-R5'
+assert len(r['operator_cases'])==17
+assert r['status'] in ('POSITIONAL_NUMERIC_PARITY','POSITIONAL_NUMERIC_MISMATCH')
+assert r['positional_exact_parity'] in ('PASS_BITWISE','NOT_ESTABLISHED')
+for key in ('c1_eval_state','nemo_eval_state'):
+    assert r[key]['status']=='ALL_MODULES_EVAL_VERIFIED'
+    assert r[key]['after_eval']['training_module_count']==0
+assert r['r4_r5_pre_encode_control']['bitwise_equal']
+assert r['reference_bit_reproducible']
+assert r['encoder_positional_injection']=='NONE_NATIVE_COMPUTATION_ONLY'
+assert len(r['encoder_stages'])==26 and len(r['block0_stages'])==14
+print('HDB2C3_R5_DIAGNOSTIC=COMPLETE_REVIEW_NUMERIC_AND_BITWISE_GATES')
+PY
 done
 echo 'HALF_DUPLEX_REAL_CPU=EXECUTED_REVIEW_NUMERIC_VALUES'

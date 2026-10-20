@@ -29,8 +29,37 @@ def load_nemo(path):
     return model,torch
 
 
+def ensure_probe_eval(model):
+    """Transcription teardown can unfreeze/train children of an eval parent.
+
+    torch.inference_mode() controls autograd, not dropout or BatchNorm.
+    Record the actual module tree, then recursively restore inference semantics.
+    """
+    def state():
+        training=[name or '<model>' for name,module in model.named_modules() if module.training]
+        encoder=getattr(model,'encoder',None)
+        pos=getattr(encoder,'pos_enc',None)
+        drops={}
+        for attr in ('dropout','dropout_emb'):
+            module=getattr(pos,attr,None)
+            if module is not None:
+                drops[attr]={'p':float(module.p),'training':bool(module.training)}
+        return {'model_training':bool(model.training),
+                'encoder_training':bool(encoder.training) if encoder is not None else None,
+                'training_module_count':len(training),'training_module_names':training[:12],
+                'position_dropout':drops}
+    before=state()
+    model.eval()
+    after=state()
+    if after['training_module_count']:
+        raise RuntimeError('NeMo probe still has training modules after eval: '+repr(after))
+    return {'status':'ALL_MODULES_EVAL_VERIFIED','before_eval':before,'after_eval':after}
+
+
 def make_probes(model,torch,wav,output):
     import numpy as np
+    eval_state=ensure_probe_eval(model)
+    (output/'nemo_eval_state.json').write_text(json.dumps(eval_state,indent=2)+'\n')
     x=read_pcm(wav)
     audio=torch.from_numpy(x.copy())[None,:]
     lengths=torch.tensor([len(x)],dtype=torch.int64)
@@ -49,7 +78,8 @@ def make_probes(model,torch,wav,output):
         np.savez_compressed(str(output/'nemo_encoder.npz'),values=feat.numpy(),valid_frames=np.array([flen],dtype=np.int64))
         (output/'nemo_encoder.json').write_text(json.dumps({'tensor_shape':list(feat.shape),'valid_frames':flen,
                              'layout':'NeMo encoder native (inspect axes)','dtype':'float32'},indent=2)+'\n')
-    return {'mel':{'tensor_shape':list(mel.shape),'valid_frames':mellen},
+    return {'inference_state':eval_state,
+            'mel':{'tensor_shape':list(mel.shape),'valid_frames':mellen},
             'encoder':{'tensor_shape':list(feat.shape),'valid_frames':flen}}
 
 

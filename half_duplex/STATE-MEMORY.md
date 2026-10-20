@@ -154,3 +154,24 @@ Exécuter `probe` puis `na-ab` sur le rapport `hdb2c-20261018T195644Z-87019-000`
 - Actual Rust cargo / Pascal sm61 CUDA compilation NOT RUN in archive environment. Await build errors or `c2_ab_cpu.json` and `c2c3_exact_cpu.json` before promotion.
 
 C2 `install_update.sh` also runs `cargo test --release --lib hdb2c_nemo::tests` on the isolated candidate after building. Compilation and runtime unit tests remain pending on the user machine.
+
+## HDB2-C3-A-R5 — 2026-10-20
+
+- User requests implementation and GitHub Actions on existing `half_duplex`.
+- R4 run 39429711430 completed; two CaFE clips show positional max_abs=1,
+  cosine ~0.948, with block0 input already different. R4 is a completed
+  diagnostic, not encoder parity; 26-stage instrumentation control passed.
+- Audited NeMo 2.7.3 transcription teardown: parent mode restoration precedes
+  encoder unfreeze. R5 records actual child training state after warmup and
+  recursively enforces eval before fresh C1 and C3 probes. Old references
+  lacking eval evidence are rejected; do not compare their numbers as a
+  direct native-kernel A/B with the new inference reference.
+- Isolated R5 candidate preserves R4 source and weights; f32 frequency
+  multiply/exp order matches NeMo. Native sin/cos remain native. A separate
+  actual Candle positional binary checks 17 identical-input cases, including
+  scaling on/off, offsets, short sequences and table growth.
+- Publish only `c3_positional_0/1.json` summaries alongside existing reports.
+  Numeric tolerance, strict f32 byte equality, whole-encoder parity and
+  TDT/GPU parity are separate fields. Do not promote a green diagnostic run.
+- Request and scope: `ci/real_cpu_qualification_request_20261020_r5.md`.
+  Local source/gate tests pass; real Rust/NeMo qualification awaits CI results.

@@ -8,9 +8,10 @@ import hashlib
 import json
 from pathlib import Path
 import numpy as np
-from .nemo_runner import load_nemo
+from .nemo_runner import load_nemo, ensure_probe_eval
 from .c3_r3 import attach_nemo_hooks, verify_nemo_stages
 from .c3_r4 import attach_nemo_r4_hooks, verify_r4_hooks
+from .c3_r5 import attach_nemo_r5_hooks, prepare_positional_cases
 
 
 def save_stage(folder:Path, name:str, output) -> None:
@@ -74,10 +75,16 @@ def execute(nemo:Path,report:Path,output:Path):
     prior=json.loads((report/'nemo_report.json').read_text())
     if warm_text!=prior.get('text'):
         raise RuntimeError('NeMo C3 warmup transcript differs from C1; refuse mixed reference')
+    c1_eval=prior.get('probes',{}).get('inference_state',{})
+    if c1_eval.get('status')!='ALL_MODULES_EVAL_VERIFIED':
+        raise RuntimeError('R5 requires a fresh C1 --probes reference with recursive eval proof')
+    eval_state=ensure_probe_eval(model)
     output.mkdir(parents=True,exist_ok=True)
+    (output/'nemo_eval_state.json').write_text(json.dumps(eval_state,indent=2)+'\n')
     hooks=[];emitted=set()
     dw_hooks,dw_emitted=attach_nemo_hooks(enc,output)
     r4_hooks,r4_emitted=attach_nemo_r4_hooks(enc,output)
+    r5_hooks,r5_emitted=attach_nemo_r5_hooks(enc,output)
     def hook(name):
         def fn(_module,_args,result):
             if name in emitted: raise RuntimeError(f'Duplicate stage {name}')
@@ -86,6 +93,7 @@ def execute(nemo:Path,report:Path,output:Path):
     try:
         hooks.extend(dw_hooks)
         hooks.extend(r4_hooks)
+        hooks.extend(r5_hooks)
         hooks.append(enc.pre_encode.register_forward_hook(hook('pre_encode')))
         hooks.append(enc.pos_enc.register_forward_hook(hook('post_pos_enc')))
         for i,layer in enumerate(enc.layers):
@@ -98,6 +106,8 @@ def execute(nemo:Path,report:Path,output:Path):
     if emitted!=expected:raise RuntimeError(f'NeMo missing stages: {sorted(expected-emitted)}')
     verify_nemo_stages(dw_emitted)
     verify_r4_hooks(r4_emitted)
+    if r5_emitted!={'pos_input','pos_output'}:
+        raise RuntimeError('R5 positional boundary hooks incomplete')
     # Compare the final forward output with original NeMo C1 encoder trace.
     base=np.load(report/'nemo_encoder.npz')
     orig=np.asarray(base['values'],dtype=np.float32)
@@ -115,6 +125,7 @@ def execute(nemo:Path,report:Path,output:Path):
         raise RuntimeError('NeMo C3 valid length differs from C1: '+str(result))
     if result['status']!='PASS_VALID_FRAMES_NUMERIC_REPRODUCIBILITY':
         raise RuntimeError('NeMo C3 valid frames differ from C1: '+str(result))
+    prepare_positional_cases(enc.pos_enc,output)
     meta={'stage':'HDB2C3_NEMO_LAYER_TRACE','status':'REAL_26_CHECKPOINTS',
         'stages':sorted(emitted),'source_nemo_sha256':hashlib.sha256(nemo.read_bytes()).hexdigest(),
         'encoder_valid_frames':int(feat_len[0])}
