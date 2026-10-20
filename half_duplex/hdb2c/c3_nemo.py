@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from .nemo_runner import load_nemo
 from .c3_r3 import attach_nemo_hooks, verify_nemo_stages
+from .c3_r4 import attach_nemo_r4_hooks, verify_r4_hooks
 
 
 def save_stage(folder:Path, name:str, output) -> None:
@@ -76,6 +77,7 @@ def execute(nemo:Path,report:Path,output:Path):
     output.mkdir(parents=True,exist_ok=True)
     hooks=[];emitted=set()
     dw_hooks,dw_emitted=attach_nemo_hooks(enc,output)
+    r4_hooks,r4_emitted=attach_nemo_r4_hooks(enc,output)
     def hook(name):
         def fn(_module,_args,result):
             if name in emitted: raise RuntimeError(f'Duplicate stage {name}')
@@ -83,6 +85,7 @@ def execute(nemo:Path,report:Path,output:Path):
         return fn
     try:
         hooks.extend(dw_hooks)
+        hooks.extend(r4_hooks)
         hooks.append(enc.pre_encode.register_forward_hook(hook('pre_encode')))
         hooks.append(enc.pos_enc.register_forward_hook(hook('post_pos_enc')))
         for i,layer in enumerate(enc.layers):
@@ -94,6 +97,7 @@ def execute(nemo:Path,report:Path,output:Path):
     expected={'pre_encode','post_pos_enc'}|{f'layer_{i:02}' for i in range(24)}
     if emitted!=expected:raise RuntimeError(f'NeMo missing stages: {sorted(expected-emitted)}')
     verify_nemo_stages(dw_emitted)
+    verify_r4_hooks(r4_emitted)
     # Compare the final forward output with original NeMo C1 encoder trace.
     base=np.load(report/'nemo_encoder.npz')
     orig=np.asarray(base['values'],dtype=np.float32)

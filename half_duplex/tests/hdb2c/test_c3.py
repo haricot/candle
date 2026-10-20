@@ -206,4 +206,67 @@ class C3Tests(unittest.TestCase):
         self.assertEqual(r['tdt_numeric_parity'],'NOT_TESTED')
         self.assertEqual(r['pre_encode_status'],'NOT_QUALIFIED')
         self.assertEqual(r['status'],'DW_NUMERIC_PARITY_NOT_ESTABLISHED')
+    def test_r4_transform_rejects_unverified_source(self):
+        from hdb2c.c3_r4 import transform_r4_conformer
+        with self.assertRaises(ValueError):transform_r4_conformer('impl ConformerBlock {}')
+    def test_r4_fails_closed_on_unsupported_signature(self):
+        from hdb2c.c3_r4 import transform_r4_conformer, MARKER
+        source='''impl ConformerBlock {
+    fn forward(
+        &self,
+        x: &Tensor,
+        pos_emb: Option<&Tensor>,
+        mut cache: Option<&mut dyn CacheLike>,
+    ) -> Result<Tensor> {
+        let mut x = x.clone();
+        let ff1 = self.ff1.forward(&self.norm_ff1.forward(&x)?)?;
+        x = (&x + &(&ff1 * 0.5)?)?;
+        let x_norm = self.norm_self_att.forward(&x)?;
+        let attn_out = candle::Tensor::zeros((1,2,3),DType::F32,x.device())?;
+        x = (&x + &attn_out)?;
+        let norm_x = self.norm_conv.forward(&x)?;
+        let conv_out = self.conv.forward(&norm_x, cache)?;
+        x = (&x + &conv_out)?;
+        let ff2 = self.ff2.forward(&self.norm_ff2.forward(&x)?)?;
+        x = (&x + &(&ff2 * 0.5)?)?;
+        self.norm_out.forward(&x)
+    }
+}
+#[derive(Debug, Clone)]
+struct DwStridingSubsampling {}
+HDB2C3_R3C_EXACT_MASK_PROPAGATION_CPU_V1
+            pos_emb = Some(pos);
+                x = layer.forward(&x, pos_emb.as_ref(), Some(cache))?;
+                x = layer.forward(&x, pos_emb.as_ref(), None)?;
+'''
+        t=transform_r4_conformer(source)
+        self.assertIn(MARKER,t)
+        self.assertIn('index==0',t)
+        self.assertIn('block0_attention',t)
+        self.assertIn('block0_norm_out',t)
+        with self.assertRaises(ValueError):transform_r4_conformer(t)
+    def test_r4_valid_frame_padding_and_input_gate(self):
+        from hdb2c.c3_r4 import compare_valid
+        a=np.ones((1,5,3),dtype=np.float32)
+        b=a.copy();b[:,3:,:]+=10
+        self.assertEqual(compare_valid(a,b,3)['status'],'PASS_NUMERIC_PARITY')
+        b[:,0,:]+=0.01
+        self.assertEqual(compare_valid(a,b,3)['status'],'NUMERIC_MISMATCH')
+        self.assertEqual(compare_valid(a,b,8)['status'],'INVALID_VALID_LENGTH')
+    def test_r4_control_exact_raw_26_stages(self):
+        import json
+        from tempfile import TemporaryDirectory
+        from hdb2c.c3_r4 import compare_r4_control
+        with TemporaryDirectory() as t:
+            root=Path(t);a=root/'a';b=root/'b';a.mkdir();b.mkdir()
+            for name in STAGES:
+                for p in (a,b):
+                    arr=np.ones((1,4,2),dtype='<f4')
+                    arr.tofile(p/f'{name}.f32le')
+                    (p/f'{name}.json').write_text(json.dumps({'shape':[1,4,2]}))
+            result=compare_r4_control(a,b,3)
+            self.assertEqual(result['stages_checked'],26)
+            bad=np.zeros((1,4,2),dtype='<f4')
+            bad.tofile(b/'layer_00.f32le')
+            with self.assertRaises(RuntimeError):compare_r4_control(a,b,3)
 if __name__=='__main__':unittest.main()

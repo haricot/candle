@@ -17,6 +17,7 @@ import numpy as np
 from .cli import settings
 from .c3_r3 import transform_dw_source, compare_dw
 from .c3_r3c import build_masked_candidate, summarize_ab
+from .c3_r4 import build_r4_candidate, compare_r4_control, compare_r4
 
 SIGNATURE = 'hdb2c3-r3-dw-weight-operation-traces-v0.7.2'
 STAGES = ['pre_encode', 'post_pos_enc'] + [f'layer_{i:02}' for i in range(24)]
@@ -235,8 +236,10 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     c2=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c2-v0.6.6')
     c3=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r3-v0.7.2')
     c3c=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r3c-v0.7.3')
+    c4=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r4-v0.7.4')
     build_candidate(c2,c3)
     build_masked_candidate(c3,c3c)
+    build_r4_candidate(c3c,c4)
     target=c3/'target'/'c3-cpu'
     exe=target/'release/hdb2c_probe'
     target_mask=c3c/'target'/'c3c-cpu'
@@ -254,6 +257,14 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
         print('HDB2C3_R3C_RUST_BUILD='+' '.join(cargo),flush=True)
         subprocess.run(cargo,check=True,env=env)
     if not exe_mask.is_file():raise FileNotFoundError('C3-R3C masked Rust probe was not compiled')
+    target_r4=c4/'target'/'r4-cpu'
+    exe_r4=target_r4/'release/hdb2c_probe'
+    if not skip_build:
+        env=os.environ.copy();env['CARGO_TARGET_DIR']=str(target_r4)
+        cargo=['cargo','build','--release','--manifest-path',str(c4/'Cargo.toml'),'--bin','hdb2c_probe']
+        print('HDB2C3_R4_RUST_BUILD='+' '.join(cargo),flush=True)
+        subprocess.run(cargo,check=True,env=env)
+    if not exe_r4.is_file():raise FileNotFoundError('R4 block-0 probe did not compile')
     out=reportdir/'c3_cpu';out.mkdir(exist_ok=True)
     nemo_dir=out/'nemo_trace';candle_dir=out/'candle_trace';nemo_dir.mkdir(exist_ok=True);candle_dir.mkdir(exist_ok=True)
     # This Python subprocess uses the pinned NeMo isolated environment.
@@ -326,6 +337,30 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     abpath=reportdir/'c3_mask_ab_cpu.json'
     abpath.write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
     print(f'HDB2C3_R3C={summary["status"]} first_masked={summary["first_operation_masked"]} pre_encode={summary["pre_encode_status"]} encoder={summary["full_encoder_status"]}',flush=True)
+    # R4 uses a separately manifested copy of the identical R3C masked math.
+    r4_dir=out/'candle_r4_trace';r4_dir.mkdir(exist_ok=True)
+    r4_probe=out/'candle_r4_probe';r4_probe.mkdir(exist_ok=True)
+    r4_env={**env,'HDB2C3_TRACE_DIR':str(r4_dir)}
+    subprocess.run([str(exe_r4),'--model-dir',str(s['model']),
+        '--input',str(reportdir/'input-16k.wav'),'--output',str(r4_probe),'--cpu'],
+        check=True,env=r4_env)
+    r4_meta=json.loads((r4_probe/'candle_probe.json').read_text())
+    if r4_meta.get('dw_mask_propagation')!='NEMO_MASKED_CONV_SEQUENTIAL':
+        raise ValueError('R4 candidate lost R3C masking evidence')
+    if r4_meta.get('injected_mel_valid_frames')!=mel_valid or r4_meta.get('encoder_valid_frames')!=valid:
+        raise ValueError('R4 candidates input/output lengths differ')
+    if not np.array_equal(np.fromfile(r4_probe/'candle_mel.f32le',dtype='<f4'),injected):
+        raise ValueError('R4 candidate did not consume original NeMo Mel bit-identically')
+    self_check=compare_r4_control(masked_dir,r4_dir,valid)
+    r4_layers=compare_stages(nemo_dir,r4_dir,valid)
+    block=compare_r4(nemo_dir,r4_dir,valid,masked_layers,r4_layers)
+    block['instrumentation_control']=self_check
+    block['pcm_sha256']=r['pcm_sha256']
+    block['checkpoint_sha256']=r['checkpoint_sha256']
+    block['encoder_input_from_masked_r3c']='R3C_CPU_MASKED_INPUT_NO_INJECTION'
+    bpath=reportdir/'c3_block0_cpu.json'
+    bpath.write_text(json.dumps(block,ensure_ascii=False,indent=2)+'\n')
+    print(f'HDB2C3_R4={block["status"]} first_block0={block["first_block0_divergence"]} positional={block["positional_evidence"]["status"]} input={block["input_numeric_status"]}',flush=True)
     print(f'HDB2C3_A={result["status"]} first_divergence={result["first_divergence"]}',flush=True)
     print(f'HDB2C3_REPORT={path}',flush=True)
     return path
