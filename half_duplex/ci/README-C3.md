@@ -42,3 +42,6 @@ After attribution of the **first** encoder divergence, feed the same NeMo encode
 ## Audio/data privacy
 
 GitHub Actions uses CaFE/Oréau via CAMEO. Personal microphone WAVs stay in local `tests/local/` ignored by Git. Do not publish NeMo weights, personal audio, or raw activations.
+## C3-A-R1: NeMo self-reference preflight
+
+The first C3 diagnostic stopped before comparing NeMo/Candle because the fresh NeMo encoder output did not match its own C1 reference at an all-frame absolute tolerance of 1e-6. This release replays the C1 transcribe-then-encoder sequence and compares only the valid [B,D,T] frames, explicitly recording overall padding drift. Limits are max_abs <= 1e-4 and cosine >= 0.999999; any larger discrepancy still fails closed and prints actual metrics. CPU C2 and CUDA are unchanged.

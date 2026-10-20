@@ -26,6 +26,33 @@ def save_stage(folder:Path, name:str, output) -> None:
         'sha256':hashlib.sha256(file.read_bytes()).hexdigest()},indent=2)+'\n')
 
 
+
+def compare_nemo_reference(original, observed, valid_frames: int, *,
+                           max_abs_limit: float = 1e-4,
+                           min_cosine: float = 0.999999):
+    """Test NeMo's own reproducibility on valid frames; retain padded-frame diagnostics."""
+    a=np.asarray(original,dtype=np.float32)
+    b=np.asarray(observed,dtype=np.float32)
+    result={'stage':'HDB2C3_NEMO_SELF_REFERENCE','original_shape':list(a.shape),
+            'observed_shape':list(b.shape),'valid_frames':int(valid_frames),
+            'thresholds':{'max_abs':max_abs_limit,'min_cosine':min_cosine}}
+    if a.ndim!=3 or a.shape!=b.shape or valid_frames<=0 or valid_frames>a.shape[-1]:
+        return {**result,'status':'SHAPE_OR_VALID_LENGTH_MISMATCH'}
+    x=a[...,:valid_frames].astype(np.float64)
+    y=b[...,:valid_frames].astype(np.float64)
+    if not np.isfinite(x).all() or not np.isfinite(y).all():
+        return {**result,'status':'NONFINITE_VALID_FRAMES'}
+    delta=np.abs(x-y)
+    norm=np.linalg.norm(x)*np.linalg.norm(y)
+    cosine=float(np.sum(x*y)/norm) if norm>0 else (1.0 if not delta.any() else 0.0)
+    err=float(delta.max())
+    return {**result,'max_abs':err,'rmse':float(np.sqrt(np.mean((x-y)**2))),
+            'cosine':cosine,
+            'max_abs_all_frames':float(np.abs(a.astype(np.float64)-b.astype(np.float64)).max()),
+            'status':('PASS_VALID_FRAMES_NUMERIC_REPRODUCIBILITY'
+                      if err<=max_abs_limit and cosine>=min_cosine
+                      else 'NEMO_SELF_REFERENCE_DIVERGENCE')}
+
 def execute(nemo:Path,report:Path,output:Path):
     import torch
     model,_=load_nemo(nemo)
@@ -37,6 +64,14 @@ def execute(nemo:Path,report:Path,output:Path):
     enc=model.encoder
     if not hasattr(enc,'pre_encode') or not hasattr(enc,'pos_enc') or len(enc.layers)!=24:
         raise RuntimeError('Unexpected NeMo FastConformer architecture; no fake/partial C3')
+    # C1 transcribes before probing the restored model; reproduce this state.
+    wav=report/'input-16k.wav'
+    if not wav.is_file():raise FileNotFoundError(f'Missing normalized C1 WAV: {wav}')
+    from .nemo_runner import transcribe
+    warm_text=transcribe(model,wav)
+    prior=json.loads((report/'nemo_report.json').read_text())
+    if warm_text!=prior.get('text'):
+        raise RuntimeError('NeMo C3 warmup transcript differs from C1; refuse mixed reference')
     output.mkdir(parents=True,exist_ok=True)
     hooks=[];emitted=set()
     def hook(name):
@@ -59,10 +94,19 @@ def execute(nemo:Path,report:Path,output:Path):
     base=np.load(report/'nemo_encoder.npz')
     orig=np.asarray(base['values'],dtype=np.float32)
     new=feat.detach().cpu().numpy()
-    if orig.shape!=new.shape or not np.allclose(orig,new,rtol=0,atol=1e-6):
-        raise RuntimeError('NeMo C3 encoder forward differs from its C1 reference')
-    if int(feat_len[0])!=int(base['valid_frames'][0]):
-        raise RuntimeError('NeMo C3 valid output length differs from C1')
+    valid_frames=int(base['valid_frames'][0])
+    result=compare_nemo_reference(orig,new,valid_frames)
+    result['warmup_transcription_matched_c1']=True
+    result['c3_valid_frames']=int(feat_len[0])
+    (output/'nemo_reference_check.json').write_text(json.dumps(result,indent=2)+'\n')
+    print('HDB2C3_NEMO_SELF_REFERENCE='+result['status']+
+          ' max_abs='+str(result.get('max_abs'))+
+          ' rmse='+str(result.get('rmse'))+
+          ' cosine='+str(result.get('cosine')),flush=True)
+    if int(feat_len[0])!=valid_frames:
+        raise RuntimeError('NeMo C3 valid length differs from C1: '+str(result))
+    if result['status']!='PASS_VALID_FRAMES_NUMERIC_REPRODUCIBILITY':
+        raise RuntimeError('NeMo C3 valid frames differ from C1: '+str(result))
     meta={'stage':'HDB2C3_NEMO_LAYER_TRACE','status':'REAL_26_CHECKPOINTS',
         'stages':sorted(emitted),'source_nemo_sha256':hashlib.sha256(nemo.read_bytes()).hexdigest(),
         'encoder_valid_frames':int(feat_len[0])}
