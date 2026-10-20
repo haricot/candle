@@ -156,4 +156,50 @@ class C3Tests(unittest.TestCase):
         x=np.ones((1,2,3,4),dtype=np.float32)
         y=np.ones((1,2,4,4),dtype=np.float32)
         self.assertEqual(metrics(x,y,axis=2,valid=3)['status'],'SHAPE_MISMATCH')
+    def test_r3c_mask_exact_pinned_source_only(self):
+        from hdb2c.c3_r3c import transform_masked_dw_source, MARKER
+        source='''        let mut x = x.unsqueeze(1)?; // (B, 1, T, F)
+        for (idx, conv) in self.conv.iter().enumerate() {
+            x = conv.forward(&x)?;
+            if idx == 0 || idx % 2 == 0 {
+                x = x.relu()?;
+            }
+        }
+        let x = x.transpose(1, 2)?; // (B, T, C, F)
+        let (b, t, c, f) = x.dims4()?;
+        let x = x.reshape((b, t, c * f))?;
+        let x = self.out.forward(&x)?;
+'''
+        traced=transform_dw_source(source)
+        masked=transform_masked_dw_source(traced)
+        self.assertIn(MARKER,masked)
+        self.assertEqual(masked.count('hdb2c3_r3c_mask_time(&x,&current)?'),3)
+        self.assertIn('for v in current.iter_mut(){*v=(*v+1)/2;}',masked)
+        with self.assertRaises(ValueError):transform_masked_dw_source(masked)
+        with self.assertRaises(ValueError):transform_masked_dw_source(source)
+    def test_r3c_metadata_requires_original_r3_probe(self):
+        from hdb2c.c3_r3c import transform_mask_probe
+        original='"encoder_length_argument":"EXPLICIT_NEMO_VALID_FRAMES_IF_INJECTED",'
+        self.assertIn('"dw_mask_propagation":"NEMO_MASKED_CONV_SEQUENTIAL"',
+                      transform_mask_probe(original))
+        with self.assertRaises(ValueError):transform_mask_probe('bad')
+    def test_r3c_summary_explicitly_separates_encoder_and_tdt(self):
+        from hdb2c.c3_r3c import summarize_ab
+        names=('conv_00','relu_00','conv_02','conv_03','relu_03',
+               'conv_05','conv_06','relu_06','out')
+        stages=[{'name':name,'status':'NUMERIC_MISMATCH','rmse':1.0,
+                 'cosine':.9,'max_abs':2.0} for name in names]
+        layers=[{'name':('pre_encode' if i==0 else f'layer_{i:02}'),
+                  'status':'NUMERIC_MISMATCH'} for i in range(26)]
+        before={'weights_status':'PASS_NUMERIC_PARITY',
+            'operations':stages,'first_operation_divergence':'conv_02'}
+        after={'weights_status':'PASS_NUMERIC_PARITY',
+            'operations':stages,'first_operation_divergence':'conv_02',
+            'status':'FIRST_DW_DIVERGENCE_LOCALIZED'}
+        enc={'stages':layers,'first_divergence':'pre_encode',
+             'status':'FIRST_DIVERGENCE_LOCALIZED'}
+        r=summarize_ab(before,after,enc,enc,'a','b')
+        self.assertEqual(r['tdt_numeric_parity'],'NOT_TESTED')
+        self.assertEqual(r['pre_encode_status'],'NOT_QUALIFIED')
+        self.assertEqual(r['status'],'DW_NUMERIC_PARITY_NOT_ESTABLISHED')
 if __name__=='__main__':unittest.main()

@@ -53,5 +53,6 @@ for i in "${!clips[@]}";do
   bash ci/ci_c3.sh "$report"
   cp "$report/c3_layers_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_layers_$i.json"
   cp "$report/c3_dw_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_dw_$i.json"
+  cp "$report/c3_mask_ab_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_mask_ab_$i.json"
 done
 echo 'HALF_DUPLEX_REAL_CPU=EXECUTED_REVIEW_NUMERIC_VALUES'

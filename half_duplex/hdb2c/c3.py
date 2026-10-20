@@ -16,6 +16,7 @@ import sys
 import numpy as np
 from .cli import settings
 from .c3_r3 import transform_dw_source, compare_dw
+from .c3_r3c import build_masked_candidate, summarize_ab
 
 SIGNATURE = 'hdb2c3-r3-dw-weight-operation-traces-v0.7.2'
 STAGES = ['pre_encode', 'post_pos_enc'] + [f'layer_{i:02}' for i in range(24)]
@@ -233,15 +234,26 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
         raise ValueError('Checkpoint identity does not match C1/source conversion')
     c2=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c2-v0.6.6')
     c3=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r3-v0.7.2')
+    c3c=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r3c-v0.7.3')
     build_candidate(c2,c3)
+    build_masked_candidate(c3,c3c)
     target=c3/'target'/'c3-cpu'
     exe=target/'release/hdb2c_probe'
+    target_mask=c3c/'target'/'c3c-cpu'
+    exe_mask=target_mask/'release/hdb2c_probe'
     if not skip_build:
         env=os.environ.copy();env['CARGO_TARGET_DIR']=str(target)
         cargo=['cargo','build','--release','--manifest-path',str(c3/'Cargo.toml'),'--bin','hdb2c_probe']
         print('HDB2C3_RUST_BUILD='+' '.join(cargo),flush=True)
         subprocess.run(cargo,check=True,env=env)
     if not exe.is_file():raise FileNotFoundError('C3 actual Rust probe was not compiled')
+    if not skip_build:
+        env=os.environ.copy()
+        env['CARGO_TARGET_DIR']=str(target_mask)
+        cargo=['cargo','build','--release','--manifest-path',str(c3c/'Cargo.toml'),'--bin','hdb2c_probe']
+        print('HDB2C3_R3C_RUST_BUILD='+' '.join(cargo),flush=True)
+        subprocess.run(cargo,check=True,env=env)
+    if not exe_mask.is_file():raise FileNotFoundError('C3-R3C masked Rust probe was not compiled')
     out=reportdir/'c3_cpu';out.mkdir(exist_ok=True)
     nemo_dir=out/'nemo_trace';candle_dir=out/'candle_trace';nemo_dir.mkdir(exist_ok=True);candle_dir.mkdir(exist_ok=True)
     # This Python subprocess uses the pinned NeMo isolated environment.
@@ -280,7 +292,7 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
                              'nemo_encoder_valid_frames':valid,
                              'candle_encoder_valid_frames':probe_meta['encoder_valid_frames'],
                              'state':'EXPLICIT_SHARED_NEMO_VALID_MEL_FRAMES_VERIFIED'}
-    result['padding_mask_parity']='NOT_ESTABLISHED_LENGTH_PROPAGATION_ONLY'
+    result['padding_mask_parity']='R3_BASELINE_MASKS_OFF'
     result['pcm_sha256']=r['pcm_sha256'];result['checkpoint_sha256']=r['checkpoint_sha256']
     result['mel_input']='EXACT_SHARED_NEMO_F32LE_VERIFIED'
     result['revision']='HDB2-C3-A-R3'
@@ -291,6 +303,29 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     dw_path.write_text(json.dumps(dw,ensure_ascii=False,indent=2)+'\n')
     print(f'HDB2C3_R3={dw["status"]} weights={dw["weights_status"]} first_op={dw["first_operation_divergence"]}',flush=True)
     path=reportdir/'c3_layers_cpu.json';path.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+    # Treatment: same weights and NeMo Mel, isolated Rust with exact per-op masks.
+    masked_dir=out/'candle_masked_trace'
+    masked_dir.mkdir(exist_ok=True)
+    mask_probe=out/'candle_masked_probe'
+    mask_probe.mkdir(exist_ok=True)
+    mask_env={**env,'HDB2C3_TRACE_DIR':str(masked_dir)}
+    subprocess.run([str(exe_mask),'--model-dir',str(s['model']),
+        '--input',str(reportdir/'input-16k.wav'),'--output',str(mask_probe),'--cpu'],
+        check=True,env=mask_env)
+    mask_meta=json.loads((mask_probe/'candle_probe.json').read_text())
+    if mask_meta.get('dw_mask_propagation')!='NEMO_MASKED_CONV_SEQUENTIAL':
+        raise ValueError('Masked probe did not attest its NeMo DW mask semantics')
+    if mask_meta.get('injected_mel_valid_frames')!=mel_valid or mask_meta.get('encoder_valid_frames')!=valid:
+        raise ValueError('R3C masked probe valid-frame lengths differ from NeMo')
+    recorded_mask=np.fromfile(mask_probe/'candle_mel.f32le',dtype='<f4')
+    if not np.array_equal(injected,recorded_mask):
+        raise ValueError('R3C masked probe did not consume bit-identical NeMo Mel')
+    masked_dw=compare_dw(nemo_dir,masked_dir,mel_valid,valid)
+    masked_layers=compare_stages(nemo_dir,masked_dir,valid)
+    summary=summarize_ab(dw,masked_dw,result,masked_layers,r['checkpoint_sha256'],r['pcm_sha256'])
+    abpath=reportdir/'c3_mask_ab_cpu.json'
+    abpath.write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
+    print(f'HDB2C3_R3C={summary["status"]} first_masked={summary["first_operation_masked"]} pre_encode={summary["pre_encode_status"]} encoder={summary["full_encoder_status"]}',flush=True)
     print(f'HDB2C3_A={result["status"]} first_divergence={result["first_divergence"]}',flush=True)
     print(f'HDB2C3_REPORT={path}',flush=True)
     return path
