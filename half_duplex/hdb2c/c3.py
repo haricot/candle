@@ -110,11 +110,16 @@ def transform_probe(source: str) -> str:
     } else {None};
 '''
     source=source.replace(length_anchor,lengths_code+length_anchor,1)
-    forward_anchor='m.encoder.forward(&mel,None)?'
+    # C2 already supplies its own sample-derived valid_t; R2 checks
+    # NeMo's actual preprocessor length rather than silently reusing that
+    # estimate. Keep the C2 expression as the non-injected fallback.
+    forward_anchor='m.encoder.forward(&mel,Some(&valid_t))?'
     if source.count(forward_anchor)!=1:
-        raise ValueError('C3 requires exactly one pinned TDT encoder invocation')
+        raise ValueError('C3 requires the exact post-C2 TDT encoder invocation')
+    if source.count('let valid_t=Tensor::from_vec(vec![valid as i64],(1,),&dev)?;')!=1:
+        raise ValueError('C3 requires the pinned C2 sample-derived input length')
     source=source.replace(forward_anchor,
-        'm.encoder.forward(&mel,encoder_input_lengths.as_ref())?',1)
+        'm.encoder.forward(&mel,encoder_input_lengths.as_ref().or(Some(&valid_t)))?',1)
     meta_anchor='        "mel":mel_meta,"encoder":feat_meta,"encoder_valid_frames":lengths[0],'
     if source.count(meta_anchor)!=1:
         raise ValueError('Pinned C2 probe metadata anchor changed')

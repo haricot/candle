@@ -21,8 +21,10 @@ class C3Tests(unittest.TestCase):
         with self.assertRaises(ValueError):transform_conformer(t)
     def test_probe_requires_exact_anchor(self):
         pinned='''    let mel=get_logmel(&audio,&pre,&dev)?;
+    let valid=parakeet_candle::parakeet::audio::hdb2c_valid_frames(audio.len(),&pre)?;
+    let valid_t=Tensor::from_vec(vec![valid as i64],(1,),&dev)?;
     let (features,lengths)=match &mut model {
-        ParakeetModel::Tdt(m) => m.encoder.forward(&mel,None)?,
+        ParakeetModel::Tdt(m) => m.encoder.forward(&mel,Some(&valid_t))?,
         _ => bail!("not tdt"),
     };
     let meta=json!({"stage":"test",
@@ -32,9 +34,11 @@ class C3Tests(unittest.TestCase):
         t=transform_probe(pinned)
         self.assertIn('HDB2C3_NEMO_MEL_PATH',t)
         self.assertIn('HDB2C3_NEMO_MEL_VALID_FRAMES',t)
-        self.assertIn('m.encoder.forward(&mel,encoder_input_lengths.as_ref())?',t)
+        self.assertIn('m.encoder.forward(&mel,encoder_input_lengths.as_ref().or(Some(&valid_t)))?',t)
         self.assertIn('"injected_mel_valid_frames":injected_mel_valid_frames',t)
-        self.assertNotIn('m.encoder.forward(&mel,None)?',t)
+        self.assertNotIn('m.encoder.forward(&mel,Some(&valid_t))?',t)
+        with self.assertRaises(ValueError):
+            transform_probe(pinned.replace('Some(&valid_t)','None'))
         with self.assertRaises(ValueError):transform_probe('let mel=bad;')
         with self.assertRaises(ValueError):transform_probe(t)
     def test_first_layer_divergence_detected(self):
