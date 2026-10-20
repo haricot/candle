@@ -213,3 +213,17 @@ cover padded queries/keys, masked scores/probabilities, and GLU-boundary zeroing
 No internal activation injection, no threshold relaxation or GPU/TDT claim.
 Request: `ci/real_cpu_qualification_request_20261020_r6.md`. Local gate tests
 and real pinned-source transforms pass; real compilation/inference await CI.
+
+R6 run **39449511991 completed successfully**, source
+`ea021b7b8df8634e6620498798baa57ffb7e5410`: 133 Python tests, 3 native Rust
+mask tests, all 8 real forwards. Mask-OFF reproduces R5 bitwise on all 26 full
+stage tensors for both clips; no-padding clip is bitwise invariant in all four
+modes. Native mask bits exactly match real NeMo masks. Padded clip (51/52):
+no masks max_abs=0.2231819704 cosine=0.97509012; attention only 0.2014631703 /
+0.96945573; convolution only 0.02134536952 / 0.99827817; BOTH 5.1036477e-7 /
+0.99999999999953. Both masks are necessary for the fixed gate in this test.
+All 24 encoder blocks and final output now pass numerically on BOTH clips;
+pre_encode/post-scaling strict absolute errors and non-bitwise positional math
+remain unchanged. Normal ASR/TDT, cache streaming and GPU remain unqualified.
+Detailed evidence: `ci/RESULTS-HDB2-C3-A-R6.md`. Padding-mask hypothesis is
+confirmed in the controlled two-clip experiment; no threshold relaxation.
