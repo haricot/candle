@@ -92,5 +92,21 @@ for row in r['modes']:
 assert r['encoder_internal_activation_or_positional_injection']=='NONE'
 print('HDB2C3_R6_DIAGNOSTIC=COMPLETE_2X2_MASK_ABLATION')
 PY
+  # R7: actual production NeMo TDT vs an independent native PCM path.
+  # Byte equality is reported separately from numerical/discrete parity.
+  "$HDB2C_PYTHON" -m hdb2c.c3_r7 "$report"
+  cp "$report/c3_tdt_cpu.json" "$GITHUB_WORKSPACE/halfduplex-ci-published/c3_tdt_$i.json"
+  "$HDB2C_PYTHON" - "$report/c3_tdt_cpu.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['revision']=='HDB2-C3-A-R7'
+assert r['reference']['decoder_replaced'] is False
+assert r['encoder_r6_control']['status']=='PASS_BITWISE_ALL_FRAMES'
+assert r['native_pipeline_internal_tensor_injection']=='NONE'
+assert r['tdt']['native_pcm']['scope']=='NATIVE_PCM_FRONTEND_ENCODER_TDT'
+assert r['common_input_operators']['shared_inputs']=='BIT_IDENTICAL_STATE_ENCODER_AND_PREDICTOR_INPUTS'
+assert r['global_bitwise_status'] == ('PASS_BITWISE' if r['global_bitwise_equal'] else 'FAIL_DIFFERENT_F32_BITS')
+print('HDB2C3_R7_DIAGNOSTIC=COMPLETE_REVIEW_TDT_AND_STRICT_BITS_GATES')
+PY
 done
 echo 'HALF_DUPLEX_REAL_CPU=EXECUTED_REVIEW_NUMERIC_VALUES'
