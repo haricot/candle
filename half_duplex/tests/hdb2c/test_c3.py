@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 sys.path.insert(0,str(Path(__file__).parents[1]))
 from hdb2c.c3 import transform_conformer, transform_probe, compare_stages, STAGES
+from hdb2c.c3_r3 import transform_dw_source, compare_dw, stage_valid_frames, metrics
 
 class C3Tests(unittest.TestCase):
     def test_transform_conformer_strict(self):
@@ -88,8 +89,8 @@ class C3Tests(unittest.TestCase):
                          'SHAPE_OR_VALID_LENGTH_MISMATCH')
     def test_c3_r2_signature_isolated_from_c2_and_r1(self):
         from hdb2c.c3 import SIGNATURE
-        self.assertIn('r2',SIGNATURE)
-        self.assertIn('explicit-valid-frames',SIGNATURE)
+        self.assertIn('r3',SIGNATURE)
+        self.assertIn('dw-weight-operation-traces',SIGNATURE)
     def test_mel_valid_frame_gate(self):
         from hdb2c.c3 import validate_mel_valid_frames
         import numpy as np
@@ -98,4 +99,49 @@ class C3Tests(unittest.TestCase):
                               (np.array([1,2]),12),(np.array([3]),0)):
             with self.assertRaises(ValueError):
                 validate_mel_valid_frames(lengths,total)
+    def test_r3_dw_pinned_forward_instrumentation(self):
+        fragment='''        let mut x = x.unsqueeze(1)?; // (B, 1, T, F)
+        for (idx, conv) in self.conv.iter().enumerate() {
+            x = conv.forward(&x)?;
+            if idx == 0 || idx % 2 == 0 {
+                x = x.relu()?;
+            }
+        }
+        let x = x.transpose(1, 2)?; // (B, T, C, F)
+        let (b, t, c, f) = x.dims4()?;
+        let x = x.reshape((b, t, c * f))?;
+        let x = self.out.forward(&x)?;
+'''
+        src=transform_dw_source(fragment)
+        self.assertIn('HDB2C3_R3_DW_TRACE_CPU',src)
+        self.assertIn('conv_{nemo_idx:02}',src)
+        self.assertIn('weight_out',src)
+        with self.assertRaises(ValueError):transform_dw_source(src)
+    def test_r3_valid_length_sequence(self):
+        self.assertEqual(stage_valid_frames(394)['out'],50)
+        self.assertEqual(stage_valid_frames(403)['out'],51)
+    def test_r3_comparison_first_operation_and_weights(self):
+        import json
+        from hdb2c.c3_r3 import WEIGHTS,STAGES as DW_STAGES
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as t:
+            root=Path(t); n=root/'n';c=root/'c';n.mkdir();c.mkdir()
+            for name in (*WEIGHTS,*DW_STAGES):
+                shape=(1,2,4,3) if name!='out' and name in DW_STAGES else (1,5,3)
+                if name in WEIGHTS:shape=(2,3)
+                for p in (n,c):
+                    a=np.ones(shape,dtype='<f4')
+                    if name=='conv_02' and p==c:a[...] += .1
+                    a.tofile(p/f'{name}.f32le')
+                    (p/f'{name}.json').write_text(json.dumps({'shape':list(shape)}))
+            # synthetic masks would require valid axis 2 >=3, and output length 1.
+            # For conv00 valid=2, conv02=1; the objective is first mismatch.
+            got=compare_dw(n,c,mel_valid=3,encoder_valid=1)
+            self.assertEqual(got['first_operation_divergence'],'conv_02')
+            self.assertIsNone(got['first_weight_mismatch'])
+            self.assertEqual(got['weights_status'],'PASS_NUMERIC_PARITY')
+    def test_r3_shape_mismatch_fails_closed(self):
+        x=np.ones((1,2,3,4),dtype=np.float32)
+        y=np.ones((1,2,4,4),dtype=np.float32)
+        self.assertEqual(metrics(x,y,axis=2,valid=3)['status'],'SHAPE_MISMATCH')
 if __name__=='__main__':unittest.main()

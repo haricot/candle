@@ -15,8 +15,9 @@ import subprocess
 import sys
 import numpy as np
 from .cli import settings
+from .c3_r3 import transform_dw_source, compare_dw
 
-SIGNATURE = 'hdb2c3-r2-exact-mel-explicit-valid-frames-v0.7.1'
+SIGNATURE = 'hdb2c3-r3-dw-weight-operation-traces-v0.7.2'
 STAGES = ['pre_encode', 'post_pos_enc'] + [f'layer_{i:02}' for i in range(24)]
 HELPER = r'''
 // HDB2C3_TRACE_INSTRUMENTATION_OFFLINE_CPU_V1
@@ -32,7 +33,8 @@ fn hdb2c3_trace_stage(name: &str, tensor: &Tensor) -> Result<()> {
     for n in flat { raw.extend_from_slice(&n.to_le_bytes()); }
     std::fs::write(dir.join(format!("{name}.f32le")), raw)
         .map_err(|e| candle::Error::Msg(e.to_string()))?;
-    let meta = serde_json::json!({"shape":shape,"dtype":"f32le","layout":"B,T,D"});
+    let layout=match shape.len(){4=>"B,C,T,F",3=>"B,T,D",_=>"WEIGHT"};
+    let meta = serde_json::json!({"shape":shape,"dtype":"f32le","layout":layout});
     let encoded = serde_json::to_vec_pretty(&meta)
         .map_err(|e| candle::Error::Msg(e.to_string()))?;
     std::fs::write(dir.join(format!("{name}.json")), encoded)
@@ -64,6 +66,7 @@ def transform_conformer(source: str) -> str:
         '                x = layer.forward(&x, pos_emb.as_ref(), None)?;\n'
         '                hdb2c3_trace_stage(&format!("layer_{index:02}"), &x)?;\n'
         '            }')
+    source=transform_dw_source(source)
     return source+'\n'+HELPER
 
 
@@ -229,7 +232,7 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     if conv.get('source_nemo_sha256')!=r['checkpoint_sha256'] or sha(s['nemo'])!=r['checkpoint_sha256']:
         raise ValueError('Checkpoint identity does not match C1/source conversion')
     c2=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c2-v0.6.6')
-    c3=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r2-v0.7.1')
+    c3=s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r3-v0.7.2')
     build_candidate(c2,c3)
     target=c3/'target'/'c3-cpu'
     exe=target/'release/hdb2c_probe'
@@ -280,7 +283,13 @@ def execute(reportdir:Path, *, skip_build:bool=False)->Path:
     result['padding_mask_parity']='NOT_ESTABLISHED_LENGTH_PROPAGATION_ONLY'
     result['pcm_sha256']=r['pcm_sha256'];result['checkpoint_sha256']=r['checkpoint_sha256']
     result['mel_input']='EXACT_SHARED_NEMO_F32LE_VERIFIED'
-    result['revision']='HDB2-C3-A-R2'
+    result['revision']='HDB2-C3-A-R3'
+    dw=compare_dw(nemo_dir,candle_dir,mel_valid,valid)
+    dw['checkpoint_sha256']=r['checkpoint_sha256']
+    dw['pcm_sha256']=r['pcm_sha256']
+    dw_path=reportdir/'c3_dw_cpu.json'
+    dw_path.write_text(json.dumps(dw,ensure_ascii=False,indent=2)+'\n')
+    print(f'HDB2C3_R3={dw["status"]} weights={dw["weights_status"]} first_op={dw["first_operation_divergence"]}',flush=True)
     path=reportdir/'c3_layers_cpu.json';path.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print(f'HDB2C3_A={result["status"]} first_divergence={result["first_divergence"]}',flush=True)
     print(f'HDB2C3_REPORT={path}',flush=True)

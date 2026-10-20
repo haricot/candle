@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import numpy as np
 from .nemo_runner import load_nemo
+from .c3_r3 import attach_nemo_hooks, verify_nemo_stages
 
 
 def save_stage(folder:Path, name:str, output) -> None:
@@ -74,12 +75,14 @@ def execute(nemo:Path,report:Path,output:Path):
         raise RuntimeError('NeMo C3 warmup transcript differs from C1; refuse mixed reference')
     output.mkdir(parents=True,exist_ok=True)
     hooks=[];emitted=set()
+    dw_hooks,dw_emitted=attach_nemo_hooks(enc,output)
     def hook(name):
         def fn(_module,_args,result):
             if name in emitted: raise RuntimeError(f'Duplicate stage {name}')
             save_stage(output,name,result);emitted.add(name)
         return fn
     try:
+        hooks.extend(dw_hooks)
         hooks.append(enc.pre_encode.register_forward_hook(hook('pre_encode')))
         hooks.append(enc.pos_enc.register_forward_hook(hook('post_pos_enc')))
         for i,layer in enumerate(enc.layers):
@@ -90,6 +93,7 @@ def execute(nemo:Path,report:Path,output:Path):
         for h in hooks:h.remove()
     expected={'pre_encode','post_pos_enc'}|{f'layer_{i:02}' for i in range(24)}
     if emitted!=expected:raise RuntimeError(f'NeMo missing stages: {sorted(expected-emitted)}')
+    verify_nemo_stages(dw_emitted)
     # Compare the final forward output with original NeMo C1 encoder trace.
     base=np.load(report/'nemo_encoder.npz')
     orig=np.asarray(base['values'],dtype=np.float32)
