@@ -8,7 +8,18 @@ from hdb2c.c3_r3 import transform_dw_source, compare_dw, stage_valid_frames, met
 
 class C3Tests(unittest.TestCase):
     def test_transform_conformer_strict(self):
-        source='''        let mut pos_emb = None;
+        source='''        let mut x = x.unsqueeze(1)?; // (B, 1, T, F)
+        for (idx, conv) in self.conv.iter().enumerate() {
+            x = conv.forward(&x)?;
+            if idx == 0 || idx % 2 == 0 {
+                x = x.relu()?;
+            }
+        }
+        let x = x.transpose(1, 2)?; // (B, T, C, F)
+        let (b, t, c, f) = x.dims4()?;
+        let x = x.reshape((b, t, c * f))?;
+        let x = self.out.forward(&x)?;
+        let mut pos_emb = None;
         if let Some(cache) = cache.as_mut() {
             for (layer, cache)
             for layer in &self.layers {
@@ -17,6 +28,7 @@ class C3Tests(unittest.TestCase):
 '''
         t=transform_conformer(source)
         self.assertIn('HDB2C3_TRACE_INSTRUMENTATION_OFFLINE_CPU_V1',t)
+        self.assertIn('HDB2C3_R3_DW_TRACE_CPU',t)
         self.assertIn('hdb2c3_trace_stage("pre_encode", &x)?;',t)
         self.assertIn('format!("layer_{index:02}")',t)
         with self.assertRaises(ValueError):transform_conformer(t)
