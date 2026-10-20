@@ -33,3 +33,29 @@ raw activations and local probe traces must never be included as artifacts.
 Run status remains NOT_VERIFIED until actual GitHub Actions job results and
 artifacts have been inspected. A green workflow alone is not a claim of
 full FastConformer or TDT numeric parity.
+
+## R4 hook failure correction and rerun — 2026-10-20
+
+Prior run: https://github.com/haricot/candle/actions/runs/39426391145/job/118641410439
+
+Observed verified failure (after the Rust R4 candidate successfully built):
+`RuntimeError: R4 hook without input: block0_input`.
+NeMo calls the block with keyword argument `x=audio_signal`.
+The old `register_forward_pre_hook` callback assumed nonempty
+positional `args`, and therefore failed before any block-level parity
+was measured.
+
+Corrective scope:
+- R4-only tracing in `hdb2c/c3_r4.py` now uses
+  `register_forward_pre_hook(..., with_kwargs=True)` for the layer and
+  intermediate pre-hooks.
+- Resolve actual input from positional first or named `x` when no
+  positional argument is passed; reject missing or ambiguous inputs.
+- Add real `torch.nn.Module` regression tests covering both call
+  styles, missing input and ambiguous input.
+- No changes to numerical semantics, model/checkpoint identity, raw
+  trace privacy constraints, TDT or production CUDA code.
+
+Rerun purpose: resume exactly the same genuine CaFE/CAMEO NeMo-vs-Candle
+comparison. Only inspect `c3_block0_*.json` after the complete real
+pipeline passes its input and instrumentation controls.
