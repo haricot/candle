@@ -59,6 +59,8 @@ def ensure_probe_eval(model):
 def make_probes(model,torch,wav,output):
     import numpy as np
     eval_state=ensure_probe_eval(model)
+    preprocessor_state={'pad_to':int(model.preprocessor.featurizer.pad_to),
+                        'pad_value':float(model.preprocessor.featurizer.pad_value)}
     (output/'nemo_eval_state.json').write_text(json.dumps(eval_state,indent=2)+'\n')
     x=read_pcm(wav)
     audio=torch.from_numpy(x.copy())[None,:]
@@ -78,7 +80,7 @@ def make_probes(model,torch,wav,output):
         np.savez_compressed(str(output/'nemo_encoder.npz'),values=feat.numpy(),valid_frames=np.array([flen],dtype=np.int64))
         (output/'nemo_encoder.json').write_text(json.dumps({'tensor_shape':list(feat.shape),'valid_frames':flen,
                              'layout':'NeMo encoder native (inspect axes)','dtype':'float32'},indent=2)+'\n')
-    return {'inference_state':eval_state,
+    return {'inference_state':eval_state,'preprocessor_state':preprocessor_state,
             'mel':{'tensor_shape':list(mel.shape),'valid_frames':mellen},
             'encoder':{'tensor_shape':list(feat.shape),'valid_frames':flen}}
 

@@ -17,6 +17,21 @@ def sha256_file(path: Path) -> str:
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def normalize_nemo_padding(pre):
+    """Materialize AudioToMelSpectrogramPreprocessor's NeMo 2.7.3 default.
+
+    The original YAML may omit pad_to. NeMo defaults to 16, whereas the
+    Candle usize serde default is zero. Explicit checkpoint values prevail.
+    """
+    original = pre.get('pad_to')
+    if 'pad_to' not in pre:
+        pre['pad_to'] = 16
+    value = pre['pad_to']
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError('Unsupported NeMo preprocessor.pad_to; expected a nonnegative integer')
+    return original
+
+
 def extract_model(nemo_path: Path, dest: Path):
     import torch
     import yaml
@@ -66,6 +81,7 @@ def extract_model(nemo_path: Path, dest: Path):
                 return resolve(value)
             return obj
         cfg = resolve(cfg)
+        original_pad_to = normalize_nemo_padding(cfg['preprocessor'])
         target = cfg.get('target', cfg.get('_target_', ''))
         if target not in [
             'nemo.collections.asr.models.rnnt_bpe_models.EncDecRNNTBPEModel',
@@ -226,6 +242,7 @@ def extract_model(nemo_path: Path, dest: Path):
             'conv_norm_type': conv_norm, 'conv_context_size': conv_ctx,
             'original_window': original_window, 'effective_window': effective_window,
             'original_dither': original_dither, 'inference_dither': 0.0,
+            'original_pad_to': original_pad_to, 'effective_pad_to': cfg['preprocessor']['pad_to'],
             'd_model': cfg['encoder']['d_model'],
             'model_dir': str(dest.resolve()),
             'asr_qualified': False,

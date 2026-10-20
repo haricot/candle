@@ -146,13 +146,17 @@ def encoder_audit(nemo, native, valid):
             'valid_final_output': tensor_metrics(a, b)}
 
 
-def execute(report, *, skip_build=False):
+def execute(report, *, skip_build=False, focused_control=False):
     from .cli import settings
     s = settings(); report = report.resolve()
     original = json.loads((report/'nemo_report.json').read_text())
-    r6 = json.loads((report/'c3_padding_cpu.json').read_text())
-    if r6['checkpoint_sha256'] != original['checkpoint_sha256'] or digest(s['nemo']) != original['checkpoint_sha256']:
+    control_file = 'c3_r6_focused_control.json' if focused_control else 'c3_padding_cpu.json'
+    r6 = json.loads((report/control_file).read_text())
+    if (r6['checkpoint_sha256'] != original['checkpoint_sha256'] or r6['pcm_sha256'] != original['pcm_sha256']
+            or digest(s['nemo']) != original['checkpoint_sha256']):
         raise ValueError('R7 checkpoint identity changed')
+    if focused_control and r6['status'] != 'REAL_R6_BOTH_MASKS_INPUT_AND_MASK_BITS_VERIFIED':
+        raise ValueError('R7 focused control is not an observed R6 both-mask run')
     if json.loads((s['model']/'conversion.json').read_text())['source_nemo_sha256'] != original['checkpoint_sha256']:
         raise ValueError('R7 model conversion identity differs')
     reference = s['runtime'].with_name(s['runtime'].name+'-hdb2c-c3-r6-v0.7.6')
@@ -165,6 +169,10 @@ def execute(report, *, skip_build=False):
     subprocess.run([str(s['python']), '-m', 'hdb2c.c3_r7_nemo', '--nemo', str(s['nemo']),
                     '--model-dir', str(s['model']), '--report', str(report), '--output', str(nemo)], check=True)
     ref = json.loads((nemo/'manifest.json').read_text())
+    if focused_control:
+        config=json.loads((s['model']/'config.json').read_text())
+        if config['preprocessor']['pad_to'] != ref['preprocessor_state']['pad_to']:
+            raise ValueError('R7B native configuration differs from actual NeMo padding')
     with np.load(report/'nemo_mel.npz') as data:
         mel_valid = int(data['valid_frames'][0])
     valid = int(np.load(report/'nemo_encoder.npz')['valid_frames'][0])
@@ -194,7 +202,8 @@ def execute(report, *, skip_build=False):
     common = operator_comparison(nemo, operators, ref)
     pipeline_exact = all(m['bitwise_equal'] for m in frontend.values()) and encoder['native_pcm']['bitwise_equal'] and tdt['native_pcm']['bitwise_equal'] and tdt['native_pcm']['tdt_discrete_exact']
     tdt_pass = common['numeric_pass'] and common['argmax_exact'] and all(r['tdt_discrete_exact'] and r['numeric_pass'] for r in tdt.values())
-    result = {'signature': SIGNATURE, 'revision': 'HDB2-C3-A-R7',
+    result = {'signature': SIGNATURE, 'revision': 'HDB2-C3-A-R7B' if focused_control else 'HDB2-C3-A-R7',
+              'qualification_profile': 'FOCUSED_R6_BOTH_AND_R7_UNCHANGED_NATIVE_SOURCES' if focused_control else 'FULL_C2_THROUGH_R7',
               'status': 'TDT_NUMERIC_AND_DECISION_PARITY' if tdt_pass else 'TDT_PARITY_NOT_ESTABLISHED',
               'global_bitwise_status': 'PASS_BITWISE' if pipeline_exact else 'FAIL_DIFFERENT_F32_BITS',
               'global_bitwise_equal': pipeline_exact, 'pcm_sha256': original['pcm_sha256'],

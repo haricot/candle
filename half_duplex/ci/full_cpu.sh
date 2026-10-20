@@ -26,7 +26,9 @@ ln -sf "${archives[0]}" "$HDB2C_NEMO"
 # bootstrapped pinned runtime before its build gate checks the source marker.
 # This is idempotent and only edits $HDB2A_RUNTIME_DIR (the CI temp checkout).
 ./run-hdb2b.sh repair-runtime
-./run-hdb2b.sh build cpu
+if [[ "${HDB2C_R7_FOCUSED:-0}" != 1 ]];then
+  ./run-hdb2b.sh build cpu
+fi
 "$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
 mapfile -t clips < <("$HDB2C_PYTHON" - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'
 import json,sys
@@ -37,6 +39,10 @@ for x in rows:
 PY
 )
 test "${#clips[@]}" -eq 2
+if [[ "${HDB2C_R7_FOCUSED:-0}" == 1 ]];then
+  "$HDB2C_PYTHON" -m hdb2c.c3_r7_focused --corpus "$RUNNER_TEMP/cameo/manifest.json"
+  exit
+fi
 for i in "${!clips[@]}";do
   IFS='|' read -r wav reference <<< "${clips[$i]}"
   ./run-hdb2c.sh c1 "$wav" --variant cpu --reference-file "$reference" --probes | tee "$RUNNER_TEMP/c1-$i.log"

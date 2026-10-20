@@ -153,9 +153,14 @@ def execute(nemo, model_dir, report, output):
     original = json.loads((report/'nemo_report.json').read_text())
     if reference['text'] != original['text']:
         raise RuntimeError('R7 production decode on the saved encoder differs from C1 text')
+    padding={'pad_to':int(model.preprocessor.featurizer.pad_to),
+             'pad_value':float(model.preprocessor.featurizer.pad_value)}
+    if original.get('probes',{}).get('preprocessor_state',padding) != padding:
+        raise RuntimeError('R7 fresh NeMo preprocessor differs from the C1 actual padding state')
     reference.update({'eval_state': eval_state, 'weights': weights,
                       'blank_embedding_exact_zero': bool(torch.count_nonzero(model.decoder.prediction['embed'].weight[model.decoder.blank_idx]) == 0),
-                      'torch_version': torch.__version__, 'joint_log_softmax': model.joint.log_softmax})
+                      'torch_version': torch.__version__, 'joint_log_softmax': model.joint.log_softmax,
+                      'preprocessor_state':padding})
     (output/'manifest.json').write_text(json.dumps(reference, ensure_ascii=False, indent=2)+'\n')
     print('HDB2C3_R7_NEMO=ACTUAL_PRODUCTION_TDT_OBSERVED decisions='+str(len(reference['decisions'])), flush=True)
 
