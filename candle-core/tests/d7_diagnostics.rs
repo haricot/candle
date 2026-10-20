@@ -80,5 +80,69 @@ fn capture_and_immutable_state_contract() -> candle_core::Result<()> {
     assert_eq!(m["complete"], false);
     assert!(m["dropped_records"].as_u64().unwrap() > 0);
     let _ = std::fs::remove_dir_all(out);
+    capture_drains_admitted_work();
     Ok(())
+}
+
+fn capture_drains_admitted_work() {
+    for payload_only in [false, true] {
+        let capture =
+            Capture::start("drain".into(), "nonce3".into(), 32, Payload::new(), false).unwrap();
+        let (ready, received) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let wait_for_finish = || {
+                while diagnostics::enabled() {
+                    std::thread::yield_now();
+                }
+                diagnostics::event("off", || panic!("draining capture admitted new work"));
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            };
+            if payload_only {
+                diagnostics::event("memory.snapshot", || {
+                    ready.send(()).unwrap();
+                    wait_for_finish();
+                    Payload::new()
+                });
+            } else {
+                let scope = diagnostics::scope("op", Payload::new);
+                ready.send(()).unwrap();
+                wait_for_finish();
+                drop(scope);
+            }
+        });
+        received.recv().unwrap();
+        let out = directory("drain");
+        let _ = std::fs::remove_dir_all(&out);
+        capture.finish(&out).unwrap();
+        worker.join().unwrap();
+        let m: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(out.join("trace-manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(m["complete"], true);
+        assert_eq!(m["drain_complete"], true);
+        assert_eq!(m["open_scopes"], 0);
+        assert_eq!(m["dropped_records"], 0);
+        assert_eq!(m["record_count"], if payload_only { 1 } else { 2 });
+        let events = std::fs::read_to_string(out.join("events.ndjson")).unwrap();
+        assert!(events.contains(if payload_only {
+            "memory.snapshot"
+        } else {
+            "op.end"
+        }));
+        let _ = std::fs::remove_dir_all(out);
+    }
+
+    let capture =
+        Capture::start("timeout".into(), "nonce4".into(), 32, Payload::new(), false).unwrap();
+    let held = diagnostics::scope("op", Payload::new);
+    let out = directory("timeout");
+    let _ = std::fs::remove_dir_all(&out);
+    capture.finish(&out).unwrap();
+    let m: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("trace-manifest.json")).unwrap()).unwrap();
+    assert_eq!(m["complete"], false);
+    assert_eq!(m["drain_complete"], false);
+    assert_eq!(m["open_scopes"], 1);
+    drop(held);
+    let _ = std::fs::remove_dir_all(out);
 }

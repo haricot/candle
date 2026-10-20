@@ -139,11 +139,13 @@ mod capture {
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, Mutex, OnceLock, RwLock,
         },
-        time::Instant,
+        time::{Duration, Instant},
     };
 
     static ENABLED: AtomicBool = AtomicBool::new(false);
     static CURRENT: OnceLock<RwLock<Option<Arc<Collector>>>> = OnceLock::new();
+    const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
+    const DRAIN_POLL: Duration = Duration::from_millis(1);
     thread_local! { static STACK: RefCell<Vec<(u64, String)>> = const { RefCell::new(Vec::new()) }; }
     fn current() -> &'static RwLock<Option<Arc<Collector>>> {
         CURRENT.get_or_init(|| RwLock::new(None))
@@ -221,7 +223,11 @@ mod capture {
         if !enabled() {
             return None;
         }
-        current().read().ok()?.clone()
+        let slot = current().read().ok()?;
+        if !enabled() {
+            return None;
+        }
+        slot.clone()
     }
     fn parent() -> (Option<u64>, String) {
         STACK.with(|s| {
@@ -347,11 +353,29 @@ mod capture {
             })
         }
         pub fn finish(mut self, directory: &Path) -> io::Result<()> {
-            ENABLED.store(false, Ordering::Release);
+            {
+                let _slot = current()
+                    .write()
+                    .map_err(|_| io::Error::other("capture lock poisoned"))?;
+                ENABLED.store(false, Ordering::Release);
+            }
+            // Reserve the slot until admitted scopes and payload builders have released their collectors.
+            let deadline = Instant::now() + DRAIN_TIMEOUT;
+            while Arc::strong_count(&self.c) > 2 && Instant::now() < deadline {
+                std::thread::sleep(DRAIN_POLL);
+            }
+            let drain_complete = Arc::strong_count(&self.c) == 2;
+            let records = self
+                .c
+                .records
+                .lock()
+                .map_err(|_| io::Error::other("capture records poisoned"))?;
+            self.c.closed.store(true, Ordering::Release);
+            let dropped = self.c.dropped.load(Ordering::Acquire);
+            let open = self.c.open.load(Ordering::Acquire);
             *current()
                 .write()
                 .map_err(|_| io::Error::other("capture lock poisoned"))? = None;
-            self.c.closed.store(true, Ordering::Release);
             self.finished = true;
             fs::create_dir_all(directory)?;
             let events = OpenOptions::new()
@@ -359,22 +383,16 @@ mod capture {
                 .create_new(true)
                 .open(directory.join("events.ndjson"))?;
             let mut writer = io::BufWriter::new(events);
-            let records = self
-                .c
-                .records
-                .lock()
-                .map_err(|_| io::Error::other("capture records poisoned"))?;
             for record in records.iter() {
                 serde_json::to_writer(&mut writer, record)?;
                 writer.write_all(b"\n")?;
             }
             writer.flush()?;
-            let dropped = self.c.dropped.load(Ordering::Acquire);
-            let open = self.c.open.load(Ordering::Acquire);
             let manifest = serde_json::json!({"schema":"flow-adaptive-tuner.trace-manifest.v1",
                 "producer":"candle", "run_id":self.c.run_id,"nonce":self.c.nonce,"process_id":std::process::id(),
                 "events":"events.ndjson","record_count":records.len(),"dropped_records":dropped,"open_scopes":open,
-                "flush_complete":true,"complete":dropped==0 && open==0,"profile":"diagnostic",
+                "flush_complete":true,"drain_complete":drain_complete,
+                "complete":drain_complete && dropped==0 && open==0,"profile":"diagnostic",
                 "timestamp_unit":"ns","metadata":self.metadata,
                 "capabilities":{
                     "storage_dispatch":"enabled", "tensor_dataflow":"partial", "asd_exact":"enabled_if_cuda",

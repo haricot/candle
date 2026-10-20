@@ -54,7 +54,12 @@ fallback cases. Outputs and next states must match the same-device reference
 bit for bit. Every eligible traced call must have an actual `asd.submitted`
 record for the verified artifact; a reference fallback cannot masquerade as
 candidate validation. The validation report carries a fresh nonce and artifact
-hash. Hardware parity remains pending until this program passes on CUDA.
+hash. Physical sm_61 parity passed in `d7-T123-20261020T152235.349360Z.zip`
+for source pin `84a0b24c030d3af912dcab9a3939f8b0de1dbd32`: 48 cases,
+768 steps, 48 forks, 10 fallback cases and 408 traced candidate submissions.
+Raw native CUPTI also observed 330 candidate kernels in the separate LFM run.
+The archive's three T1 captures remain incomplete; this evidence does not
+qualify engine gain or complete semantic coverage.
 
 The Mistral CLI exposes `d7-shortconv-f16-validate --out DIRECTORY` when built
 with CUDA + `d7-trace`, so the coordinated launcher reuses the same engine
@@ -65,3 +70,11 @@ CPU verification runs the actual profile parser in
 `tools/d7-stateful-profile-check` and the existing F16/F32 immutable reference
 tests. CUDA Rust typechecks and sm_61 CUBIN compilation do not replace GPU
 execution, output/state parity or untraced complete-engine A/B measurements.
+
+`Capture::finish` stops admitting new observers under the capture lock, retains
+the capture slot, and gives already admitted scopes and event payload builders
+up to one second to finish. It then freezes the records and exports them. A
+timeout records `drain_complete=false` and cannot assert completeness. Capacity
+overflow and record-lock contention still count as loss; no missing event is
+invented or removed. This addresses the observed missing final `op.end` when
+the engine worker was still finishing an `index_select` during export.
