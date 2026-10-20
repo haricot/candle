@@ -185,3 +185,17 @@ instrumentation self-control after R5 used the R4 Cargo target directory.
 R5 correction isolates its entire Cargo target and checks R4 executable SHA
 before/after build. Keep all numerical and exact gates unchanged; rerun both
 clips. First-run report is partial, not an encoder or positional qualification.
+
+R5 corrected run **39440057205 completed successfully** on tested source
+`d15fc800a68355cca0e8089fc3b1e5343c956dcb`: 125 Python tests, Rust and both real
+CaFE clips. Full independent Cargo target fixes the observed second-clip
+control failure; strict R3C/R4 equality passes all 26 stages on both clips.
+NeMo 700 training children after transcribe confirmed twice; recursive eval
+gives exact fresh C1/C3 reference. Scaling is bitwise exact in 34/34 operator
+cases. Live positional max_abs=3.8072467e-6 on both clips, but long T=513
+max_abs=3.0517578e-5 fails unchanged 1e-5 gate: strict positional parity still
+NOT_ESTABLISHED. Last encoder layer passes clip 0 (50/50 frames, max3.87e-7),
+fails clip 1 (51/52 frames, max0.22318, cosine0.97509). Padding-mask parity is
+a next hypothesis, not proven attribution. Both clips still exceed the
+absolute pre_encode gate slightly (0.00146/0.00122); no all-stage promotion.
+Details and artifact links: `ci/RESULTS-HDB2-C3-A-R5.md`.
