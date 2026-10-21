@@ -79,6 +79,30 @@ pub fn conv1d(layer:&candle_nn::Conv1d,x:&Tensor)->Result<Tensor> {
     if config.padding!=0 || config.stride!=1 {
         return Err(fail("R13 requires the checkpoint's explicit Conv1d padding"));
     }
+    let (batch,ic,time)=x.dims3()?;let(oc,wic,kernel)=layer.weight().dims3()?;
+    let threads=candle::utils::get_num_threads();
+    // NeMo's CPU Conv1d routes small 1x1 inputs through addmm rather than
+    // oneDNN. The pinned PyTorch rule uses a strict >20480 element boundary.
+    let use_onednn=(batch>=16 || threads>1) && (batch>1 || x.elem_count()>20480);
+    if kernel==1 && config.groups==1 && config.dilation==1 && !use_onednn {
+        if ic==0 || time==0 || oc==0 || ic!=wic {return Err(fail("R13 pointwise convolution shape differs"));}
+        crate::parakeet::hdb2c_r10_mkl::profile();
+        let (m,n,k)=(dim(oc)?,dim(time)?,dim(ic)?);
+        let input=x.flatten_all()?.to_vec1::<f32>()?;
+        let weight=layer.weight().flatten_all()?.to_vec1::<f32>()?;
+        let mut out=vec![0f32;batch*oc*time];
+        let beta=if let Some(bias)=layer.bias() {
+            let bias=bias.to_vec1::<f32>()?;
+            if bias.len()!=oc {return Err(fail("R13 pointwise bias shape differs"));}
+            for b in 0..batch {for c in 0..oc {out[(b*oc+c)*time..(b*oc+c+1)*time].fill(bias[c]);}}
+            1.0
+        } else {0.0};
+        for b in 0..batch {
+            unsafe {cblas_sgemm(ROW_MAJOR,NO_TRANS,NO_TRANS,m,n,k,1.0,weight.as_ptr(),k,
+                input.as_ptr().add(b*ic*time),n,beta,out.as_mut_ptr().add(b*oc*time),n);}
+        }
+        return Tensor::from_vec(out,(batch,oc,time),x.device());
+    }
     let conv=candle_nn::Conv2d::new(layer.weight().unsqueeze(2)?,layer.bias().cloned(),
         candle_nn::Conv2dConfig {padding:0,stride:1,dilation:config.dilation,
             groups:config.groups,cudnn_fwd_algo:None});
@@ -124,6 +148,13 @@ mod hdb2c13_math_tests {
         let layer=candle_nn::Conv1d::new(w,Some(bias),
             candle_nn::Conv1dConfig {groups:2,padding:1,..Default::default()});
         assert!(conv1d(&layer,&x).is_err());
+        Ok(())
+    }
+    #[test] fn pointwise_channel_time_layout_and_bias()->Result<()> {
+        let w=Tensor::from_vec(vec![2f32,0.,0.,3.],(2,2,1),&Device::Cpu)?;
+        let layer=candle_nn::Conv1d::new(w,Some(Tensor::from_vec(vec![1f32,2.],2,&Device::Cpu)?),Default::default());
+        let x=Tensor::from_vec(vec![1f32,2.,3.,4.,5.,6.],(1,2,3),&Device::Cpu)?;
+        assert_eq!(conv1d(&layer,&x)?.flatten_all()?.to_vec1::<f32>()?,vec![3.,5.,7.,14.,17.,20.]);
         Ok(())
     }
 }

@@ -530,3 +530,22 @@ Full14 fresh-reference/baseline/native/common-input CPU campaign is running;
 new workflow input r13_cpu_full and marker [r13-cpu-full] select the same test.
 All original thresholds and independent R7/R8B byte controls are preserved.
 Validation so far:181 Python tests,21 integrated Rust tests. GPU remains paused.
+
+### R13 full14 finding and shape-dependent CPU correction
+
+Initial c80fc34 full local run completed all14:9 passed,5 shorter Oréau clips
+failed internal convolution/residual gates. No global CPU qualification from
+that initial candidate. PyTorch 2.12.1 Convolution.cpp confirms small ungrouped
+1x1 inputs use native addmm rather than oneDNN (strict >20480-element boundary).
+The corrected candidate applies that dispatch and the original SGEMM orientation
+with fused bias. The previously failing Oréau-neutral native diagnostic now has
+all24 layer outputs and block0 stages bit-identical, with exact TDT/text decisions.
+
+Also reproduce the CPU TensorIterator32768-element task boundaries for SiLU;
+scalar tails differ from vector exp for a few large-array elements. Actual
+PyTorch regression:76 cases each on AVX2 and AVX512,152 bitwise passes.22 native
+Rust tests pass. Keep baseline Cargo builds on ROOT's CPU configuration even
+when called via PYTHONPATH from elsewhere. The final candidate is rerunning
+all14 native/shared-Mel/operator/TDT paths against unchanged actual NeMo traces
+and byte-revalidated independent R7/R8B controls. A fresh CI campaign selects
+that same final source. Thresholds unchanged; GPU still paused.

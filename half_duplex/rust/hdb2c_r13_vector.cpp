@@ -3,6 +3,7 @@
 #include <immintrin.h>
 #include <sleef.h>
 #include <mkl.h>
+#include <omp.h>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -40,14 +41,18 @@ extern "C" int ENTRY(hdb2c13_unary)(int operation,int n,const float*x,float*y){
     if(operation==1){vmsSin(n,x,y,mode);return 0;}
     if(operation==2){vmsCos(n,x,y,mode);return 0;}
     if(operation!=3)return 2;
-    int i=0;
-    // Elementwise activation kernels vectorize pairs of vectors, then use
-    // scalar libm for the remainder. Checkpoint FFN/channel widths are aligned.
-    for(;i+2*lanes<=n;i+=2*lanes)for(int j=0;j<2;++j){
-        Vec v=load(x+i+j*lanes);
-        save(y+i+j*lanes,divv(v,add(fill(1.0f),exponential(negative(v)))));
+    // TensorIterator's CPU grain determines where each vector/scalar tail
+    // starts. Reproduce those chunks even though this wrapper runs serially.
+    const int64_t workers=n>32768?std::min<int64_t>(omp_get_max_threads(),(int64_t(n)+32767)/32768):1;
+    const int64_t chunk=(int64_t(n)+workers-1)/workers;
+    for(int64_t begin=0;begin<n;begin+=chunk){
+        const int64_t end=std::min<int64_t>(n,begin+chunk);int64_t i=begin;
+        for(;i+2*lanes<=end;i+=2*lanes)for(int j=0;j<2;++j){
+            Vec v=load(x+i+j*lanes);
+            save(y+i+j*lanes,divv(v,add(fill(1.0f),exponential(negative(v)))));
+        }
+        for(;i<end;++i)y[i]=x[i]/(1.0f+std::exp(-x[i]));
     }
-    for(;i<n;++i)y[i]=x[i]/(1.0f+std::exp(-x[i]));
     return 0;
 }
 

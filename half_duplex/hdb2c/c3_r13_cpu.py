@@ -6,6 +6,7 @@ controls are retained. No CUDA path or reference-activation substitution.
 from __future__ import annotations
 
 import argparse
+from contextlib import chdir
 import hashlib
 import json
 import os
@@ -153,7 +154,10 @@ def campaign_summary(results, errors, manifest):
 
 def main(corpus, source, build, sleef_source, sleef_build, require_numeric=False, keep_raw=False):
     s = settings(); root = take_run_dir(s['reports']); rows = selected_corpus(json.loads(corpus.read_text()))
-    binaries, parent_manifest = prepare_sources(s, 'cpu')
+    # Cargo reads configuration from the process cwd, even with --manifest-path.
+    # Keep the independent baseline and candidate on the repository CPU profile.
+    with chdir(ROOT):
+        binaries, parent_manifest = prepare_sources(s, 'cpu')
     hashes = {str(p): digest(p) for p in binaries}
     binary, manifest = prepare_candidate(binaries[1].parents[3], ROOT,
         original_metadata(s['nemo'], s['model']), s['python'], source, build, sleef_source, sleef_build)

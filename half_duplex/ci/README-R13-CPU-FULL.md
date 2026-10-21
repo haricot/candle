@@ -16,7 +16,9 @@ Relative attention follows NeMo's FP32 operation order: add the two score
 matrices before dividing by the FP32 square root of the head dimension.
 Position encoding uses native MKL vector exp/sin/cos. SiLU, GLU and softmax use
 standalone SLEEF 3.8 at PyTorch 2.12.1's pinned source revision, with native
-AVX2/AVX512 dispatch and the same scalar tails/reduction order. The ordered
+AVX2/AVX512 dispatch and the same CPU grain boundaries, scalar tails and
+reduction order. Small 1x1 temporal convolutions use MKL addmm at PyTorch's
+20480-element dispatch boundary; larger inputs use oneDNN. The ordered
 LayerNorm retains the separately verified eight-lane algorithm unchanged.
 
 The complete test uses all 14 real CaFE/Oréau clips. It reruns the independent
