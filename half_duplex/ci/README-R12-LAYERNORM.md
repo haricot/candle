@@ -1,5 +1,10 @@
 # R12: isolated LayerNorm, local CUDA and manual GPU/CPU CI
 
+**CPU-first pause:** the user requires complete CPU parity before any CUDA
+test. The GPU workflow and launcher are disabled while the full CPU candidate
+is qualified. The GPU commands below describe retained tooling; do not use
+them before complete CPU qualification and explicit re-enablement.
+
 This tests **only `encoder.layers.0.norm_feed_forward1`** on the actual common
 inputs of the 14 pinned public CaFE/Oréau clips. It does not replace the
 operator in the Candle model and does not qualify full GPU/CPU STT, TDT,

@@ -38,7 +38,7 @@ class R12CiTests(unittest.TestCase):
         self.assertEqual(set(w['on']), {'workflow_dispatch'})
         self.assertEqual(w['on']['workflow_dispatch']['inputs']['r12_layernorm']['default'], 'false')
         job = w['jobs']['cuda-cudnn-sm61']
-        self.assertEqual(job['if'], "${{ github.event_name == 'workflow_dispatch' && inputs.run_cuda }}")
+        self.assertEqual(job['if'], "${{ false }}")
         steps = job['steps']
         isolated = next(s for s in steps if s.get('run') == 'bash half_duplex/ci/r12_layernorm.sh cuda')
         self.assertEqual(isolated['if'], '${{ inputs.r12_layernorm }}')
@@ -85,6 +85,7 @@ class R12CiTests(unittest.TestCase):
                 raise RuntimeError('STOP_AFTER_RECORDED_POST')
             return {'workflow_runs': []}
         with patch.object(runner, 'gh_api', side_effect=api), \
+                patch.object(runner, 'GPU_CAMPAIGNS_ENABLED', True), \
                 patch.object(runner.subprocess, 'check_output', return_value='a'*40):
             with self.assertRaisesRegex(RuntimeError, 'STOP_AFTER_RECORDED_POST'):
                 runner.dispatch_r12()
@@ -97,10 +98,21 @@ class R12CiTests(unittest.TestCase):
 
     def test_stale_local_head_is_rejected_before_dispatch(self):
         with patch.object(runner, 'gh_api', return_value={'object': {'sha': 'b'*40}}) as api, \
+                patch.object(runner, 'GPU_CAMPAIGNS_ENABLED', True), \
                 patch.object(runner.subprocess, 'check_output', return_value='a'*40):
             with self.assertRaisesRegex(ValueError, 'git pull --ff-only'):
                 runner.dispatch_r12()
         self.assertEqual(api.call_count, 1)
+
+    def test_cpu_first_pause_prevents_dispatch_and_registration(self):
+        self.assertFalse(runner.GPU_CAMPAIGNS_ENABLED)
+        with self.assertRaisesRegex(RuntimeError, 'complete CPU parity'):
+            local.run('cuda', Path('/unused'), local.IMAGE)
+        with patch.object(runner, 'gh_api') as api, patch.object(runner, 'registration_token') as token:
+            for action in (lambda: runner.dispatch_r12(), lambda: runner.start(123, None)):
+                with self.assertRaisesRegex(RuntimeError, 'complete CPU parity'):
+                    action()
+        api.assert_not_called(); token.assert_not_called()
 
     def test_existing_start_and_check_still_require_run_id(self):
         path = str(ROOT/'half_duplex/ci/stt_sm61_runner.py')

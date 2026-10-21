@@ -36,6 +36,8 @@ def command(image, source, work, stamp, backend):
 
 
 def run(backend, work, image):
+    if backend == 'cuda':
+        raise RuntimeError('CUDA tests are suspended until the complete CPU parity campaign passes')
     if subprocess.check_output(['podman', 'info', '--format', '{{.Host.Security.Rootless}}'], text=True).strip() != 'true':
         raise RuntimeError('Use the rootless Podman account with the existing unified image')
     subprocess.run(['podman', 'image', 'exists', image], check=True)

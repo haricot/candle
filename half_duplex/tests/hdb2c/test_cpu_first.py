@@ -13,7 +13,7 @@ class CpuFirstTests(unittest.TestCase):
         workflow=yaml.load((ROOT/'.github/workflows/half-duplex-cuda-sm61.yml').read_text(),Loader=yaml.BaseLoader)
         self.assertEqual(set(workflow['on']),{'workflow_dispatch'})
         self.assertEqual(workflow['jobs']['cuda-cudnn-sm61']['if'],
-            "${{ github.event_name == 'workflow_dispatch' && inputs.run_cuda }}")
+            "${{ false }}")
 
     def test_r10_rejects_cuda_before_opening_corpus_or_sdk(self):
         p=subprocess.run([sys.executable,'-m','hdb2c.c3_r10_cpu',

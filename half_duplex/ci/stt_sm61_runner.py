@@ -24,6 +24,12 @@ REPOSITORY = 'haricot/candle'
 WORKFLOW = '.github/workflows/half-duplex-cuda-sm61.yml'
 IMAGE = 'localhost/haricot/sm61-unified:v6-cuda12.9.2-ubuntu26.04'
 ROOT = Path(__file__).resolve().parents[2]
+GPU_CAMPAIGNS_ENABLED = False
+
+
+def require_gpu_qualification():
+    if not GPU_CAMPAIGNS_ENABLED:
+        raise RuntimeError('GPU tests are suspended until the complete CPU parity campaign passes')
 
 
 def validate(run, jobs, expected_candidate=None):
@@ -108,6 +114,7 @@ def select_r12_run(runs, previous, candidate, request):
 
 def dispatch_r12(expected_candidate=None):
     """Explicit user command: queue just R12, resolve its own run, then start it."""
+    require_gpu_qualification()
     local_sha = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
     if expected_candidate is not None and expected_candidate != local_sha:
         raise ValueError('Local checkout differs from the expected candidate')
@@ -141,6 +148,7 @@ def dispatch_r12(expected_candidate=None):
 
 
 def start(run_id, expected_candidate):
+    require_gpu_qualification()
     image = os.environ.get('HARICOT_RUNNER_IMAGE', IMAGE)
     if subprocess.check_output(['podman', 'info', '--format', '{{.Host.Security.Rootless}}'], text=True).strip() != 'true':
         raise RuntimeError('use the rootless Podman GPU user')

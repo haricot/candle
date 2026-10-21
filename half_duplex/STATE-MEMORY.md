@@ -500,3 +500,14 @@ artifact from the user's run passes verify_r12_cpu.py against current core
 sources. No model math or CUDA kernel source changes; no new full CPU/GPU STT
 measurement is claimed. The local GPU CI command still needs execution on the
 user's physical laptop; this environment has no dispatch API or runner access.
+
+## Latest direction: complete CPU parity first, all GPU work paused
+
+User explicitly requires full CPU test parity before any CUDA/GPU test.
+Disable the GPU workflow job and reject runner dispatch/start while this is
+unresolved. R12 isolated norm14/14 is not a full CPU pass. Continue with an
+integrated CPU candidate: original MKL frontend/projection, exact oneDNN
+subsampling and the ordered LayerNorm in the actual encoder. Run native PCM,
+all existing internal gates, production TDT/text and independent controls on
+all14 clips. Preserve every threshold and report numerical/bitwise results
+separately. Do not resume GPU based solely on isolated-operator success.

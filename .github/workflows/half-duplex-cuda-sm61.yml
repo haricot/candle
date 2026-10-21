@@ -31,7 +31,8 @@ permissions:
   actions: read
 jobs:
   cuda-cudnn-sm61:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_cuda }}
+    # Complete CPU parity is required before any CUDA test.
+    if: ${{ false }}
     runs-on: [self-hosted, linux, x64, cuda, sm61, half-duplex-stt, 'half-duplex-stt-${{ github.run_id }}']
     timeout-minutes: 350
     steps:
