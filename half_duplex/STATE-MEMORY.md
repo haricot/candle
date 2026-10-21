@@ -259,7 +259,16 @@ gates remain unqualified. Detailed evidence and artifact digest:
 R8B observes actual masked native operands, avoiding R8's reconstruction of
 unmasked previous outputs. It adds independent FP64 linear diagnostics and
 actual tokenizer category/codepoint diagnostics. Autonomous FP32 math and all
-numerical/bitwise gates stay unchanged. R8B real results are pending.
+numerical/bitwise gates stay unchanged. R8B CPU run **39597750497** on
+**b1d6a027** completes all 14 clips without errors, with bitwise observation
+controls and 283 exact TDT decisions. Detailed evidence and artifact digest:
+`ci/RESULTS-HDB2-C3-A-R8B.md`. Both text mismatches emit one unknown token;
+NeMo renders its original surface ` ⁇ ` while native concatenation uses
+`<unk>`. Native text has not yet been corrected. Independent FP64 linear
+results rounded to FP32 are bitwise identical 14/14; comparing that result to
+Torch FP32 still fails 1/14 (CaFE fear 1.220703125e-3). Do not claim that higher
+precision alone solves all gates. Actual post-mask input observations replace
+R8's unmasked reconstruction artefacts.
 Actual sm61 CUDA/cuDNN and microphone results are still pending.
 
 The unified V6.3 archive was inspected: its four profile resolvers do not
@@ -270,3 +279,9 @@ usual ephemeral registration token only on the physical host. The STT CUDA
 workflow now bootstraps temporary public assets/CPU NeMo itself. No change to
 the user's archive or image; no assumption of a live or remotely accessible
 runner. Usage: `ci/README-R8.md`.
+
+Physical GTX 1080 Max-Q preflight from the user: sm61, driver580.178.04,
+CUDA12.9.2, cuDNN9.10.2.21 pass. CUDA run39598582574 is queued at candidate
+8e827fadddfb6b5e555289836728aee52c6b9bb1. Launcher commitd0a322d fixes
+non-seekable /dev/tty r+ via a writable prompt stream/getpass read descriptor;
+a real pseudo-terminal regression passes. GPU inference/mic not yet measured.

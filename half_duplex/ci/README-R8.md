@@ -108,3 +108,9 @@ host environments can still use `bash half_duplex/ci/r8_sm61.sh` directly.
 This session cannot start a process on the laptop or capture its microphone.
 The local microphone command in this document remains a separate measurement,
 with recordings and raw evidence retained locally.
+
+
+R8B CPU results: [actual operands, FP64 and tokenizer attribution](RESULTS-HDB2-C3-A-R8B.md).
+If an older launcher fails with `/dev/tty` being non-seekable, update the clone
+with `git pull --ff-only`, then repeat `start` for the same queued run. The fix
+is in commit `d0a322d`; hardware/image preparation does not need to be repeated.
