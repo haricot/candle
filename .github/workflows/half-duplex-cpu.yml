@@ -32,6 +32,11 @@ on:
         required: false
         type: boolean
         default: false
+      r13_cpu_full:
+        description: 'R13 full CPU pipeline: integrated ordered LayerNorm, original gates, all 14 clips'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -149,7 +154,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   real-cpu-asr:
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu)) || contains(github.event.head_commit.message, '[real-asr]') || contains(github.event.head_commit.message, '[r10-cpu]') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu || inputs.r13_cpu_full)) || contains(github.event.head_commit.message, '[real-asr]') || contains(github.event.head_commit.message, '[r10-cpu]') || contains(github.event.head_commit.message, '[r13-cpu-full]') }}
     needs: [python-contracts, rust-c2-cpu, cafe-corpus]
     runs-on: ubuntu-24.04
     timeout-minutes: 350
@@ -162,13 +167,14 @@ jobs:
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg unzip libsndfile1-dev
+          sudo apt-get install -y ffmpeg unzip libsndfile1-dev g++ cmake ninja-build pkg-config libssl-dev
       - name: Real NeMo vs Candle frontend, encoder and production TDT on CPU
         env:
           HDB2C_R7_FOCUSED: ${{ contains(github.event.head_commit.message, '[r7-focused]') && '1' || '0' }}
-          HDB2C_R8_CORPUS: ${{ (inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu || contains(github.event.head_commit.message, '[r8-corpus]') || contains(github.event.head_commit.message, '[r10-cpu]')) && '1' || '0' }}
+          HDB2C_R8_CORPUS: ${{ (inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu || inputs.r13_cpu_full || contains(github.event.head_commit.message, '[r8-corpus]') || contains(github.event.head_commit.message, '[r10-cpu]') || contains(github.event.head_commit.message, '[r13-cpu-full]')) && '1' || '0' }}
           HDB2C_R9_TEXT: ${{ (inputs.r9_text || contains(github.event.head_commit.message, '[r9-text]')) && '1' || '0' }}
           HDB2C_R10_CPU: ${{ (inputs.r10_cpu || contains(github.event.head_commit.message, '[r10-cpu]')) && '1' || '0' }}
+          HDB2C_R13_CPU_FULL: ${{ (inputs.r13_cpu_full || contains(github.event.head_commit.message, '[r13-cpu-full]')) && '1' || '0' }}
         run: bash half_duplex/ci/full_cpu.sh
       - uses: actions/upload-artifact@v4
         if: always()

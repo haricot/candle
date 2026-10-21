@@ -511,3 +511,22 @@ subsampling and the ordered LayerNorm in the actual encoder. Run native PCM,
 all existing internal gates, production TDT/text and independent controls on
 all14 clips. Preserve every threshold and report numerical/bitwise results
 separately. Do not resume GPU based solely on isolated-operator success.
+
+## R13 — integrated full CPU candidate (2026-10-21)
+
+R13 now integrates ordered LayerNorm into all 24 blocks, native MKL FFN and
+relative-attention matrix products, NeMo's add-then-divide score order, oneDNN
+temporal convolutions, native MKL position encoding, and standalone SLEEF 3.8
+SiLU/GLU/softmax. The SLEEF revision is the one pinned by PyTorch 2.12.1;
+activation vector widths dispatch independently to AVX2/AVX512 while the
+previously verified LayerNorm keeps eight lanes. Native ELF dependencies
+contain MKL, oneDNN, SLEEF and system libraries; no ATen/libtorch dependency.
+
+Actual autonomous CaFE fear diagnostic: all24 layer outputs and every declared
+block0 internal stage match NeMo bit-for-bit; TDT decisions/text/numerical gates
+also pass. ReLU signed-zero bits and TDT floating-point bits are still reported
+separately. This single diagnostic does NOT qualify the complete14 campaign.
+Full14 fresh-reference/baseline/native/common-input CPU campaign is running;
+new workflow input r13_cpu_full and marker [r13-cpu-full] select the same test.
+All original thresholds and independent R7/R8B byte controls are preserved.
+Validation so far:181 Python tests,21 integrated Rust tests. GPU remains paused.

@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Heavy real-model validation on two CaFE/CAMEO excerpts; no personal recordings.
+# Heavy real-model CPU validation; R8+ profiles use all 14 CaFE/Oréau excerpts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ "${HDB2C_R13_CPU_FULL:-0}" == 1 ]];then
+  test "${HDB2C_R8_VARIANT:-cpu}" = cpu || { echo 'R13_CPU_ONLY' >&2;exit 3; }
+  export HDB2C_R8_CORPUS=1
+  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}" MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}" RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-4}"
+fi
 : "${RUNNER_TEMP:?}"
 export HDB2A_RUNTIME_DIR="$RUNNER_TEMP/halfduplex-real-parakeet"
 export HDB2A_MODEL_DIR="$RUNNER_TEMP/halfduplex-transcribepsy"
@@ -14,7 +19,10 @@ mkdir -p "$HDB2A_REPORT_ROOT" "$RUNNER_TEMP/checkpoint"
 ./run-hdb2c.sh install-nemo
 ./run-hdb2c.sh verify-nemo
 export PATH="$HDB2C_ENV_DIR/bin:$PATH"
-uv pip install --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple 'datasets==3.6.0' 'soundfile' 'huggingface_hub'
+uv pip install --no-config --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple \
+  -c "$HDB2C_ENV_DIR/hdb2c-constraints.txt" \
+  'datasets==3.6.0' 'fsspec==2024.12.0' 'setuptools>=79,<82' 'soundfile' 'huggingface_hub'
+"$HDB2C_PYTHON" -m pip check
 hf download qvac/TranscribePsy-250M-EU-sub --include '*.nemo' --local-dir "$RUNNER_TEMP/checkpoint"
 mapfile -d '' archives < <(find "$RUNNER_TEMP/checkpoint" -type f -name '*.nemo' -print0)
 if [[ ${#archives[@]} != 1 ]];then echo 'NO_UNIQUE_PUBLIC_NEMO_CHECKPOINT' >&2;exit 8;fi
@@ -32,13 +40,24 @@ fi
 "$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
 if [[ "${HDB2C_R8_CORPUS:-0}" == 1 ]];then
   module=hdb2c.c3_r8
+  extra_args=()
   if [[ "${HDB2C_R9_TEXT:-0}" == 1 ]];then module=hdb2c.c3_r9_text;fi
   if [[ "${HDB2C_R10_CPU:-0}" == 1 ]];then
     test "${HDB2C_R8_VARIANT:-cpu}" = cpu || { echo 'R10_CPU_ONLY' >&2;exit 3; }
     uv pip install --no-config --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple 'mkl==2024.2.2' 'mkl-include==2024.2.2'
     module=hdb2c.c3_r10_cpu
   fi
-  "$HDB2C_PYTHON" -m "$module" --corpus "$RUNNER_TEMP/cameo/manifest.json" --variant "${HDB2C_R8_VARIANT:-cpu}" --require-numeric
+  if [[ "${HDB2C_R13_CPU_FULL:-0}" == 1 ]];then
+    test "${HDB2C_R8_VARIANT:-cpu}" = cpu || { echo 'R13_CPU_ONLY' >&2;exit 3; }
+    uv pip install --no-config --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple \
+      'mkl==2024.2.2' 'mkl-include==2024.2.2'
+    bash ci/experimental/cpu_parity/build_onednn.sh "$RUNNER_TEMP/r13-onednn-source" "$RUNNER_TEMP/r13-onednn-build"
+    bash ci/experimental/cpu_parity/build_sleef.sh "$RUNNER_TEMP/r13-sleef-source" "$RUNNER_TEMP/r13-sleef-build"
+    module=hdb2c.c3_r13_cpu
+    extra_args=(--onednn-source "$RUNNER_TEMP/r13-onednn-source" --onednn-build "$RUNNER_TEMP/r13-onednn-build" \
+      --sleef-source "$RUNNER_TEMP/r13-sleef-source" --sleef-build "$RUNNER_TEMP/r13-sleef-build")
+  fi
+  "$HDB2C_PYTHON" -m "$module" --corpus "$RUNNER_TEMP/cameo/manifest.json" --variant "${HDB2C_R8_VARIANT:-cpu}" --require-numeric "${extra_args[@]}"
   exit
 fi
 mapfile -t clips < <("$HDB2C_PYTHON" - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'
