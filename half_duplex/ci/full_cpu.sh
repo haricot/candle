@@ -31,7 +31,7 @@ if [[ "${HDB2C_R7_FOCUSED:-0}" != 1 && "${HDB2C_R8_CORPUS:-0}" != 1 ]];then
 fi
 "$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
 if [[ "${HDB2C_R8_CORPUS:-0}" == 1 ]];then
-  "$HDB2C_PYTHON" -m hdb2c.c3_r8 --corpus "$RUNNER_TEMP/cameo/manifest.json" --require-numeric
+  "$HDB2C_PYTHON" -m hdb2c.c3_r8 --corpus "$RUNNER_TEMP/cameo/manifest.json" --variant "${HDB2C_R8_VARIANT:-cpu}" --require-numeric
   exit
 fi
 mapfile -t clips < <("$HDB2C_PYTHON" - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'

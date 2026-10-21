@@ -79,3 +79,32 @@ operands after production masks, verifies all original R7 trace bytes, adds
 FP64 linear diagnostics and identifies tokenizer categories/codepoints. FP64
 outputs are diagnostics only. Historical R8 results remain tied to `ce3461ff`;
 new reports identify revision `HDB2-C3-A-R8B`. Existing commands and gates apply.
+
+## Physical sm61 using the unified V6.3 runner image
+
+The archive's four existing profiles select other workflows. STT now uses a
+small launcher from this repository with the **same existing unified image and
+GPU lock**, without changing that archive, its image or its profiles. Dedicated
+`half-duplex-stt-RUN_ID` labels bind the one-job runner to the exact campaign.
+The workflow verifies the expected run and checked-out commit again.
+
+After a `[r8-cuda]` push, or a fresh workflow dispatch with `run_cuda=true` and
+`r8_corpus=true`, use the rootless GPU user on the physical laptop:
+
+```bash
+python3 half_duplex/ci/stt_sm61_runner.py check --run-id RUN_ID
+python3 half_duplex/ci/stt_sm61_runner.py start --run-id RUN_ID
+```
+
+The launcher checks the selected commit, queued job, existing V6.3 image and
+hardware before requesting the usual ephemeral registration token locally.
+`HARICOT_RUNNER_IMAGE` overrides the same default image name as V6.3. No token
+is passed in an argument or stored in a source file. The workflow bootstraps
+its own temporary runtime, public checkpoint, corpus and isolated CPU NeMo
+environment, then builds the real CUDA/cuDNN candidate for capability 6.1.
+It uploads metrics even if unchanged numerical gates fail. Existing prepared
+host environments can still use `bash half_duplex/ci/r8_sm61.sh` directly.
+
+This session cannot start a process on the laptop or capture its microphone.
+The local microphone command in this document remains a separate measurement,
+with recordings and raw evidence retained locally.

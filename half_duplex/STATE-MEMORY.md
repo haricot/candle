@@ -261,3 +261,12 @@ unmasked previous outputs. It adds independent FP64 linear diagnostics and
 actual tokenizer category/codepoint diagnostics. Autonomous FP32 math and all
 numerical/bitwise gates stay unchanged. R8B real results are pending.
 Actual sm61 CUDA/cuDNN and microphone results are still pending.
+
+The unified V6.3 archive was inspected: its four profile resolvers do not
+support the STT workflow, and its ephemeral container does not inherit host
+model paths. `ci/stt_sm61_runner.py` reuses its existing image and GPU lock,
+binds exact run/job/commit and dedicated campaign labels, and prompts for the
+usual ephemeral registration token only on the physical host. The STT CUDA
+workflow now bootstraps temporary public assets/CPU NeMo itself. No change to
+the user's archive or image; no assumption of a live or remotely accessible
+runner. Usage: `ci/README-R8.md`.
