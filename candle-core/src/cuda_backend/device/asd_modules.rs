@@ -25,6 +25,7 @@ const MODULE_ABI_VERSION: u32 = 1;
 
 #[derive(Clone, Debug)]
 struct AsdKernelSpec {
+    kernel_abi: String,
     implementation_id: String,
     candidate_id: String,
     entry: String,
@@ -424,9 +425,12 @@ fn dynamic_spec_from_manifest(
     }
 
     let kernel_abi = required_string("kernel_abi", &manifest.kernel_abi)?;
-    if kernel_abi != "asd.xwo.f32.v1" {
+    if !matches!(
+        kernel_abi.as_str(),
+        "asd.xwo.f32.v1" | "asd.xswyn.f16.k3.v1"
+    ) {
         return Err(Error::Msg(format!(
-            "dynamic ASD implementation {implementation_id} uses unsupported kernel_abi={kernel_abi:?}; expected asd.xwo.f32.v1"
+            "dynamic ASD implementation {implementation_id} uses unsupported kernel_abi={kernel_abi:?}"
         )));
     }
 
@@ -442,6 +446,7 @@ fn dynamic_spec_from_manifest(
     }
 
     Ok(AsdKernelSpec {
+        kernel_abi,
         implementation_id: implementation_id.to_owned(),
         candidate_id: required_string("candidate_id", &manifest.candidate_id)?,
         entry: manifest.entry.clone(),
@@ -728,7 +733,31 @@ impl<'a> AsdModuleRegistry<'a> {
         implementation_id: &str,
         decision_identity_sha256: &str,
     ) -> Result<Option<AsdCudaImplementation>> {
-        self.resolve_dynamic_optional(implementation_id, decision_identity_sha256)
+        let resolved =
+            self.resolve_dynamic_optional(implementation_id, decision_identity_sha256)?;
+        if resolved
+            .as_ref()
+            .is_some_and(|r| r.spec.kernel_abi != "asd.xwo.f32.v1")
+        {
+            crate::bail!("ASD stateless executor requires asd.xwo.f32.v1");
+        }
+        Ok(resolved)
+    }
+
+    pub(crate) fn resolve_stateful_f16(
+        &self,
+        implementation_id: &str,
+        decision_identity_sha256: &str,
+    ) -> Result<Option<AsdCudaImplementation>> {
+        let resolved =
+            self.resolve_dynamic_optional(implementation_id, decision_identity_sha256)?;
+        if resolved
+            .as_ref()
+            .is_some_and(|r| r.spec.kernel_abi != crate::stateful::SHORTCONV_F16_ABI)
+        {
+            crate::bail!("ASD stateful F16 executor ABI mismatch");
+        }
+        Ok(resolved)
     }
 }
 

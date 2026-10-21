@@ -1,7 +1,7 @@
 name: D7 generic trace and ShortConv reference
 on:
   push:
-    branches: [d7-trace-t123, d7-trace-extended]
+    branches: [d7-trace-t123, d7-trace-extended, d7-stateful-f16]
   pull_request:
     branches: [asd_core_v3_standalone]
   workflow_dispatch:
@@ -18,5 +18,6 @@ jobs:
         with:
           toolchain: stable
       - run: cargo check -p candle-core --no-default-features
+      - run: cargo test --locked --manifest-path tools/d7-stateful-profile-check/Cargo.toml
       - run: cargo test -p candle-core --features d7-trace --test d7_diagnostics
       - run: cargo run -p candle-core --features d7-trace --example d7_shortconv_validate -- cpu "$RUNNER_TEMP/d7-state-validation"

@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     std::fs::create_dir_all(&out)?;
     let report = serde_json::json!({"status":"PASS_REFERENCE_OUTPUT_AND_IMMUTABLE_STATE","cases":checked,
-        "device":format!("{:?}",device.location()),"candidate":"not_implemented","scope":"synthetic_operator_validation_not_engine_gain"});
+        "device":format!("{:?}",device.location()),"candidate":"not_selected_reference_only","scope":"synthetic_operator_validation_not_engine_gain"});
     std::fs::write(
         out.join("validation.json"),
         serde_json::to_string_pretty(&report)?,

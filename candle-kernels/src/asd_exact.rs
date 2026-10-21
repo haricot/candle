@@ -10,6 +10,7 @@ pub enum ExactOperation {
     Conv2d,
     ConvTranspose1d,
     ConvTranspose2d,
+    CausalDepthwiseConv1dStep,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

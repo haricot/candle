@@ -33,7 +33,7 @@ fn eligible(
         && layout_ok(kernel_l)
         && input.device.id() == kernel.device.id()
 }
-pub(super) fn actual_uuid(input: &CudaStorage) -> Option<String> {
+pub(crate) fn actual_uuid(input: &CudaStorage) -> Option<String> {
     let u = input.device.cuda_stream().context().uuid().ok()?;
     let hex = u
         .bytes
