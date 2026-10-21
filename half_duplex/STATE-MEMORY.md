@@ -549,3 +549,32 @@ when called via PYTHONPATH from elsewhere. The final candidate is rerunning
 all14 native/shared-Mel/operator/TDT paths against unchanged actual NeMo traces
 and byte-revalidated independent R7/R8B controls. A fresh CI campaign selects
 that same final source. Thresholds unchanged; GPU still paused.
+
+
+
+## R13 — independent full CPU CI qualified (2026-10-21)
+
+Final source `11a1422803e925197959e3ff228c819f90080063` completed [CPU run 39668765979](https://github.com/haricot/candle/actions/runs/39668765979).
+The real-cpu-asr job and Python/Rust/corpus jobs succeeded. Actual fresh NeMo
+references and independent R7/R8B byte controls ran on all14 real clips.
+Complete numerical verdict: PASS_ALL_DECLARED_NUMERIC_GATES14/14, original
+thresholds unchanged, no native reference-tensor injection. Frontend154/154
+bit-identical, encoder1400/1400 declared stage gates pass across native and
+shared-Mel paths. TDT283/283 decisions and token/frame/duration/text exact on
+each path. Maximum final valid encoder abs2.384185791015625e-7; maximum TDT
+activation abs4.57763671875e-5.
+
+Critical distinction: independent CI has267/336 bit-identical layer outputs
+per path and11/14 exact final valid encoders. Oréau happiness/disgust/fear
+differ from layer01 onward, all within original gates. Do NOT repeat the
+earlier local336/336 count as a CI result or claim global bitwise parity.
+Remaining ReLU signed zeros and TDT float differences also persist; overall
+global_bitwise_status remains FAIL_DIFFERENT_F32_BITS. Residual encoder cause
+not yet established. Report ci/RESULTS-HDB2-C3-A-R13-CPU-FULL.md and persistent
+JSON ci/results/r13-ci-full-cpu-20261021.json contain actual CI evidence and
+all29 artifact-file checksums; artifact12379343896 expires2026-11-04.
+
+This qualifies the isolated R13 CPU FP32 offline batch1 candidate on14 clips,
+not the default Candle backend, physical laptop, general WER or CUDA. GPU
+workflow and runner/local entry points remain paused; no CUDA was launched.
+Any later GPU phase must use its own actual device-specific qualification.

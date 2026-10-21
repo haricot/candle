@@ -2,7 +2,7 @@
 
 The R12 CPU CI qualified one LayerNorm operator on 14 actual common inputs.
 It did not execute or qualify the full CPU pipeline. All GPU entry points
-remain paused until the complete CPU campaign passes.
+remain paused; a successful CPU campaign does not automatically re-enable them.
 
 R13 integrates that unchanged ordered LayerNorm implementation into all 24
 Conformer blocks and their convolution norms. It also includes the original
@@ -60,3 +60,13 @@ export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 RAYON_NUM_THREADS=4
 Linux x86-64 with AVX2/FMA, GCC/G++, ar, GNU OpenMP, CMake, Ninja and the
 pinned Rust/Python/NeMo environment are required. The helper builds pinned
 CPU-only oneDNN. Baseline sources and executables remain independently hashed.
+
+
+
+The completed independent CPU campaign on `11a1422` passed all14 full numerical
+qualifications with the original gates. TDT283/283 decisions and all texts
+match. Global bitwise parity remains incomplete: CI has267/336 exact layer
+outputs per path and11/14 exact final encoder outputs, with max final encoder
+abs2.384185791015625e-7. See [the measured results](RESULTS-HDB2-C3-A-R13-CPU-FULL.md)
+and [persistent CI evidence](results/r13-ci-full-cpu-20261021.json) before
+interpreting the numerical pass. GPU remains paused.
