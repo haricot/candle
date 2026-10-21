@@ -92,13 +92,24 @@ def execute_text_clip(s,binary,row,report,variant,baseline,manifest):
         'limits':'Isolated candidate, original numerical gates, no production promotion or streaming claim.'}
 
 
-def main(corpus,variant,require_numeric=False):
+def publication_dir(root,local_audio=False):
+    if local_audio:return root/'local-summaries'
+    return Path(os.environ.get('GITHUB_WORKSPACE',str(root)))/'halfduplex-ci-published'
+
+
+def main(corpus,variant,require_numeric=False,*,wav=None,keep_raw=False):
     s=settings();s['reports'].mkdir(parents=True,exist_ok=True);root=take_run_dir(s['reports'])
-    rows=selected_corpus(json.loads(corpus.read_text()))
+    if wav is None:
+        rows=selected_corpus(json.loads(corpus.read_text()))
+    else:
+        from .audio import normalize,describe
+        normalized=root/'input-16k.wav';normalize(wav,normalized)
+        rows=[{'id':'local-microphone','split':'local','emotion':'unspecified','wav':str(normalized),
+            'pcm_sha256':describe(normalized)['pcm_sha256']}]
     binaries,parent_manifest=prepare_sources(s,variant)
     metadata=original_metadata(s['nemo'],s['model'])
     binary,manifest=prepare_text_candidate(binaries[1].parents[3],ROOT,metadata,variant)
-    published=Path(os.environ.get('GITHUB_WORKSPACE',str(root)))/'halfduplex-ci-published'
+    published=publication_dir(root,local_audio=wav is not None)
     published.mkdir(parents=True,exist_ok=True);results=[];errors=[]
     for index,row in enumerate(rows):
         report=root/f'clip-{index:02}';report.mkdir()
@@ -120,19 +131,23 @@ def main(corpus,variant,require_numeric=False):
             import traceback
             traceback.print_exc();errors.append({'index':index,'id':row['id'],'error':type(exc).__name__+': '+str(exc)})
             write_json(published/f'r9-text-{variant}-{index:02}-error.json',errors[-1])
-        finally:shutil.rmtree(report)
+        finally:
+            if not keep_raw and wav is None:shutil.rmtree(report)
     summary={'signature':SIGNATURE,'variant':variant,'expected_clips':len(rows),'completed_clips':len(results),
         'execution_status':'COMPLETE' if len(results)==len(rows) and not errors else 'INCOMPLETE',
         'qualification':'PASS_ALL_DECLARED_NUMERIC_GATES' if not errors and len(results)==len(rows)
             and all(r['qualification']=='PASS_ALL_DECLARED_NUMERIC_GATES' for r in results) else 'NUMERIC_PARITY_NOT_ESTABLISHED',
-        'results':results,'errors':errors,'microphone':'NOT_RUN','streaming':'NOT_RUN'}
+        'results':results,'errors':errors,'scope':'LOCAL_MICROPHONE_PCM' if wav is not None else 'ALL_14_REAL_CAFE_OREAU_EXCERPTS',
+        'microphone':'LOCAL_WAV_ONLY' if wav is not None else 'NOT_RUN','streaming':'NOT_RUN'}
     write_json(published/f'r9-text-{variant}-summary.json',summary);write_json(root/'summary.json',summary)
     print('HDB2C3_R9='+summary['execution_status']+' '+summary['qualification'],flush=True)
+    print('HDB2C3_R9_REPORT='+str(root),flush=True)
     return 1 if errors else 2 if require_numeric and summary['qualification']!='PASS_ALL_DECLARED_NUMERIC_GATES' else 0
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--corpus',type=Path,required=True)
+    parser=argparse.ArgumentParser();source=parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--corpus',type=Path);source.add_argument('--wav',type=Path)
     parser.add_argument('--variant',choices=('cpu','cuda-cudnn'),default='cpu')
-    parser.add_argument('--require-numeric',action='store_true');a=parser.parse_args()
-    sys.exit(main(a.corpus,a.variant,a.require_numeric))
+    parser.add_argument('--require-numeric',action='store_true');parser.add_argument('--keep-raw',action='store_true');a=parser.parse_args()
+    sys.exit(main(a.corpus,a.variant,a.require_numeric,wav=a.wav,keep_raw=a.keep_raw))

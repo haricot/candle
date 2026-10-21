@@ -40,3 +40,25 @@ Local validation: 161 Python tests, 12 native Rust tests, R9 probe compilation,
 source generation against the qualified R7 chain and metadata from the original
 tokenizer SHA256 `eacec2b0a77f336d4a2ca4a25a7047575d3c2b74de47e997f4c205126ed3135e`.
 Real-model results are pending at implementation time.
+
+## Local microphone
+
+After the CUDA job has finished and on the laptop with the existing local
+runtime, converted model, original `.nemo` and CPU NeMo environment:
+
+```bash
+bash half_duplex/ci/r9_microphone.sh cuda-cudnn
+```
+
+The recorder first checks these prerequisites and PipeWire/ffmpeg/nvcc. It
+reuses the unified runner's physical GPU lock. Existing environment overrides
+take precedence; usual local NeMo Python locations are detected automatically.
+It records 12 seconds, runs both R8B and R9 on the same normalized PCM and keeps
+audio, raw tensors and summaries locally, including when a GitHub workspace
+variable is present. It does not upload microphone evidence. Printed
+`HDB2C3_R9_REPORT` identifies the local result directory.
+
+Microphone mode is prepared but has not yet been measured. Its separate
+publication-path regression passes; source/shell checks and prior tests total
+162 Python tests. The native Rust text decoder also matches the original
+SentencePiece implementation on 13195 isolated token-sequence cases locally.

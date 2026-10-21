@@ -300,3 +300,13 @@ Actual NeMo independently evaluates corrected text on both native/shared paths.
 Original numerical/bitwise gates remain strict. 161 Python and 12 native Rust
 tests pass locally; the actual R9 probe compiles. Real R9 results pending.
 Scope/usage: `ci/README-R9-TEXT.md`.
+
+R9 microphone mode is prepared separately (`ci/r9_microphone.sh`). It checks
+local model/environment prerequisites before recording, detects usual existing
+NeMo Python locations, reuses the physical unified runner GPU lock, and routes
+all microphone audio/tensors/summaries to local directories even with
+GITHUB_WORKSPACE set. The new publication-path regression passes (162 Python
+tests including earlier checks). Native Rust rendering matches original
+SentencePiece on 13195 isolated token-sequence cases. Actual microphone capture
+and inference remain pending; the running corpus jobs use their immutable
+original candidates.

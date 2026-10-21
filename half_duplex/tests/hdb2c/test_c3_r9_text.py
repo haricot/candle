@@ -4,11 +4,12 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from sentencepiece import sentencepiece_model_pb2
 
 from hdb2c.c3_r9_source import metadata_from_proto, model_source, original_metadata
-from hdb2c.c3_r9_text import strict_numeric
+from hdb2c.c3_r9_text import strict_numeric, publication_dir
 
 
 class TextCandidateTests(unittest.TestCase):
@@ -58,3 +59,9 @@ class TextCandidateTests(unittest.TestCase):
         tdt={'native':{'numeric_pass':True,'tdt_discrete_exact':True}}
         self.assertFalse(strict_numeric(baseline,{},tdt))
         with self.assertRaises(ValueError):model_source('unverified source')
+
+    def test_local_audio_reports_cannot_use_github_publication_directory(self):
+        with patch.dict('os.environ',{'GITHUB_WORKSPACE':'/public/workspace'}):
+            root=Path('/local/recordings/run')
+            self.assertEqual(publication_dir(root,True),root/'local-summaries')
+            self.assertEqual(publication_dir(root),Path('/public/workspace/halfduplex-ci-published'))

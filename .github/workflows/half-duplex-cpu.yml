@@ -49,6 +49,7 @@ jobs:
           bash -n ci/full_cpu.sh
           bash -n ci/r8_sm61.sh
           bash -n ci/r8_microphone.sh
+          bash -n ci/r9_microphone.sh
       - name: Verify personal WAVs are not silently committed
         run: |
           python - <<'PY'
