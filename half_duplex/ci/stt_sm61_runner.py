@@ -16,11 +16,14 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import urllib.request
+import uuid
 
 REPOSITORY = 'haricot/candle'
 WORKFLOW = '.github/workflows/half-duplex-cuda-sm61.yml'
 IMAGE = 'localhost/haricot/sm61-unified:v6-cuda12.9.2-ubuntu26.04'
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def validate(run, jobs, expected_candidate=None):
@@ -81,6 +84,62 @@ def registration_token():
     return value
 
 
+def gh_api(path, *, payload=None):
+    args = ['gh', 'api', '--hostname', 'github.com', 'repos/'+REPOSITORY+path,
+            '--method', 'POST' if payload is not None else 'GET']
+    if payload is not None:
+        args += ['--input', '-']
+    result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
+                            capture_output=True, text=True, timeout=30)
+    if result.returncode:
+        raise RuntimeError('GitHub CLI request failed: '+result.stderr.strip())
+    return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+def select_r12_run(runs, previous, candidate, request):
+    matches = [r for r in runs if r.get('id') not in previous
+        and r.get('head_sha') == candidate and r.get('head_branch') == 'half_duplex'
+        and r.get('event') == 'workflow_dispatch'
+        and r.get('display_title') == 'R12 LayerNorm sm61 '+request]
+    if len(matches) > 1:
+        raise ValueError('More than one run matches this exact R12 request; refusing automatic selection')
+    return matches[0] if matches else None
+
+
+def dispatch_r12(expected_candidate=None):
+    """Explicit user command: queue just R12, resolve its own run, then start it."""
+    local_sha = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
+    if expected_candidate is not None and expected_candidate != local_sha:
+        raise ValueError('Local checkout differs from the expected candidate')
+    branch = gh_api('/git/ref/heads/half_duplex')
+    if branch['object']['sha'] != local_sha:
+        raise ValueError('Update the local half_duplex clone with git pull --ff-only before dispatching')
+    endpoint = '/actions/workflows/half-duplex-cuda-sm61.yml'
+    listing = endpoint+'/runs?branch=half_duplex&event=workflow_dispatch&per_page=30'
+    previous = {r['id'] for r in gh_api(listing)['workflow_runs']}
+    request = uuid.uuid4().hex
+    print('R12_SCOPE=FIRST_LAYERNORM_COMMON_INPUT_ONLY_NOT_FULL_STT', flush=True)
+    gh_api(endpoint+'/dispatches', payload={'ref': 'half_duplex', 'inputs': {
+        'run_cuda': True, 'r8_corpus': False, 'r12_layernorm': True, 'r12_request': request}})
+    print('R12_CI_DISPATCHED_CANDIDATE='+local_sha, flush=True)
+    deadline = time.monotonic()+120
+    while time.monotonic() < deadline:
+        run = select_r12_run(gh_api(listing)['workflow_runs'], previous, local_sha, request)
+        if run is not None:
+            if run.get('status') == 'completed':
+                raise RuntimeError('The requested GPU run already completed: '+run.get('html_url', str(run['id'])))
+            jobs = gh_api(f'/actions/runs/{run["id"]}/jobs?filter=latest&per_page=100')['jobs']
+            if jobs:
+                selected = validate(run, jobs, local_sha)
+                print('R12_CI_RUN=https://github.com/'+REPOSITORY+'/actions/runs/'+str(run['id']), flush=True)
+                # The existing launcher rechecks this exact run/job and holds
+                # the unified GPU lock for the full one-job container lifetime.
+                start(selected['run_id'], selected['candidate'])
+                return
+        time.sleep(2)
+    raise RuntimeError('R12 was dispatched but its job did not appear within 120 seconds; inspect Actions before dispatching again')
+
+
 def start(run_id, expected_candidate):
     image = os.environ.get('HARICOT_RUNNER_IMAGE', IMAGE)
     if subprocess.check_output(['podman', 'info', '--format', '{{.Host.Security.Rootless}}'], text=True).strip() != 'true':
@@ -124,9 +183,18 @@ def start(run_id, expected_candidate):
 if __name__ == '__main__':
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('check', 'start'))
-    parser.add_argument('--run-id', required=True, type=int)
+    parser.add_argument('action', choices=('check', 'start', 'layernorm-ci'))
+    parser.add_argument('--run-id', type=int)
     parser.add_argument('--candidate', help='Expected full commit SHA')
     a = parser.parse_args()
-    if a.action == 'check': print(json.dumps(resolve(a.run_id, a.candidate), indent=2))
-    else: start(a.run_id, a.candidate)
+    if a.action == 'layernorm-ci' and a.run_id is not None:
+        parser.error('layernorm-ci creates its own run; omit --run-id')
+    if a.action != 'layernorm-ci' and a.run_id is None:
+        parser.error('--run-id is required for check/start')
+    try:
+        if a.action == 'check': print(json.dumps(resolve(a.run_id, a.candidate), indent=2))
+        elif a.action == 'layernorm-ci': dispatch_r12(a.candidate)
+        else: start(a.run_id, a.candidate)
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+        print('STT_RUNNER_ERROR='+str(exc), file=sys.stderr)
+        sys.exit(1)

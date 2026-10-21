@@ -1,7 +1,9 @@
 name: Half Duplex CUDA sm61 candidate
+run-name: "${{ inputs.r12_layernorm && format('R12 LayerNorm sm61 {0}', inputs.r12_request) || 'Half Duplex CUDA sm61 candidate' }}"
 on:
   # CPU-first qualification: no push can enqueue another physical GPU job.
-  # Resume manual GPU campaigns only after the CPU numerical gates pass.
+  # Full-model campaigns require full CPU qualification. R12 is a separate
+  # isolated operator replay gated by its completed CPU artifact.
   workflow_dispatch:
     inputs:
       run_cuda:
@@ -14,8 +16,19 @@ on:
         required: false
         type: boolean
         default: true
+      r12_layernorm:
+        description: 'Only the R12 first LayerNorm on 14 common inputs; no full STT campaign'
+        required: false
+        type: boolean
+        default: false
+      r12_request:
+        description: 'Optional local launcher request identifier for exact run selection'
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
+  actions: read
 jobs:
   cuda-cudnn-sm61:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_cuda }}
@@ -39,21 +52,42 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
           echo 'HALF_DUPLEX_CUDA_TARGET=sm61'
       - uses: astral-sh/setup-uv@v6
-        if: ${{ inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]') }}
+        if: ${{ inputs.r12_layernorm || inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]') }}
+      - name: Download the qualified R12 CPU operator report
+        if: ${{ inputs.r12_layernorm }}
+        uses: actions/download-artifact@v4
+        with:
+          name: half-duplex-r12-layernorm-cpu-report
+          run-id: '39649356383'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/r12-validated-cpu
+      - name: Verify exact CPU qualification and unchanged operator sources
+        if: ${{ inputs.r12_layernorm }}
+        run: python3 half_duplex/ci/verify_r12_cpu.py "$RUNNER_TEMP/r12-validated-cpu/r12-layernorm-cpu.json"
+      - name: R12 first LayerNorm common-input replay on physical sm61
+        if: ${{ inputs.r12_layernorm }}
+        run: bash half_duplex/ci/r12_layernorm.sh cuda
       - name: Build and test isolated Candle CUDA cuDNN candidate (no promotion)
-        if: ${{ !(inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]')) }}
+        if: ${{ !inputs.r12_layernorm && !(inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]')) }}
         working-directory: half_duplex
         run: ./install_update.sh --cuda-cudnn
       - name: Real R8 frontend and common-input operators on sm61 with CPU NeMo reference
-        if: ${{ inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]') }}
+        if: ${{ !inputs.r12_layernorm && (inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]')) }}
         env:
           HDB2C_R8_CORPUS: '1'
           HDB2C_R8_VARIANT: cuda-cudnn
         run: bash half_duplex/ci/full_cpu.sh
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && !inputs.r12_layernorm }}
         with:
           name: half-duplex-r8-cuda-sm61-reports
           path: halfduplex-ci-published/r8-*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.r12_layernorm }}
+        with:
+          name: half-duplex-r12-layernorm-cuda-sm61-report
+          path: halfduplex-ci-published/r12-layernorm-cuda.json
           if-no-files-found: warn
           retention-days: 14

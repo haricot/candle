@@ -1,4 +1,4 @@
-# R12: local CUDA LayerNorm, then independent CPU CI
+# R12: isolated LayerNorm, local CUDA and manual GPU/CPU CI
 
 This tests **only `encoder.layers.0.norm_feed_forward1`** on the actual common
 inputs of the 14 pinned public CaFE/Oréau clips. It does not replace the
@@ -45,7 +45,7 @@ the CPU reproduction control. Exit 2 means an executed operator did not meet
 that strict criterion; exit 1 means preparation/execution was incomplete.
 Signed zeros are compared as bits. No tolerance is relaxed.
 
-## CPU CI after reviewing the local GPU result
+## Independent CPU operator CI
 
 The same workflow has a new manual input, `r12_layernorm=true`. It selects an
 independent hosted **CPU operator** job, with new actual NeMo references and
@@ -68,5 +68,55 @@ bash half_duplex/ci/r12_layernorm.sh cpu
 
 The harness uses the existing `install-nemo` pins (Torch 2.12.1+cpu and NeMo
 2.7.3). For local CUDA the unified CUDA 12.9.2 image supplies NVRTC and driver
-access. Kernel execution on the physical sm61 GPU still needs that local run;
-offline PTX compilation is not a GPU qualification.
+access. Kernel execution on the physical sm61 GPU requires the local run or
+the GPU CI profile below; offline PTX compilation is not a GPU qualification.
+
+## GPU CI after the validated CPU operator run
+
+The hosted [CPU run 39649356383](https://github.com/haricot/candle/actions/runs/39649356383)
+completed the isolated LayerNorm job with bit-identical outputs on **14/14**
+clips. Its `real-cpu-asr` job was skipped; it is not a full-model CPU pass.
+The GPU workflow now has a separate `r12_layernorm=true` mode. It downloads
+that run's real CPU artifact and verifies its 14-clip bitwise controls,
+checkpoint/reference versions and unchanged core operator sources before
+executing CUDA. Its artifact dependency retains the CPU run's 14-day expiry;
+after expiry, obtain a fresh validated CPU run and update the pinned run ID.
+
+On the laptop, using the existing rootless unified image and an authenticated
+GitHub CLI (`gh`), run:
+
+```bash
+cd ~/tmp/candle-stt-qualification
+git pull --ff-only
+python3 half_duplex/ci/stt_sm61_runner.py layernorm-ci
+```
+
+This explicitly dispatches **only R12**, obtains the exact new run ID by a
+unique request identifier, prints its Actions URL and starts the unified
+one-job runner with the same physical GPU lock. It asks for the temporary
+runner registration token in the terminal, as with the earlier CI campaign.
+Get it from [New self-hosted runner](https://github.com/haricot/candle/settings/actions/runners/new).
+The image and actual sm61 GPU still run on this laptop; GitHub Actions
+orchestrates the job and stores the JSON result. No full STT pipeline runs
+in this mode, even if the legacy `r8_corpus` input was left at its default.
+
+The Actions artifact is `half-duplex-r12-layernorm-cuda-sm61-report`, containing
+`r12-layernorm-cuda.json`. Exact CPU/NeMo, CUDA/NeMo and CUDA/CPU comparisons
+and CUDA operand-byte controls remain separate. No push can enqueue a GPU
+job: the workflow remains dispatch-only.
+
+To dispatch through the GitHub UI or directly with `gh` instead, select the
+`half_duplex` branch, set `run_cuda=true`, `r12_layernorm=true`, `r8_corpus=false`,
+then start the existing runner with the resulting **new GPU run ID**:
+
+```bash
+python3 half_duplex/ci/stt_sm61_runner.py start --run-id NEW_GPU_RUN_ID
+```
+
+Do not use the completed CPU run ID for this runner command. The launcher
+rejects a stale checkout or a run/job/commit mismatch.
+
+The earlier local `/etc/hosts: permission denied` failure was in `diagnose`,
+before any CUDA kernel execution: its Podman command omitted `--no-hosts`.
+Both local preflight and local execution now pass that option. The existing
+CI runner already passed it to both of its Podman invocations.

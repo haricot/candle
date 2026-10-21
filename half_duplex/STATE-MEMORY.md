@@ -466,3 +466,37 @@ does not run on push. Prepare it now; dispatch after reviewing the local GPU
 result as the user requested. The CUDA workflow remains manual-only; no new
 full-model GPU campaign or microphone test has been authorized by this
 isolated-operator request. See `ci/README-R12-LAYERNORM.md` for both commands.
+
+## R12 GPU CI request after hosted CPU qualification
+
+User supplied CPU run39649356383 and a failed local Podman `diagnose` command.
+Verified through Actions jobs/logs and the downloaded artifact: CPU LayerNorm
+14/14 bit-identical, final PASS_BITWISE_14_COMMON_INPUTS, source core unchanged.
+The run's real-cpu-asr job was skipped; full STT CPU qualification is not implied.
+The `/etc/hosts: permission denied` was a launcher preflight bug: local diagnose
+omitted --no-hosts, unlike the actual local execution and the CI runner. Fixed
+through a shared diagnose_command helper and a regression test. No CUDA kernel
+ran during that failed local attempt.
+
+The user now explicitly authorizes GPU CI for the isolated R12 operator. Add
+manual r12_layernorm mode to the existing CUDA workflow; exclude both full-model
+paths whenever it is selected. Download CPU artifact from39649356383 and verify
+all14 exact controls, model/reference pins and current core source hashes before
+GPU execution. Keep GPU workflow dispatch-only and the run-specific runner
+labels/commit checks. R12 result uploads as a separate JSON artifact. CPU artifact
+expires after14days; future reuse needs fresh CPU evidence and its updated pin.
+
+New local command: python3 half_duplex/ci/stt_sm61_runner.py layernorm-ci.
+Uses the laptop's authenticated gh CLI to dispatch R12 only, selects its exact
+run by a random request identifier/display title, then starts the existing
+unified one-job runner. The temporary registration token stays in the terminal.
+Candidate must match local HEAD and current branch. Completed CPU or stale GPU
+run IDs cannot be reused. Generic check/start commands retain their --run-id
+requirement. No physical GPU was started from the assistant environment.
+
+Validation:13 targeted Python tests pass (new routing/preflight/CPU-evidence
+checks, existing runner binding/PTY test and CPU-first boundary). Actual CPU
+artifact from the user's run passes verify_r12_cpu.py against current core
+sources. No model math or CUDA kernel source changes; no new full CPU/GPU STT
+measurement is claimed. The local GPU CI command still needs execution on the
+user's physical laptop; this environment has no dispatch API or runner access.

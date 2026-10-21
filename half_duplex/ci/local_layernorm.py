@@ -14,6 +14,11 @@ IMAGE = 'localhost/haricot/sm61-unified:v6-cuda12.9.2-ubuntu26.04'
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def diagnose_command(image):
+    return ['podman', 'run', '--rm', '--no-hosts', '--pull=never', '--network=none',
+            '--device=nvidia.com/gpu=all', '--group-add=keep-groups', image, 'diagnose']
+
+
 def command(image, source, work, stamp, backend):
     args = ['podman', 'run', '--rm', '--pull=never', '--no-hosts',
             '--userns=keep-id:uid=20000,gid=20000', '--user=20000:20000',
@@ -48,9 +53,7 @@ def run(backend, work, image):
                                if backend == 'cuda' else 'A local CPU LayerNorm campaign is already running')
         # Fail before downloads on a missing physical GPU or toolchain. No registration.
         if backend == 'cuda':
-            subprocess.run(['podman', 'run', '--rm', '--pull=never', '--network=none',
-                            '--device=nvidia.com/gpu=all', '--group-add=keep-groups',
-                            image, 'diagnose'], check=True)
+            subprocess.run(diagnose_command(image), check=True)
         args = command(image, ROOT, work, stamp, backend)
         print('R12_SCOPE=FIRST_LAYERNORM_COMMON_INPUT_ONLY_NOT_FULL_STT', flush=True)
         print('R12_BACKEND='+backend, flush=True)
