@@ -384,3 +384,53 @@ matches the Torch build. A standalone native build is prepared for exact-input
 comparisons. It must include both CONVOLUTION and REORDER primitives; the first
 convolution-only build could not execute required reorders. No successful
 oneDNN convolution measurement has been claimed yet.
+
+## R11 local CPU result and next normalization operator — 2026-10-21
+
+R10 code/results committed378977308a24a7c2ef8dc41f413422bdfd720356 with CPU
+marker[r10-cpu]. The branch ref and public git remote reflect this commit,
+but Actions API still showed no new run at the last read; do not claim that
+the hosted campaign has run/passed. Workflow dispatch input r10_cpu is ready.
+GPU workflow remains manual-only and no GPU test was launched.
+
+Standalone oneDNN3.11.2 at03c022d3ffdcee958cfacbe720048e725fdf644c now builds
+with BOTH CONVOLUTION and REORDER, CPU OMP/GNU, GPU_RUNTIME=NONE. All5 common
+convolutions are bit-identical on all14 actual NeMo fixtures:70/70. A native
+R11 prototype changes only subsampling convolution execution/replay after R10.
+Actual full PCM and shared-Mel runs complete14/14: all11 frontend stages,
+pre_encode and post_pos_enc are bit-identical14/14. TDT/text pass14/14,283
+exact decisions; final valid encoder max7.897615432739258e-7. Strict internal
+gates still FAIL: block0FF1 max0.01367187514/14, attention max0.16263961791992188
+14/14, layer12 max0.00183105468751/14. Some ReLU differences are signed zeros;
+do not remove them to claim global equality. Full evidence/source hashes:
+`ci/RESULTS-HDB2-C3-A-R11-CPU.md`, redacted JSON, experimental CPU components.
+
+Do not interpret encoder_audit's array order as chronological execution:
+whole-layer outputs are listed before block0 internals. R11's temporary
+first_failure summary showed layer12 for one clip, but block0FF1 actually
+fails14/14 and is earlier. Use the full per-stage measurements above.
+
+Next first arithmetic gap after exact block0 input: norm_feed_forward1.
+CaFE fear max1.33514404296875e-5, inherited/amplified into FF1. Current Candle
+CPU uses sequential sum and E[x²]-E[x]² variance; Torch uses vectorized
+Welford/cascade. Standalone ordered norm candidate reproduces actual NeMo
+norm bits14/14. Important: Torch global CPU reports AVX512 but ordinary
+LayerNorm REGISTER_DISPATCH disables AVX512; this kernel uses AVX2 Vec8.
+Vec8 + FMA contraction fast matches14/14, Vec16/off variants fail. Independent
+scalar-lane C++ implementation and common-input checker are archived under
+ci/experimental/cpu_parity. This norm is NOT integrated into the encoder;
+no full-pipeline qualification follows. FF1 linears/SiLU also remain to be
+separately replayed on identical operands before attributing their full error.
+
+CPU-first constraint unchanged: no CUDA/cuDNN job or CUDA microphone until
+all declared CPU numerical gates pass. The default backend and physical
+laptop CPU have not been qualified by these local SDK-specific experiments.
+
+Portable experimental R11 builder has been compiled/tested against the actual
+R10 sources and CPU SDK. Rebuilt probe vs measured R11 prototype on real CaFE
+fear matches75 encoder/operand trace tensors,28 TDT decisions/activations,
+returned result and11 frontend traces bit-for-bit. The reused comparator's
+literal status string names R7/R8, but the actual scope of this check is only
+R11 prototype vs R11 portable rebuild; never present it as a fresh R7/R8 run.
+Experimental ordered norm also matches14/14 when compiled for AVX2/FMA with
+the documented flags. No integration into the full encoder was performed.
