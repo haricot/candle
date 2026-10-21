@@ -26,10 +26,14 @@ ln -sf "${archives[0]}" "$HDB2C_NEMO"
 # bootstrapped pinned runtime before its build gate checks the source marker.
 # This is idempotent and only edits $HDB2A_RUNTIME_DIR (the CI temp checkout).
 ./run-hdb2b.sh repair-runtime
-if [[ "${HDB2C_R7_FOCUSED:-0}" != 1 ]];then
+if [[ "${HDB2C_R7_FOCUSED:-0}" != 1 && "${HDB2C_R8_CORPUS:-0}" != 1 ]];then
   ./run-hdb2b.sh build cpu
 fi
 "$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
+if [[ "${HDB2C_R8_CORPUS:-0}" == 1 ]];then
+  "$HDB2C_PYTHON" -m hdb2c.c3_r8 --corpus "$RUNNER_TEMP/cameo/manifest.json" --require-numeric
+  exit
+fi
 mapfile -t clips < <("$HDB2C_PYTHON" - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'
 import json,sys
 rows=json.load(open(sys.argv[1]))["rows"]

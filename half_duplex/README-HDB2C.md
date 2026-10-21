@@ -1,5 +1,11 @@
 # HDB2-C v0.6.2 — Numerical Parity & ASR Fidelity
 
+**Current campaign: HDB2-C3-A-R8 (21 October 2026).** Frontend primitive
+attribution, byte-verified common-input subsampling, all 14 CaFE/Oreau clips,
+and actual CUDA/cuDNN sm61/microphone follow-up are described in
+[`ci/README-R8.md`](ci/README-R8.md). The sections below retain historical
+commands and qualification states. R8 does not promote a production binary.
+
 ## Pourquoi cette campagne ?
 
 Le checkpoint `qvac/TranscribePsy-250M-EU-sub` est chargé par Candle CUDA+cuDNN, mais le test avec le microphone direct donne encore des substitutions importantes (« mon champ de l'homme » à la place de « mon microphone Bluetooth »). Ajouter 12 dB n'a pas corrigé ces substitutions ; les erreurs existent aussi sans FireRedVAD ni Smart Turn.

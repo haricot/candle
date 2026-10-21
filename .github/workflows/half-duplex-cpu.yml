@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      r8_corpus:
+        description: 'R8 frontend attribution, common-input operators and all 14 real clips'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -37,6 +42,8 @@ jobs:
           bash -n install_update.sh
           bash -n ci/compile_cpu.sh
           bash -n ci/full_cpu.sh
+          bash -n ci/r8_sm61.sh
+          bash -n ci/r8_microphone.sh
       - name: Verify personal WAVs are not silently committed
         run: |
           python - <<'PY'
@@ -104,7 +111,7 @@ jobs:
           print("HALF_DUPLEX_CAMEO=PASS_14_REAL_FRENCH_CLIPS_ASR_NOT_RUN")
           PY
   real-cpu-asr:
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.real_asr) || contains(github.event.head_commit.message, '[real-asr]') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus)) || contains(github.event.head_commit.message, '[real-asr]') }}
     needs: [python-contracts, rust-c2-cpu, cafe-corpus]
     runs-on: ubuntu-24.04
     timeout-minutes: 350
@@ -118,9 +125,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg unzip libsndfile1-dev
-      - name: Real NeMo vs Candle C2-R7 global bytes and production TDT on CaFE CPU
+      - name: Real NeMo vs Candle frontend, encoder and production TDT on CPU
         env:
           HDB2C_R7_FOCUSED: ${{ contains(github.event.head_commit.message, '[r7-focused]') && '1' || '0' }}
+          HDB2C_R8_CORPUS: ${{ (inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-corpus]')) && '1' || '0' }}
         run: bash half_duplex/ci/full_cpu.sh
       - uses: actions/upload-artifact@v4
         if: always()

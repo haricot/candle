@@ -227,3 +227,23 @@ pre_encode/post-scaling strict absolute errors and non-bitwise positional math
 remain unchanged. Normal ASR/TDT, cache streaming and GPU remain unqualified.
 Detailed evidence: `ci/RESULTS-HDB2-C3-A-R6.md`. Padding-mask hypothesis is
 confirmed in the controlled two-clip experiment; no threshold relaxation.
+
+## HDB2-C3-A-R8 — 2026-10-21
+
+User explicitly authorizes frontend primitive decomposition, common-input
+subsampling comparisons, all 14 existing CaFE/Oreau excerpts, then actual
+CUDA/cuDNN sm61 and laptop microphone. Parent source is R7B `45878246`.
+R7/R7B establish numerical TDT and exact discrete decisions on two real CPU
+clips; global f32 bit equality still fails. Do not equate CI execution with
+complete numerical or bitwise parity.
+
+R8 adds separate instrumented sources, independently compiled R7 baseline,
+actual uninstrumented/observed NeMo controls, echo-verified common inputs and
+weights, and per-clip/corpus JSON summaries. Original absolute/cosine gates
+are unchanged. CI uses `--require-numeric`, so completed diagnostics with
+failed numerical gates produce a failed qualification job. No production
+promotion. Raw public-corpus tensors are deleted per clip; microphone audio
+remains local. Instructions and exact scope: `ci/README-R8.md`.
+
+At implementation time, real R8 corpus, sm61 and microphone results are still
+pending. Source/unit/compile checks are not model qualification evidence.

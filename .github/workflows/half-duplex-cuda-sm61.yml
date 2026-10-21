@@ -12,11 +12,16 @@ on:
         required: false
         type: boolean
         default: false
+      r8_corpus:
+        description: 'Run R8 numerical attribution and all 14 real clips on CUDA/cuDNN'
+        required: false
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
   cuda-cudnn-sm61:
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_cuda) || contains(github.event.head_commit.message, '[cuda-sm61]') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_cuda) || contains(github.event.head_commit.message, '[cuda-sm61]') || contains(github.event.head_commit.message, '[r8-cuda]') }}
     runs-on: [self-hosted, linux, x64, cuda, sm61]
     timeout-minutes: 180
     steps:
@@ -35,5 +40,16 @@ jobs:
           : "${HDB2C_PYTHON:?must set existing isolated Python 3.13 venv path}"
           echo 'HALF_DUPLEX_CUDA_TARGET=sm61'
       - name: Build and test isolated Candle CUDA cuDNN candidate (no promotion)
+        if: ${{ !(inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]')) }}
         working-directory: half_duplex
         run: ./install_update.sh --cuda-cudnn
+      - name: Real R8 frontend and common-input operators on sm61 with CPU NeMo reference
+        if: ${{ inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-cuda]') }}
+        run: bash half_duplex/ci/r8_sm61.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: half-duplex-r8-cuda-sm61-reports
+          path: halfduplex-ci-published/r8-*.json
+          if-no-files-found: warn
+          retention-days: 14
