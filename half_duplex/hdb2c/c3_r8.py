@@ -206,7 +206,7 @@ def comparisons(reference, candidate, replay):
         'operator_execution_scope':'SEPARATE_DIAGNOSTIC_REPLAY_NEVER_PRODUCTION_INJECTION'}
 
 
-def instrumentation_control(reference, observed):
+def instrumentation_control(reference, observed, *, allow_text_change=False):
     names={p.stem for p in (reference/'encoder_trace').glob('*.f32le')}
     observed_names={p.stem for p in (observed/'encoder_trace').glob('*.f32le')}
     required=set(DW_STAGES)|set(STAGES)|{'encoder_pad_mask','encoder_att_mask'}
@@ -227,10 +227,19 @@ def instrumentation_control(reference, observed):
         for name in ('g','h','c','enc','logits'):
             if not files(reference/'tdt'/f'{i:06}',observed/'tdt'/f'{i:06}',name)['bitwise_equal']:
                 raise ValueError('R8 instrumentation changed R7 TDT bits')
-    if (reference/'result.json').read_bytes()!=(observed/'result.json').read_bytes():
+    old_result=json.loads((reference/'result.json').read_text())
+    new_result=json.loads((observed/'result.json').read_text())
+    text_changed=old_result['text']!=new_result['text']
+    if not allow_text_change and (reference/'result.json').read_bytes()!=(observed/'result.json').read_bytes():
+        raise ValueError('R8 instrumentation changed R7 returned result bytes')
+    if allow_text_change:
+        old_result={k:v for k,v in old_result.items() if k!='text'}
+        new_result={k:v for k,v in new_result.items() if k!='text'}
+    if old_result!=new_result:
         raise ValueError('R8 instrumentation changed R7 returned result')
-    return {'status':'PASS_BITWISE_R7_R8_ALL_OBSERVED_STAGES_AND_TDT','encoder_stages':len(names),
-        'tdt_decisions':len(a),'same_backend':True}
+    return {'status':('PASS_BITWISE_R8B_R9_ALL_MATH_TDT_NON_TEXT_RESULT' if allow_text_change else
+        'PASS_BITWISE_R7_R8_ALL_OBSERVED_STAGES_AND_TDT'),'encoder_stages':len(names),
+        'tdt_decisions':len(a),'same_backend':True,'tokenizer_text_changed':text_changed}
 
 
 def execute_clip(s, binaries, row, report, variant, source_manifest):

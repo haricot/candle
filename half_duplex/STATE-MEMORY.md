@@ -285,3 +285,18 @@ CUDA12.9.2, cuDNN9.10.2.21 pass. CUDA run39598582574 is queued at candidate
 8e827fadddfb6b5e555289836728aee52c6b9bb1. Launcher commitd0a322d fixes
 non-seekable /dev/tty r+ via a writable prompt stream/getpass read descriptor;
 a real pseudo-terminal regression passes. GPU inference/mic not yet measured.
+
+## HDB2-C3-A-R9-TEXT — isolated candidate
+
+R9 prepares the concrete text fix while the original R8B CUDA campaign runs.
+It extracts the original SentencePiece unknown ID/piece/surface from the pinned
+.nemo, verifies the complete converted vocabulary, and refuses unsupported
+control/byte/denormalizer settings. TDT token text and final full text use this
+metadata; neural arithmetic and decision logic stay unchanged. No promotion.
+An independent real R8B baseline is rerun on all 14 clips. Additional R8B/R9
+controls require all frontend/encoder/operand/TDT bytes and non-text result
+fields to match; the original R7/R8B complete result-byte control is retained.
+Actual NeMo independently evaluates corrected text on both native/shared paths.
+Original numerical/bitwise gates remain strict. 161 Python and 12 native Rust
+tests pass locally; the actual R9 probe compiles. Real R9 results pending.
+Scope/usage: `ci/README-R9-TEXT.md`.

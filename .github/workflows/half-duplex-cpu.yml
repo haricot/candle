@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      r9_text:
+        description: 'R9 original unknown-token rendering, all 14 clips and R8B math controls'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -111,7 +116,7 @@ jobs:
           print("HALF_DUPLEX_CAMEO=PASS_14_REAL_FRENCH_CLIPS_ASR_NOT_RUN")
           PY
   real-cpu-asr:
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus)) || contains(github.event.head_commit.message, '[real-asr]') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus || inputs.r9_text)) || contains(github.event.head_commit.message, '[real-asr]') }}
     needs: [python-contracts, rust-c2-cpu, cafe-corpus]
     runs-on: ubuntu-24.04
     timeout-minutes: 350
@@ -128,7 +133,8 @@ jobs:
       - name: Real NeMo vs Candle frontend, encoder and production TDT on CPU
         env:
           HDB2C_R7_FOCUSED: ${{ contains(github.event.head_commit.message, '[r7-focused]') && '1' || '0' }}
-          HDB2C_R8_CORPUS: ${{ (inputs.r8_corpus || contains(github.event.head_commit.message, '[r8-corpus]')) && '1' || '0' }}
+          HDB2C_R8_CORPUS: ${{ (inputs.r8_corpus || inputs.r9_text || contains(github.event.head_commit.message, '[r8-corpus]')) && '1' || '0' }}
+          HDB2C_R9_TEXT: ${{ (inputs.r9_text || contains(github.event.head_commit.message, '[r9-text]')) && '1' || '0' }}
         run: bash half_duplex/ci/full_cpu.sh
       - uses: actions/upload-artifact@v4
         if: always()
