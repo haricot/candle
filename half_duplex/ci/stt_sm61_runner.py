@@ -69,6 +69,18 @@ def resolve(run_id, expected_candidate=None):
     return validate(run, jobs, expected_candidate)
 
 
+def registration_token():
+    # TextIO's r+ mode requests a seekable read/write buffer. /dev/tty is a
+    # character device: use an output stream and let getpass open its read fd.
+    with open('/dev/tty', 'w') as tty:
+        if not tty.isatty():
+            raise RuntimeError('interactive terminal required for registration')
+        value = getpass.getpass('One-time runner registration token (hidden): ', stream=tty)
+    if not value:
+        raise ValueError('empty registration token')
+    return value
+
+
 def start(run_id, expected_candidate):
     image = os.environ.get('HARICOT_RUNNER_IMAGE', IMAGE)
     if subprocess.check_output(['podman', 'info', '--format', '{{.Host.Security.Rootless}}'], text=True).strip() != 'true':
@@ -85,10 +97,7 @@ def start(run_id, expected_candidate):
         subprocess.run(['podman', 'run', *common, '--network=none', image, 'diagnose'], check=True)
         print(json.dumps(selected, indent=2), flush=True)
         print('Registration: https://github.com/'+REPOSITORY+'/settings/actions/runners', flush=True)
-        with open('/dev/tty', 'r+') as tty:
-            registration = getpass.getpass('One-time runner registration token (hidden): ', stream=tty)
-        if not registration:
-            raise ValueError('empty registration token')
+        registration = registration_token()
         if resolve(run_id, selected['candidate']) != selected:
             raise ValueError('campaign changed during registration')
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')

@@ -1,6 +1,13 @@
 """Bind the physical runner to one real STT job; no fabricated GPU evidence."""
 import importlib.util
+import errno
+import os
 from pathlib import Path
+import pty
+import select
+import signal
+import sys
+import time
 import unittest
 
 spec=importlib.util.spec_from_file_location('stt_runner',Path(__file__).resolve().parents[2]/'ci/stt_sm61_runner.py')
@@ -36,3 +43,43 @@ class RunnerBindingTests(unittest.TestCase):
                 runner.validate(self.run,[{**self.job,**update}])
         self.run.update(status='completed',conclusion='failure')
         with self.assertRaisesRegex(ValueError,'finished'):runner.validate(self.run,[self.job])
+
+    def test_registration_accepts_hidden_input_on_non_seekable_tty(self):
+        # Exercise a real controlling terminal. Mocking open/getpass would miss
+        # the r+ TextIO seek failure observed on the physical laptop.
+        source=str(Path(runner.__file__).parent)
+        script=(f'import sys; sys.path.insert(0,{source!r}); '
+            'from stt_sm61_runner import registration_token; '
+            'value=registration_token(); '
+            'print("HIDDEN_TOKEN_RECEIVED="+str(value=="synthetic-pty-token"),flush=True)')
+        pid,fd=pty.fork()
+        if pid==0:
+            os.execv(sys.executable,[sys.executable,'-c',script])
+        output=bytearray();sent=False;status=None
+        try:
+            deadline=time.monotonic()+10
+            while time.monotonic()<deadline:
+                if select.select([fd],[],[],.1)[0]:
+                    try:part=os.read(fd,4096)
+                    except OSError as exc:
+                        if exc.errno==errno.EIO:break
+                        raise
+                    if not part:break
+                    output.extend(part)
+                    if b'(hidden): ' in output and not sent:
+                        os.write(fd,b'synthetic-pty-token\n');sent=True
+                child,status_value=os.waitpid(pid,os.WNOHANG)
+                if child:status=status_value;break
+            if status is None:
+                child,status_value=os.waitpid(pid,os.WNOHANG)
+                if child:status=status_value
+            self.assertTrue(sent,bytes(output))
+            self.assertIn(b'HIDDEN_TOKEN_RECEIVED=True',output)
+            self.assertNotIn(b'synthetic-pty-token',output)
+            if status is not None:self.assertEqual(os.waitstatus_to_exitcode(status),0)
+        finally:
+            if status is None:
+                try:os.kill(pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                os.waitpid(pid,0)
+            os.close(fd)
