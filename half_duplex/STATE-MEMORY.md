@@ -434,3 +434,35 @@ literal status string names R7/R8, but the actual scope of this check is only
 R11 prototype vs R11 portable rebuild; never present it as a fresh R7/R8 run.
 Experimental ordered norm also matches14/14 when compiled for AVX2/FMA with
 the documented flags. No integration into the full encoder was performed.
+
+## R12 — local isolated CUDA LayerNorm command and manual CPU CI
+
+The user explicitly requested a local GPU test outside CI for the exact
+ordered LayerNorm candidate, followed by CPU CI. The existing candidate was
+only an isolated CPU operator; no CUDA activation command existed. R12 adds
+an explicitly isolated first-norm experiment, without replacing any operator
+in the full Candle model. Do not describe this as an integrated STT candidate.
+
+`python3 half_duplex/ci/local_layernorm.py --device cuda` reuses the existing
+rootless unified image, the shared GPU lock and a persistent local cache. It
+overrides the registration entrypoint and never calls Actions or asks for a
+token. It prepares the actual 14 public clips/original checkpoint, captures
+real unmodified NeMo CPU common inputs and weights, replays the archived CPU
+source, then runs an independent diagnostic CUDA port through NVRTC12.9 and
+the CUDA driver. It verifies copied GPU operand bytes and keeps CPU/NeMo,
+CUDA/NeMo and CUDA/CPU verdicts distinct. No automatic CPU fallback exists.
+
+Fresh local CPU measurement with Torch2.12.1+cpu/NeMo2.7.3, AVX2/four threads:
+first norm640 features exact14/14, observation-vs-original encoder output
+exact14/14. JSON/source hashes recorded in the R12 results. All170 Python
+tests pass. Offline NVRTC12.9.86 compilation emits compute_61 PTX; no GPU
+kernel was executed here and no native Podman launch was available to test.
+An actual local GPU result is still required. The original C++ norm source
+remains unchanged and the full R11 internal-stage failures remain unresolved.
+
+CPU workflow adds manual input `r12_layernorm=true`, which selects a hosted
+CPU-only operator job and uploads only its JSON metrics. This new heavy job
+does not run on push. Prepare it now; dispatch after reviewing the local GPU
+result as the user requested. The CUDA workflow remains manual-only; no new
+full-model GPU campaign or microphone test has been authorized by this
+isolated-operator request. See `ci/README-R12-LAYERNORM.md` for both commands.

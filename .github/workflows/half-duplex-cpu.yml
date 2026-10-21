@@ -27,6 +27,11 @@ on:
         required: false
         type: boolean
         default: false
+      r12_layernorm:
+        description: 'R12 first LayerNorm only: ordered CPU candidate on 14 actual common inputs'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -55,6 +60,7 @@ jobs:
           bash -n ci/r8_sm61.sh
           bash -n ci/r8_microphone.sh
           bash -n ci/r9_microphone.sh
+          bash -n ci/r12_layernorm.sh
       - name: Verify personal WAVs are not silently committed
         run: |
           python - <<'PY'
@@ -121,6 +127,27 @@ jobs:
               assert pathlib.Path(row["reference_file"]).read_text().strip()
           print("HALF_DUPLEX_CAMEO=PASS_14_REAL_FRENCH_CLIPS_ASR_NOT_RUN")
           PY
+  layernorm-cpu:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.r12_layernorm }}
+    needs: [python-contracts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: System dependencies for the CPU reference and standalone C++ operator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ ffmpeg libsndfile1-dev
+      - name: Actual first LayerNorm common operands on 14 clips, CPU only
+        run: bash half_duplex/ci/r12_layernorm.sh cpu
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: half-duplex-r12-layernorm-cpu-report
+          path: halfduplex-ci-published/r12-layernorm-cpu.json
+          if-no-files-found: warn
+          retention-days: 14
   real-cpu-asr:
     if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu)) || contains(github.event.head_commit.message, '[real-asr]') || contains(github.event.head_commit.message, '[r10-cpu]') }}
     needs: [python-contracts, rust-c2-cpu, cafe-corpus]

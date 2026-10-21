@@ -1,9 +1,13 @@
 # Local CPU experiments after R10
 
 These experimental native components do not change the default runtime or
-the R10 hosted campaign. GPU and CUDA microphone tests remain deferred until
+the R10 hosted campaign. Full-model GPU and CUDA microphone tests remain deferred until
 all CPU numerical gates pass. [Measured results](../../RESULTS-HDB2-C3-A-R11-CPU.md)
 include all 14 real corpus clips and identify the remaining failures.
+
+The separately requested [R12 isolated LayerNorm test](../../README-R12-LAYERNORM.md)
+now has a local CUDA command and a manual CPU operator CI input. Its scope is
+only the first norm's 14 common-input cases, without model integration.
 
 The oneDNN bridge uses the exact source revision reported by Torch 2.12.1:
 3.11.2, commit `03c022d3ffdcee958cfacbe720048e725fdf644c`. Both convolution and
