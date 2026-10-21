@@ -81,6 +81,7 @@ fn capture_and_immutable_state_contract() -> candle_core::Result<()> {
     assert!(m["dropped_records"].as_u64().unwrap() > 0);
     let _ = std::fs::remove_dir_all(out);
     capture_drains_admitted_work();
+    capture_cpu_clocks_and_observer();
     Ok(())
 }
 
@@ -144,5 +145,64 @@ fn capture_drains_admitted_work() {
     assert_eq!(m["drain_complete"], false);
     assert_eq!(m["open_scopes"], 1);
     drop(held);
+    let _ = std::fs::remove_dir_all(out);
+}
+
+fn capture_cpu_clocks_and_observer() {
+    use std::sync::{Arc, Mutex};
+    struct Observer(Mutex<Vec<(bool, u64)>>);
+    impl diagnostics::ScopeObserver for Observer {
+        fn enter(&self, id: u64) -> bool {
+            self.0.lock().unwrap().push((true, id));
+            true
+        }
+        fn exit(&self, id: u64) {
+            self.0.lock().unwrap().push((false, id));
+        }
+    }
+    assert!(diagnostics::set_scope_observer(None).is_err());
+    let capture = Capture::start(
+        "cpu".into(),
+        "cpu-nonce".into(),
+        1024,
+        Payload::new(),
+        false,
+    )
+    .unwrap();
+    let observer = Arc::new(Observer(Mutex::new(Vec::new())));
+    diagnostics::set_scope_observer(Some(observer.clone())).unwrap();
+    let outer = diagnostics::scope("outer", Payload::new);
+    {
+        let _inner = diagnostics::scope("inner", Payload::new);
+        let mut x = 1u64;
+        for _ in 0..100_000 {
+            x = std::hint::black_box(x.wrapping_mul(3).wrapping_add(1));
+        }
+        std::hint::black_box(x);
+    }
+    diagnostics::set_scope_observer(None).unwrap();
+    drop(outer);
+    drop(diagnostics::scope("unobserved", Payload::new));
+    let pairs = observer.0.lock().unwrap().clone();
+    assert_eq!(pairs, vec![(true, 1), (true, 2), (false, 2), (false, 1)]);
+    let out = directory("cpu-clocks");
+    let _ = std::fs::remove_dir_all(&out);
+    capture.finish(&out).unwrap();
+    let records: Vec<serde_json::Value> = std::fs::read_to_string(out.join("events.ndjson"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    if cfg!(target_os = "linux") {
+        for event in &records {
+            assert!(event["cpu"]["os_thread_id"].as_u64().unwrap() > 0);
+            assert!(event["cpu"]["monotonic_ns"].as_u64().unwrap() > 0);
+            assert!(event["cpu"]["thread_cpu_ns"].as_u64().unwrap() > 0);
+        }
+        assert!(
+            records[3]["cpu"]["thread_cpu_ns"].as_u64().unwrap()
+                >= records[0]["cpu"]["thread_cpu_ns"].as_u64().unwrap()
+        );
+    }
     let _ = std::fs::remove_dir_all(out);
 }

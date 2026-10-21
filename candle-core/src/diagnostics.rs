@@ -124,7 +124,42 @@ impl Drop for Scope {
 }
 
 #[cfg(feature = "d7-trace")]
-pub use capture::Capture;
+pub use capture::{set_scope_observer, Capture, ScopeObserver};
+
+#[cfg(feature = "d7-trace")]
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct CpuClockSample {
+    pub os_thread_id: Option<u64>,
+    pub monotonic_ns: Option<u64>,
+    pub thread_cpu_ns: Option<u64>,
+}
+
+#[cfg(feature = "d7-trace")]
+pub fn cpu_clock_sample() -> CpuClockSample {
+    #[cfg(target_os = "linux")]
+    {
+        fn clock(id: libc::clockid_t) -> Option<u64> {
+            let mut value = libc::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            };
+            if unsafe { libc::clock_gettime(id, &mut value) } != 0 {
+                return None;
+            }
+            let seconds = u64::try_from(value.tv_sec).ok()?;
+            let nanos = u64::try_from(value.tv_nsec).ok()?;
+            seconds.checked_mul(1_000_000_000)?.checked_add(nanos)
+        }
+        let tid = unsafe { libc::syscall(libc::SYS_gettid) };
+        CpuClockSample {
+            os_thread_id: u64::try_from(tid).ok(),
+            monotonic_ns: clock(libc::CLOCK_MONOTONIC),
+            thread_cpu_ns: clock(libc::CLOCK_THREAD_CPUTIME_ID),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    CpuClockSample::default()
+}
 
 #[cfg(feature = "d7-trace")]
 mod capture {
@@ -165,6 +200,7 @@ mod capture {
         thread_id: String,
         clock_domain: String,
         ts_ns: u64,
+        cpu: CpuClockSample,
         scope_id: Option<u64>,
         parent_id: Option<u64>,
         window_id: String,
@@ -182,6 +218,7 @@ mod capture {
         next_id: AtomicU64,
         closed: AtomicBool,
         nvtx: bool,
+        observer: RwLock<Option<Arc<dyn ScopeObserver>>>,
     }
     impl Collector {
         fn emit(
@@ -211,6 +248,7 @@ mod capture {
                 thread_id: format!("{:?}", std::thread::current().id()),
                 clock_domain: format!("host-monotonic-{}", std::process::id()),
                 ts_ns: self.start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                cpu: cpu_clock_sample(),
                 scope_id,
                 parent_id,
                 window_id: window.into(),
@@ -243,6 +281,19 @@ mod capture {
             c.emit(name, None, p, &w, payload());
         }
     }
+    pub trait ScopeObserver: Send + Sync {
+        fn enter(&self, scope_id: u64) -> bool;
+        fn exit(&self, scope_id: u64);
+    }
+
+    pub fn set_scope_observer(observer: Option<Arc<dyn ScopeObserver>>) -> io::Result<()> {
+        let c = collector().ok_or_else(|| io::Error::other("no semantic capture is active"))?;
+        *c.observer
+            .write()
+            .map_err(|_| io::Error::other("scope observer lock poisoned"))? = observer;
+        Ok(())
+    }
+
     pub(super) struct ActiveScope {
         c: Arc<Collector>,
         id: u64,
@@ -250,6 +301,7 @@ mod capture {
         name: String,
         window: String,
         nvtx: bool,
+        observer: Option<Arc<dyn ScopeObserver>>,
     }
     pub(super) fn begin(
         name: &str,
@@ -268,6 +320,12 @@ mod capture {
         c.emit(&format!("{name}.begin"), Some(id), p, &w, payload());
         STACK.with(|s| s.borrow_mut().push((id, w.clone())));
         let nvtx = c.nvtx && nvtx::push(&format!("d7:{}:{id}:{name}", c.nonce));
+        let observer = c
+            .observer
+            .read()
+            .ok()
+            .and_then(|slot| slot.clone())
+            .filter(|observer| observer.enter(id));
         Some(ActiveScope {
             c,
             id,
@@ -275,10 +333,14 @@ mod capture {
             name: name.into(),
             window: w,
             nvtx,
+            observer,
         })
     }
     impl ActiveScope {
         pub(super) fn end(self) {
+            if let Some(observer) = &self.observer {
+                observer.exit(self.id);
+            }
             if self.nvtx {
                 nvtx::pop();
             }
@@ -343,6 +405,7 @@ mod capture {
                 next_id: AtomicU64::new(1),
                 closed: AtomicBool::new(false),
                 nvtx: nvtx && nvtx::available(),
+                observer: RwLock::new(None),
             });
             *slot = Some(c.clone());
             ENABLED.store(true, Ordering::Release);
@@ -394,7 +457,10 @@ mod capture {
                 "flush_complete":true,"drain_complete":drain_complete,
                 "complete":drain_complete && dropped==0 && open==0,"profile":"diagnostic",
                 "timestamp_unit":"ns","metadata":self.metadata,
+                "cpu_clock_source":if cfg!(target_os="linux") {"linux_monotonic_and_thread_cputime"} else {"unavailable"},
                 "capabilities":{
+                    "thread_cpu_clock":if cfg!(target_os="linux") {"enabled"} else {"unavailable"},
+                    "scope_observer":"application_owned_optional",
                     "storage_dispatch":"enabled", "tensor_dataflow":"partial", "asd_exact":"enabled_if_cuda",
                     "engine_context":"application_hooks", "gpu_completion":"external_collector_required",
                     "device_stream_ids":"unavailable", "cuda_graph_nodes":"unavailable",
