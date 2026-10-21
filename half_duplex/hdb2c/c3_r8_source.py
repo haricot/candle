@@ -83,10 +83,28 @@ impl Conformer {
         save(&output.join("out"),"output",&pre.out.forward(&x)?)?;
         save(&output.join("out"),"weight",pre.out.weight())?;
         if let Some(b)=pre.out.bias(){save(&output.join("out"),"bias",b)?;}
+        // Independent accuracy diagnostic. The autonomous FP32 path is unchanged.
+        let double=candle_nn::Linear::new(pre.out.weight().to_dtype(candle::DType::F64)?,
+            pre.out.bias().map(|b|b.to_dtype(candle::DType::F64)).transpose()?);
+        save(&output.join("out"),"output_fp64_rounded",&double.forward(&x.to_dtype(candle::DType::F64)?)?)?;
         Ok(())
     }
 }
 '''
+
+
+def subsampling_inputs(source):
+    """Observe operands after the production masks, without changing arithmetic."""
+    source = once(source, '            x = conv.forward(&x)?;',
+        '            hdb2c3_trace_stage(&format!("input_conv_{nemo_idx:02}"),&x)?;\n'
+        '            x = conv.forward(&x)?;')
+    source = once(source, '                x = x.relu()?;',
+        '                hdb2c3_trace_stage(&format!("input_relu_{nemo_idx:02}"),&x)?;\n'
+        '                x = x.relu()?;')
+    source = once(source, '        let x = self.out.forward(&x)?;',
+        '        hdb2c3_trace_stage("input_out",&x)?;\n'
+        '        let x = self.out.forward(&x)?;')
+    return source
 
 
 def probe(source, *, operators):
@@ -126,6 +144,6 @@ def outputs(reference: Path, root: Path):
         'src/parakeet/mod.rs':(reference/'src/parakeet/mod.rs').read_text()+'\npub mod hdb2c_r8;\n',
         'src/parakeet/hdb2c_r8.rs':(root/'rust/hdb2c_r8_io.rs').read_text(),
         'src/parakeet/hdb2c_nemo.rs':frontend((reference/'src/parakeet/hdb2c_nemo.rs').read_text(),(root/'rust/hdb2c_r8_frontend.rs').read_text()),
-        'src/parakeet/conformer.rs':(reference/'src/parakeet/conformer.rs').read_text()+CONFORMER_REPLAY,
+        'src/parakeet/conformer.rs':subsampling_inputs((reference/'src/parakeet/conformer.rs').read_text())+CONFORMER_REPLAY,
         'src/bin/hdb2c_r8_probe.rs':probe((root/'rust/hdb2c_r7_probe.rs').read_text(),operators=True),
     }

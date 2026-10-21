@@ -68,3 +68,14 @@ local report directory. To compare a preexisting recording instead:
 
 The corpus campaign cannot qualify streaming, endpoint detection or the
 microphone. Those remain explicitly NOT_RUN until their actual execution.
+
+
+## R8B follow-up
+
+[R8 CPU measurements](RESULTS-HDB2-C3-A-R8.md) cover all 14 clips and identify
+six common-input linear failures and two post-token text mismatches. The current
+R8 entry point generates a separate `r8b-v0.7.8b` candidate. It observes actual
+operands after production masks, verifies all original R7 trace bytes, adds
+FP64 linear diagnostics and identifies tokenizer categories/codepoints. FP64
+outputs are diagnostics only. Historical R8 results remain tied to `ce3461ff`;
+new reports identify revision `HDB2-C3-A-R8B`. Existing commands and gates apply.

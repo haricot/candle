@@ -245,5 +245,19 @@ failed numerical gates produce a failed qualification job. No production
 promotion. Raw public-corpus tensors are deleted per clip; microphone audio
 remains local. Instructions and exact scope: `ci/README-R8.md`.
 
-At implementation time, real R8 corpus, sm61 and microphone results are still
-pending. Source/unit/compile checks are not model qualification evidence.
+R8 CPU run **39566816910** on source **ce3461ff** completed all 14 clips with
+zero execution errors; the real ASR job correctly fails unchanged numerical
+gates. Frontend stages pass 14/14; final encoder output passes 14/14 (worst
+9.2387199e-7). All 283 TDT decisions are identical. Five convolutions and three
+ReLUs on common inputs pass 112/112. Common-input linear `out` fails 6/14
+(worst 2.197265625e-3). Exact final text is 12/14: Oréau neutral/happiness differ
+after identical token selection. Global FP32 bits fail 14/14. All 24 block
+outputs pass 13/14; Oréau surprise layer 12 fails. Full initial/internal stage
+gates remain unqualified. Detailed evidence and artifact digest:
+`ci/RESULTS-HDB2-C3-A-R8.md`.
+
+R8B observes actual masked native operands, avoiding R8's reconstruction of
+unmasked previous outputs. It adds independent FP64 linear diagnostics and
+actual tokenizer category/codepoint diagnostics. Autonomous FP32 math and all
+numerical/bitwise gates stay unchanged. R8B real results are pending.
+Actual sm61 CUDA/cuDNN and microphone results are still pending.

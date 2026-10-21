@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from hdb2c.c3_r8 import metric, selected_corpus, input_for, EMOTIONS
+from hdb2c.c3_r8 import metric, selected_corpus, input_for, actual_input_for, EMOTIONS
 from hdb2c.c3_r8_source import frontend, probe
 
 
@@ -49,6 +49,37 @@ class R8Tests(unittest.TestCase):
     def test_unknown_native_source_fails_closed(self):
         with self.assertRaises(ValueError):frontend('unverified source','')
         with self.assertRaises(ValueError):probe('unverified source',operators=True)
+
+    def test_actual_operand_includes_production_mask(self):
+        # The previous convolution can have nonzero padded outputs. They are
+        # masked before ReLU, so using that previous trace is not an input audit.
+        previous=np.array([[[[4.],[17.]]]],dtype=np.float32)
+        operand=np.array([[[[4.],[0.]]]],dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);trace=root/'encoder_trace';trace.mkdir()
+            for name,data in [('conv_00',previous),('input_relu_00',operand)]:
+                (trace/(name+'.f32le')).write_bytes(data.tobytes())
+                (trace/(name+'.json')).write_text(json.dumps({'shape':list(data.shape)}))
+            np.testing.assert_array_equal(actual_input_for('relu_00',root),operand)
+            self.assertFalse(np.array_equal(input_for('relu_00',root),operand))
+            with self.assertRaises(FileNotFoundError):actual_input_for('conv_02',root)
+
+    def test_tokenizer_diagnostic_identifies_unknown_without_publishing_text(self):
+        from types import SimpleNamespace
+        from sentencepiece import sentencepiece_model_pb2
+        from hdb2c.c3_r8_nemo import tokenizer_diagnostic
+        proto=sentencepiece_model_pb2.ModelProto()
+        for piece,kind in [('<unk>',2),('▁bonjour',1),('</s>',3)]:
+            p=proto.pieces.add();p.piece=piece;p.score=0;p.type=kind
+        sp=SimpleNamespace(serialized_model_proto=proto.SerializeToString)
+        model=SimpleNamespace(tokenizer=SimpleNamespace(tokenizer=sp,legacy=False))
+        result=tokenizer_diagnostic(model,{'joint':{'vocabulary':['<unk>','▁bonjour','</s>']}},
+            {'ids':[1,0],'text':'bonjour ⁇'})
+        self.assertFalse(result['vocabulary_join_exact'])
+        self.assertEqual(result['piece_categories']['unknown'],1)
+        self.assertEqual(result['vocabulary_join_codepoint'],'U+003C')
+        self.assertNotIn('text',result)
+        self.assertNotIn('ids',result)
 
 
 class R8TorchPrimitiveTests(unittest.TestCase):

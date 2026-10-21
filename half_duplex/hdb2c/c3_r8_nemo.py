@@ -123,6 +123,12 @@ def operator_hooks(enc, folder):
             _dump(folder/name, 'input', args[0], 'NATIVE')
         def after(_module, _args, output):
             _dump(folder/name, 'output', output, 'NATIVE')
+            if name == 'out':
+                # Supplemental accuracy reference; never returned to the encoder.
+                double = torch.nn.functional.linear(_args[0].double(),
+                    _module.weight.double(),
+                    None if _module.bias is None else _module.bias.double())
+                _dump(folder/name, 'output_fp64_rounded', double.float(), 'NATIVE')
             emitted.add(name)
         hooks.extend([module.register_forward_pre_hook(before), module.register_forward_hook(after)])
         for attr in ('weight', 'bias'):
@@ -149,6 +155,38 @@ def operator_hooks(enc, folder):
             seen.add(id(module))
             hooks.extend([module.register_forward_pre_hook(pre_relu), module.register_forward_hook(post_relu)])
     return hooks, emitted
+
+
+def tokenizer_diagnostic(model, config, result):
+    """Describe a text mismatch without publishing the transcript or token IDs."""
+    from sentencepiece import sentencepiece_model_pb2
+    tokenizer = model.tokenizer
+    sp = tokenizer.tokenizer
+    proto = sentencepiece_model_pb2.ModelProto.FromString(sp.serialized_model_proto())
+    vocabulary = config['joint']['vocabulary']
+    if vocabulary != [p.piece for p in proto.pieces]:
+        raise ValueError('R8B converted vocabulary is not the actual SentencePiece vocabulary')
+    ids = result['ids']
+    legacy = ''.join(vocabulary[i].replace('▁',' ') for i in ids).strip()
+    reference = result['text']
+    counts = {name:0 for name in ('normal','unknown','control','user_defined','unused','byte')}
+    types = {1:'normal',2:'unknown',3:'control',4:'user_defined',5:'unused',6:'byte'}
+    for i in ids: counts[types[proto.pieces[i].type]] += 1
+    first = next((i for i,(a,b) in enumerate(zip(reference,legacy)) if a!=b),
+                 min(len(reference),len(legacy)) if reference!=legacy else None)
+    def point(text):
+        return None if first is None or first>=len(text) else f'U+{ord(text[first]):04X}'
+    return {'scope':'ACTUAL_TOKENIZER_ON_IDENTICAL_EMITTED_IDS',
+        'tokenizer_class':type(tokenizer).__name__,'legacy':bool(tokenizer.legacy),
+        'sentencepiece_model_sha256':hashlib.sha256(sp.serialized_model_proto()).hexdigest(),
+        'vocabulary_bits_verified':True,'piece_categories':counts,
+        'vocabulary_join_exact':legacy==reference,'first_difference_character':first,
+        'reference_codepoint':point(reference),'vocabulary_join_codepoint':point(legacy),
+        'reference_characters':len(reference),'vocabulary_join_characters':len(legacy),
+        'unknown_surface_codepoints':[f'U+{ord(c):04X}' for c in proto.trainer_spec.unk_surface],
+        'add_dummy_prefix':proto.normalizer_spec.add_dummy_prefix,
+        'remove_extra_whitespaces':proto.normalizer_spec.remove_extra_whitespaces,
+        'has_denormalizer':bool(proto.denormalizer_spec.precompiled_charsmap)}
 
 
 def execute(nemo, model_dir, wav, output):
@@ -205,6 +243,8 @@ def execute(nemo, model_dir, wav, output):
                 weights.append({'name':name,'sha256':hashlib.sha256(original.numpy().tobytes()).hexdigest()})
     if not weights: raise ValueError('R8 no TDT weights checked')
     result = capture(model, baseline, baseline_length, output)
+    result['tokenizer_diagnostic'] = tokenizer_diagnostic(model,
+        json.loads((model_dir/'config.json').read_text()), result)
     result.update({'pcm_sha256':describe(wav)['pcm_sha256'],
         'checkpoint_sha256':hashlib.file_digest(nemo.open('rb'),'sha256').hexdigest(),
         'mel_valid':int(mel_length[0]),'encoder_valid':int(baseline_length[0]),

@@ -31,7 +31,7 @@ from .c3_r7_metrics import tensor_metrics, compare_decisions
 from .c3_r8_source import outputs, probe
 from .c3_r8_nemo import FRONTEND_STAGES
 
-SIGNATURE = 'hdb2c3-r8-frontend-common-dw-corpus-v0.7.8'
+SIGNATURE = 'hdb2c3-r8b-actual-operands-and-residuals-v0.7.8b'
 EMOTIONS = ('anger','disgust','fear','happiness','neutral','sadness','surprise')
 
 
@@ -77,7 +77,7 @@ def prepare_sources(s, variant):
     c2=path('-hdb2c-c2-v0.6.6'); r3=path('-hdb2c-c3-r3-v0.7.2')
     r3c=path('-hdb2c-c3-r3c-v0.7.3'); r4=path('-hdb2c-c3-r4-v0.7.4')
     r5=path('-hdb2c-c3-r5-v0.7.5'); r6=path('-hdb2c-c3-r6-v0.7.6')
-    r7=path('-hdb2c-c3-r7-v0.7.7'); r8=path('-hdb2c-c3-r8-v0.7.8')
+    r7=path('-hdb2c-c3-r7-v0.7.7'); r8=path('-hdb2c-c3-r8b-v0.7.8b')
     evidence=json.loads((ROOT/'ci/r7_verified_native_sources.json').read_text())
     if digest(s['nemo'])!=evidence['checkpoint_sha256']:
         raise ValueError('R8 exact qualified TranscribePsy checkpoint required')
@@ -161,6 +161,12 @@ def input_for(name, native_dir):
     return x.transpose(0,2,1,3).reshape(x.shape[0],x.shape[2],-1) if name=='out' else x
 
 
+def actual_input_for(name, native_dir):
+    # R8B observes after every production mask, rather than treating a previous
+    # unmasked stage output as the next operand.
+    return read_tensor(native_dir/'encoder_trace'/('input_'+name+'.f32le'))
+
+
 def comparisons(reference, candidate, replay):
     frontend=[{'name':name,**files(reference/'frontend',candidate/'frontend_trace',name)} for name in FRONTEND_STAGES]
     common_front=[]
@@ -179,12 +185,21 @@ def comparisons(reference, candidate, replay):
                 raise ValueError('R8 native subsampling weights differ: '+name+'/'+weight)
         local=files(a,b,'output')
         end=files(reference/'encoder_trace',candidate/'encoder_trace',name)
-        inherited=metric(read_tensor(a/'input.f32le'),input_for(name,candidate))
+        inherited=metric(read_tensor(a/'input.f32le'),actual_input_for(name,candidate))
         common_dw.append({'name':name,'common_input_operator':local,'autonomous_pipeline':end,
-            'input_difference':inherited,'input_bytes_verified':True,
+            'input_difference':inherited,'input_scope':'OBSERVED_AFTER_PRODUCTION_TEMPORAL_MASK',
+            'input_bytes_verified':True,
             'attribution':('LOCAL_OPERATOR_DIFFERENCE_OBSERVED' if not local['numeric_pass'] else
-                'INHERITED_DIFFERENCE_OBSERVED' if not end['numeric_pass'] else 'PASS_NUMERIC_PARITY')})
+                'PIPELINE_DIFFERENCE_WITH_COMMON_OPERATOR_PASS' if not end['numeric_pass'] else 'PASS_NUMERIC_PARITY')})
+    a,b=reference/'subsampling/out',replay/'subsampling/out'
+    linear_accuracy={
+        'scope':'SUPPLEMENTAL_FP64_DOT_PRODUCTS_ROUNDED_TO_F32_NO_PRODUCTION_CHANGE',
+        'reference_fp32_vs_reference_fp64':files(a,a,'output','output_fp64_rounded'),
+        'native_fp32_vs_reference_fp64':files(a,b,'output_fp64_rounded','output'),
+        'native_fp64_vs_reference_fp64':files(a,b,'output_fp64_rounded'),
+        'native_fp64_vs_reference_fp32':files(a,b,'output','output_fp64_rounded')}
     return {'frontend':frontend,'common_input_frontend':common_front,'common_input_subsampling':common_dw,
+        'linear_accuracy':linear_accuracy,
         'first_frontend_bit_difference':next((r['name'] for r in frontend if not r['bitwise_equal']),None),
         'first_frontend_numeric_mismatch':next((r['name'] for r in frontend if not r['numeric_pass']),None),
         'common_inputs':'BIT_IDENTICAL_REAL_NEMO_INPUTS_VERIFIED',
@@ -195,7 +210,8 @@ def instrumentation_control(reference, observed):
     names={p.stem for p in (reference/'encoder_trace').glob('*.f32le')}
     observed_names={p.stem for p in (observed/'encoder_trace').glob('*.f32le')}
     required=set(DW_STAGES)|set(STAGES)|{'encoder_pad_mask','encoder_att_mask'}
-    if names!=observed_names or not required.issubset(names):
+    extras={'input_'+name for name in DW_STAGES}
+    if observed_names!=names|extras or not required.issubset(names):
         raise ValueError('R8 baseline/instrumented trace coverage differs')
     for name in names:
         observed_metric=files(reference/'encoder_trace',observed/'encoder_trace',name)
@@ -255,13 +271,14 @@ def execute_clip(s, binaries, row, report, variant, source_manifest):
                 for mode,item in tdt.items()}
     for mode,item in public_tdt.items():
         item['decision_counts']={k:v for k,v in tdt[mode]['decisions'].items() if k!='first_difference'}
-    result.update({'signature':SIGNATURE,'revision':'HDB2-C3-A-R8','clip':{k:row[k] for k in ('id','split','emotion','pcm_sha256')},
+    result.update({'signature':SIGNATURE,'revision':'HDB2-C3-A-R8B','clip':{k:row[k] for k in ('id','split','emotion','pcm_sha256')},
         'execution_status':'REAL_FRONTEND_OPERATORS_AND_ASR_COMPLETE','variant':variant,'device':observed_result['device'],
         'checkpoint_sha256':ref['checkpoint_sha256'],'native_pipeline_internal_tensor_injection':'NONE',
         'qualification':'PASS_ALL_DECLARED_NUMERIC_GATES' if all_numeric else 'NUMERIC_PARITY_NOT_ESTABLISHED',
         'global_bitwise_status':'PASS_BITWISE' if bits else 'FAIL_DIFFERENT_F32_BITS',
         'instrumentation_control':control,'nemo_frontend_control':ref['frontend_control'],
         'nemo_encoder_control':ref['encoder_instrumentation_control'],'encoder':enc,'tdt':public_tdt,
+        'tokenizer_diagnostic':ref['tokenizer_diagnostic'],
         'common_input_tdt':{k:v for k,v in common.items() if k!='cases'},'source_manifest':source_manifest,
         'limits':'Batch 1 offline FP32; no streaming or microphone claim; numerical and strict bits are independent.'})
     return result
