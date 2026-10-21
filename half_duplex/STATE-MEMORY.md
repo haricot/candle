@@ -310,3 +310,39 @@ tests including earlier checks). Native Rust rendering matches original
 SentencePiece on 13195 isolated token-sequence cases. Actual microphone capture
 and inference remain pending; the running corpus jobs use their immutable
 original candidates.
+
+## CPU-first constraint and completed R9/GPU measurements — 2026-10-21
+
+User explicitly requires **no new GPU test until CPU works at all declared
+numerical gates**. Do not rerun/retry GPU run39598582574, enqueue another sm61
+job, or run the CUDA microphone while CPU remains unqualified. The CUDA
+workflow is manual-only; push markers cannot queue a GPU job. Keep the
+microphone prepared and defer its GPU execution.
+
+GPU run39598582574/job119216990721 on exact source8e827fa is COMPLETE: all 14
+clips and 283 identical TDT decisions, zero execution errors. Strict numerical
+qualification FAILS. Common-input `out` fails14/14, worst0.0068359375; valid
+final encoder passes14/14, worst9.462237358093262e-7. Exact text12/14 retains
+the known unknown-token issue because this is the immutable R8B candidate.
+Artifact12346604616 SHA256
+7d2651eb672a2c84ee179b44cdc62f79f23481fd8b86f2b7d3254c0b1541fc18.
+Full evidence: `ci/RESULTS-HDB2-C3-A-R8B-GPU.md`. Read completed evidence only.
+
+R9 CPU run39602129424 on sourcea19c132 is COMPLETE, all14 clips, zero execution
+errors. Exact text, full discrete TDT output and TDT numerical gates pass14/14
+on BOTH native/shared-Mel paths. All28 R8B/R9 mathematical controls pass
+bitwise; all11 frontend primitive byte controls pass. Final valid encoder
+passes14/14, worst9.238719940185547e-7. Original absolute internal gates still
+FAIL: common-input projection6/14, scaled/block0 errors and layer12 on one
+clip. This is a validated text correction, not complete CPU qualification.
+Artifact12348401210 SHA256
+9f92f6495f54b2406b9ff5280f98a398cf8871a193c902283266d1b52e2bd7ca.
+Full evidence: `ci/RESULTS-HDB2-C3-A-R9-TEXT.md`.
+
+CPU investigation: original converted weights preserve fixed
+`preprocessor.featurizer.window` [400] and `.fb` [1,128,257]. The native
+frontend currently recomputes these with rounding differences. Loading original
+checkpoint buffers is a hypothesis under investigation, not a measured fix;
+any candidate must verify their bytes against actual NeMo and retain the
+independent baseline and all original gates. Shared-Mel failures prove that
+frontend changes alone cannot be assumed sufficient.

@@ -4,6 +4,12 @@ User-authorized scope: decompose window/FFT/power/Mel/logarithm; isolate each
 subsampling operator on exactly the same real input; cover all 14 existing
 CaFE/Oreau clips, then CUDA/cuDNN sm61 and actual laptop microphone audio.
 
+Current priority (2026-10-21): **no new GPU campaign until every declared CPU
+numerical gate passes**. GPU run 39598582574 has finished; its measurements are
+retained in [the completed GPU report](RESULTS-HDB2-C3-A-R8B-GPU.md). Further
+GPU and CUDA microphone commands below are deferred. The GPU workflow now
+accepts manual dispatch only; commit markers cannot enqueue a physical job.
+
 R8 preserves the six qualified R7 source hashes before creating a separate
 candidate. It adds observation-only frontend buffers and separate operator
 replays. An independently compiled R7 baseline must reproduce R8's PCM, Mel,
@@ -41,7 +47,7 @@ disk usage. No WAV, transcription or token sequence is uploaded by R8.
 ## Actual CUDA/cuDNN sm61 host
 
 Dispatch `Half Duplex CUDA sm61 candidate` with `run_cuda=true` and
-`r8_corpus=true`, or push `[r8-cuda]`. Existing runner environment variables
+`r8_corpus=true`, after CPU qualification. Existing runner environment variables
 `HDB2A_RUNTIME_DIR`, `HDB2A_MODEL_DIR`, `HDB2C_NEMO`, `HDB2C_PYTHON` must identify
 the bootstrapped pinned runtime, R7B converted model and existing CPU NeMo
 environment (including datasets/soundfile). No weights or environments are
@@ -88,7 +94,7 @@ GPU lock**, without changing that archive, its image or its profiles. Dedicated
 `half-duplex-stt-RUN_ID` labels bind the one-job runner to the exact campaign.
 The workflow verifies the expected run and checked-out commit again.
 
-After a `[r8-cuda]` push, or a fresh workflow dispatch with `run_cuda=true` and
+After CPU qualification and a fresh workflow dispatch with `run_cuda=true` and
 `r8_corpus=true`, use the rootless GPU user on the physical laptop:
 
 ```bash

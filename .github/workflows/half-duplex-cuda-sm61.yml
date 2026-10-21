@@ -1,10 +1,7 @@
 name: Half Duplex CUDA sm61 candidate
 on:
-  push:
-    branches: [half_duplex]
-    paths:
-      - '.github/workflows/half-duplex-cuda-sm61.yml'
-      - 'half_duplex/**'
+  # CPU-first qualification: no push can enqueue another physical GPU job.
+  # Resume manual GPU campaigns only after the CPU numerical gates pass.
   workflow_dispatch:
     inputs:
       run_cuda:
@@ -21,7 +18,7 @@ permissions:
   contents: read
 jobs:
   cuda-cudnn-sm61:
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_cuda) || contains(github.event.head_commit.message, '[cuda-sm61]') || contains(github.event.head_commit.message, '[r8-cuda]') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_cuda }}
     runs-on: [self-hosted, linux, x64, cuda, sm61, half-duplex-stt, 'half-duplex-stt-${{ github.run_id }}']
     timeout-minutes: 350
     steps:

@@ -39,11 +39,17 @@ streaming, beam-search or GPU qualification is inferred from the CPU campaign.
 Local validation: 161 Python tests, 12 native Rust tests, R9 probe compilation,
 source generation against the qualified R7 chain and metadata from the original
 tokenizer SHA256 `eacec2b0a77f336d4a2ca4a25a7047575d3c2b74de47e997f4c205126ed3135e`.
-Real-model results are pending at implementation time.
+The [completed real CPU campaign](RESULTS-HDB2-C3-A-R9-TEXT.md) validates exact
+text and discrete TDT output on 14/14 clips. All 28 native/shared-Mel controls
+confirm identical neural arithmetic before/after the text correction. The
+unchanged internal numerical gates still fail; overall CPU qualification is
+not established.
 
 ## Local microphone
 
-After the CUDA job has finished and on the laptop with the existing local
+The user has deferred further GPU tests until all CPU numerical gates pass.
+The command below is prepared for that later stage and has not been run.
+It requires the laptop with the existing local
 runtime, converted model, original `.nemo` and CPU NeMo environment:
 
 ```bash
