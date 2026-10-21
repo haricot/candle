@@ -346,3 +346,41 @@ checkpoint buffers is a hypothesis under investigation, not a measured fix;
 any candidate must verify their bytes against actual NeMo and retain the
 independent baseline and all original gates. Shared-Mel failures prove that
 frontend changes alone cannot be assumed sufficient.
+
+## R10 native CPU MKL profile — local 14-clip result
+
+CPU-first instruction remains absolute: no GPU rerun/queue or CUDA microphone
+until all CPU numerical gates pass. R10 is a separate CPU-only qualification
+binary; default Candle runtime is not promoted. `ci/README-R10-CPU.md` describes
+the optional standalone MKL2024.2.2 SDK and CPU workflow input `r10_cpu`.
+
+Original checkpoint buffers match actual NeMo exactly: window SHA256
+4009f7a2105ca4d3cb8098fe62d296a08e0418d845255135a8a99164ed399795,
+Mel bank SHA256729949d567af3397191d22901d9661709c40a875782941181b545b75d7a4bb73.
+The currently recomputed window differs even from a window recreated by the
+current Torch; use checkpoint buffers, not a phase-only numerical guess.
+
+Local AMD EPYC9V74/9-thread measurement on all14 real PCM files: frontend all11
+stages bit-identical154/154; common frontend7 stages exact98/98; common-input
+projection exact14/14 using native MKL SGEMM with bias included. No libtorch
+link or activation injection. Text/TDT numerical/discrete pass14/14 on both
+paths, all283 decisions exact. Final valid encoder max4.805624485015869e-7.
+Remaining strict failures: pre_encode1/14 max0.001220703125; post-scaling and
+block0 internals14/14, post_pos_enc max0.03125; one layer12 max0.00146484375.
+All gates unchanged. Internal values reach90822, with FP32 ULP0.0078125,
+larger than the original absolute gate0.001. Never infer full qualification
+from final encoder or text success. Detailed local source/SDK hashes and
+redacted metrics: `ci/RESULTS-HDB2-C3-A-R10-CPU.md` and its JSON link.
+
+164 Python and3 native SDK tests pass; actual new binary compiles and runs14
+clips. This local measurement reuses actual per-clip original NeMo references;
+independent R7/R8B executable controls are NOT rerun locally. The hosted R10
+entry point retains/reruns all original baselines and controls. Hosted profile
+results must be checked independently. No production/GPU/mic qualification.
+
+Next CPU experiment: actual Torch dispatch chooses oneDNN for all5 subsampling
+convolutions. Pinned oneDNN3.11.2 commit03c022d3ffdcee958cfacbe720048e725fdf644c
+matches the Torch build. A standalone native build is prepared for exact-input
+comparisons. It must include both CONVOLUTION and REORDER primitives; the first
+convolution-only build could not execute required reorders. No successful
+oneDNN convolution measurement has been claimed yet.

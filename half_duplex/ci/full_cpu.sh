@@ -33,6 +33,11 @@ fi
 if [[ "${HDB2C_R8_CORPUS:-0}" == 1 ]];then
   module=hdb2c.c3_r8
   if [[ "${HDB2C_R9_TEXT:-0}" == 1 ]];then module=hdb2c.c3_r9_text;fi
+  if [[ "${HDB2C_R10_CPU:-0}" == 1 ]];then
+    test "${HDB2C_R8_VARIANT:-cpu}" = cpu || { echo 'R10_CPU_ONLY' >&2;exit 3; }
+    uv pip install --no-config --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple 'mkl==2024.2.2' 'mkl-include==2024.2.2'
+    module=hdb2c.c3_r10_cpu
+  fi
   "$HDB2C_PYTHON" -m "$module" --corpus "$RUNNER_TEMP/cameo/manifest.json" --variant "${HDB2C_R8_VARIANT:-cpu}" --require-numeric
   exit
 fi
