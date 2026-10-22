@@ -1,0 +1,28 @@
+{
+  "experiment": "HDB2-C2 independent Python PyTorch/log-mel vs original NeMo model features",
+  "origin": "user real C1 --probes archive hdb2c-20261018T195644Z-87019-000",
+  "input_pcm_sha256": "a075850b69b66591ca8611cdc29750c33e53a9f59f23910acf23897fbb526f7e",
+  "sample_rate": 16000,
+  "pcm_samples": 216378,
+  "n_fft": 512,
+  "window_samples": 400,
+  "hop_samples": 160,
+  "window": "hann, symmetric (periodic=False), centered in n_fft",
+  "stft": "center=True, pad_mode=constant, unnormalized, magnitude squared",
+  "preemphasis": 0.97,
+  "mel": "128, librosa Slaney, unrounded triangles",
+  "normalize": "NA",
+  "log": "ln(value + 2^-24)",
+  "stft_frames": 1353,
+  "valid_frames": 1352,
+  "padded_frames": 1360,
+  "validation_on_valid_frames": {
+    "RMSE": 1.3690088e-6,
+    "MAE": 4.218403e-7,
+    "max_abs": 5.531311e-5,
+    "cosine": 0.9999999
+  },
+  "qualifies": "independent PYTHON numerical recipe vs NeMo saved Mel only",
+  "does_not_qualify": "Rust frontend; FastConformer; TDT; CUDA",
+  "privacy": "original speech WAV and tensor arrays omitted from distribution"
+}
