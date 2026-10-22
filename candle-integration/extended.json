@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "kind": "extended-multi",
+  "feature_count": 9,
+  "main_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+  "campaign": "extended-39846015167-1",
+  "strategy": "exact-delta",
+  "integration_target": "extended",
+  "old_integration_sha": "f5ce7f6f8b7a68d14a55419f9f221e1ae3537fd3",
+  "source_config_sha256": "b4199e9252268903a49e6dd2ed1ead2bf8f8b10f1559b3203b0c2a9c3290eeb7",
+  "validation_state": "UNVALIDATED_CANDIDATE",
+  "features": [
+    {
+      "feature": "bf16_candle",
+      "source_ref": "bf16_candle",
+      "target_ref": "bf16_candle",
+      "source_sha": "f04d0220e262ae7dfd4d419271546ddb36134ccd",
+      "review_source_sha": "c146a477591c4be1104f189f5809a974664a28d8",
+      "cuda_features": [
+        "cuda-legacy-bf16"
+      ],
+      "prepared_sha": "286d40e927f99903f573e27f519bda1afbed6a8d",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/bf16_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "c10b86bfca090f47bcf2c05e971745441e832e72055521ac30c19d204c138105",
+      "prepared_patch_sha256": "c10b86bfca090f47bcf2c05e971745441e832e72055521ac30c19d204c138105"
+    },
+    {
+      "feature": "fp8_candle",
+      "source_ref": "fp8_candle",
+      "target_ref": "fp8_candle",
+      "source_sha": "8262854dd58138baf6f424951dc91a5197b33cb6",
+      "review_source_sha": "e7d2a9d615853dca263c236e381e5e76f45fec9f",
+      "cuda_features": [
+        "cuda-legacy-fp8"
+      ],
+      "prepared_sha": "9f8a2ab295550f0806d680c77f1db7ba95932aa9",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/fp8_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "61ffd1ab0fef22898a203ffac3f9ff858a5d0ef57cc3eda96ee2cc6e933c4b95",
+      "prepared_patch_sha256": "61ffd1ab0fef22898a203ffac3f9ff858a5d0ef57cc3eda96ee2cc6e933c4b95"
+    },
+    {
+      "feature": "fp4_candle",
+      "source_ref": "fp4_candle",
+      "target_ref": "fp4_candle",
+      "source_sha": "191352522f51985d4139ef74d133a68c226d1fe7",
+      "review_source_sha": "4487e9a719d71d09ab3e30874b756e0a5d17640c",
+      "cuda_features": [
+        "cuda-legacy-fp4"
+      ],
+      "prepared_sha": "7dde8c163bff7dcdd39a40c91aaa4e399c95c84f",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/fp4_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "44eb6dc676db4d55186dacfcecd5cfebf45e4fc6118f95b1d68cc9a1a5c17012",
+      "prepared_patch_sha256": "44eb6dc676db4d55186dacfcecd5cfebf45e4fc6118f95b1d68cc9a1a5c17012"
+    },
+    {
+      "feature": "cudnn_fallback_candle",
+      "source_ref": "cudnn_fallback_candle",
+      "target_ref": "cudnn_fallback_candle",
+      "source_sha": "a93ab357b68dedced52e8136c8e014e0997ccb90",
+      "review_source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+      "cuda_features": [
+        "cudnn"
+      ],
+      "prepared_sha": "c9ca66917363547189fffa7783cf637bc2027eec",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/cudnn_fallback_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "8c40b61afe81830619bcc4ef395149829a3edd39127608a80bc698e1d13365c3",
+      "prepared_patch_sha256": "8c40b61afe81830619bcc4ef395149829a3edd39127608a80bc698e1d13365c3"
+    },
+    {
+      "feature": "moe_simt_f16_candle",
+      "source_ref": "moe_simt_f16_candle",
+      "target_ref": "moe_simt_f16_candle",
+      "source_sha": "a9702803db500000d25fe0c0a0f49d102a09ab6a",
+      "review_source_sha": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+      "cuda_features": [
+        "cuda"
+      ],
+      "prepared_sha": "deb85bc2ffb4619eaa6546d4c2ecadd94d01598b",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/moe_simt_f16_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "b5f1c835a067f668cfb7878eb5aa643592350dde60009f27fdd771e62a3f5c5f",
+      "prepared_patch_sha256": "b5f1c835a067f668cfb7878eb5aa643592350dde60009f27fdd771e62a3f5c5f"
+    },
+    {
+      "feature": "asd_core_v3_standalone",
+      "source_ref": "asd_core_v3_standalone",
+      "target_ref": "asd_core_v3_standalone",
+      "source_sha": "cd43774bef2385648a18d76617d15aca0c7f9422",
+      "review_source_sha": "4583ded4513f92f72aae658d2cf3db0db1542b5e",
+      "cuda_features": [
+        "cuda",
+        "cudnn"
+      ],
+      "prepared_sha": "5676cb3b918e58c80adc2a2bc4433b04eeb24ed7",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/asd_core_v3_standalone",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "62fa8181d81704052b8861b563bff7fa61be6de4929bee24a721080c1b8df885",
+      "prepared_patch_sha256": "62fa8181d81704052b8861b563bff7fa61be6de4929bee24a721080c1b8df885"
+    },
+    {
+      "feature": "embeddinggemma2",
+      "source_ref": "embeddinggemma2",
+      "target_ref": "embeddinggemma2",
+      "source_sha": "806a44bae9e539f59ad088c4d72922433c6a9018",
+      "review_source_sha": "806a44bae9e539f59ad088c4d72922433c6a9018",
+      "cuda_features": [
+        "cuda"
+      ],
+      "prepared_sha": "e99e623b89647f92e781618f42511acec523351f",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/embeddinggemma2",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "85c3e81433d1c6fa5b8679e0fab44799068f3118add5e5dd573dba51f9b20711",
+      "prepared_patch_sha256": "85c3e81433d1c6fa5b8679e0fab44799068f3118add5e5dd573dba51f9b20711"
+    },
+    {
+      "feature": "lean4_standalone",
+      "source_ref": "lean4_standalone",
+      "target_ref": "lean4_standalone",
+      "source_sha": "1e19833d48f98ae7c9e978edd5665725df0adaf6",
+      "review_source_sha": "1e19833d48f98ae7c9e978edd5665725df0adaf6",
+      "cuda_features": [],
+      "prepared_sha": "d753baf07fcebef53712f63b6cb79c24b0aa2930",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/lean4_standalone",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "55631f708939d8f3f780877281b7a7ea482f3643888e42424d7b30a29cb6a7ed",
+      "prepared_patch_sha256": "55631f708939d8f3f780877281b7a7ea482f3643888e42424d7b30a29cb6a7ed"
+    },
+    {
+      "feature": "half_duplex_standalone",
+      "source_ref": "half_duplex_standalone",
+      "target_ref": "half_duplex_standalone",
+      "source_sha": "7a90193aa384f4e6eb37fa8200c063fc25488210",
+      "review_source_sha": "7a90193aa384f4e6eb37fa8200c063fc25488210",
+      "cuda_features": [
+        "cuda",
+        "cudnn"
+      ],
+      "prepared_sha": "3183e8e4e3354cd1bf148d6351fc60e368b5fc04",
+      "preparation_ref": "prepare/extended/extended-39846015167-1/half_duplex_standalone",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "d02c4ff72206e312735cfc300736208c52179e2a2c6a3f54aba7286cb66175c4",
+      "prepared_patch_sha256": "d02c4ff72206e312735cfc300736208c52179e2a2c6a3f54aba7286cb66175c4"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "policy": "r15-functional",
+  "profile": "short",
+  "requested": "auto",
+  "reason": "QUALIFIED_ENGINE_UNCHANGED",
+  "baseline_sha": "50ed7c1636e93fa5c8bf0a16e90bcce6a5ad7cc1",
+  "evaluated_candidate_sha": "c2037612bec7d9b7e533f47905cb2f8de7ac5a30",
+  "engine_changed_paths": [],
+  "short_clips": 4,
+  "full_clips": 42,
+  "fp64_audit": false,
+  "blocking": [
+    "exact_outputs_and_decisions",
+    "finite_observed_tensors",
+    "device_and_lengths",
+    "original_final_encoder_limits"
+  ],
+  "intermediate_numeric_and_bits": "DIAGNOSTIC"
+}
