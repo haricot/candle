@@ -1,0 +1,9 @@
+{
+  "release": "v0.6.6",
+  "stage": "HDB2-C2 NeMo-exact audio frontend",
+  "scope": "isolated full source-copy CPU A/B + install_update.sh",
+  "rust_build_validation": "PENDING_REAL_MACHINE_RELEASE_BUILD_AND_LIB_TEST",
+  "python_contract_tests": "PASS",
+  "source_sha256_policy": "manifest fail-closed",
+  "fix": "HDB2A/C2 Rust cfg(test) model.rs time_ratio_positive E0063 constructors completed"
+}

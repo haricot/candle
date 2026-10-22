@@ -1,0 +1,5338 @@
+{
+  "signature": "R10_LOCAL_AMD_EPYC_MKL_CPU_14",
+  "scope": "LOCAL_CPU_PROFILE_ACTUAL_NEMO_REFERENCES",
+  "cpu": "AMD EPYC 9V74",
+  "cpu_threads": 9,
+  "python": "3.13.16",
+  "nemo": "2.7.3",
+  "torch": "2.12.1+cpu",
+  "mkl": "2024.2.2",
+  "mkl_reference": "Torch built with oneMKL 2024.2 build20240605",
+  "checkpoint_sha256": "0acdaf1e1ebf09094400263006d134d33b0ebb871ebb064253cfd3a7c528903c",
+  "corpus_revision": "c7f2fc9f0538ca871d38e183ba8ad6c329120ecc",
+  "source_manifest": {
+    "signature": "hdb2c3-r10-native-cpu-mkl-v0.7.10",
+    "sdk": {
+      "mkl": "2024.2.2",
+      "headers": "2024.2.2",
+      "library_sha256": {
+        "libmkl_avx2.so.2": "f0bd2829d43f80e783b7a38e7b204e1e6c06d4f797cbe558365bddcac0e5bebf",
+        "libmkl_avx512.so.2": "9a70aeac396824373685a59c5d52310b195f20c0f49e9243e582018bcc9660a9",
+        "libmkl_blacs_intelmpi_ilp64.so.2": "ec91ed41692fe73ee9a25b735136d8186d05ce4d21ffbed1d050c983b29610c5",
+        "libmkl_blacs_intelmpi_lp64.so.2": "d6bf3746f9f55bd96f388210a2122c0807985bed0ed883361db58138916bed9c",
+        "libmkl_blacs_openmpi_ilp64.so.2": "7826464d4d804e9607b18c24812f7c7f137e104b6a9ac488bc24a7226204d8bd",
+        "libmkl_blacs_openmpi_lp64.so.2": "01a002c36041a0231cb7bc31895c186c852d9449f751729f5d9653feebdb5263",
+        "libmkl_cdft_core.so.2": "a5229861fdd13a7be9fbd92eb1629d32e758d6319633db7024634881a6faf80b",
+        "libmkl_core.so.2": "51a2ea1e495cf616d0477a33a76c0e2feb604b77ee7054fb15d992e8747fd1e0",
+        "libmkl_def.so.2": "52977f81b8107440600d2f6858dedca98be0785357178a97e1f7e2b7423c47dd",
+        "libmkl_gf_ilp64.so.2": "b8e64add57a8aab18257ae2bcb6489bc01bbd3d0da8a5ca879a0ec488b6bd894",
+        "libmkl_gf_lp64.so.2": "465ea96b75e470b84ab04b59395c2431c29046f7406b6e48ed1a736fa9dbc3a8",
+        "libmkl_gnu_thread.so.2": "ade94432475c8dd990e67237fcb2507fa22cb001bd89581112b443806c3a7e3d",
+        "libmkl_intel_ilp64.so.2": "3db4994e14cda441e356cbdedbdb3a4a10b335ef1fa04532958623a9876a3d79",
+        "libmkl_intel_lp64.so.2": "9fb50542a28df8632006285eb192f2bd4ac7164ca32605f4c347ae219661affc",
+        "libmkl_intel_thread.so.2": "a1be66301cba835c2299e4b9dda1254fb11967b566728ab357eb2283c21c56ef",
+        "libmkl_mc3.so.2": "98975aa5367545d2e4c3466bd6adc84ac35380b253f1078c1ced638676735350",
+        "libmkl_pgi_thread.so.2": "e6b6af134016a8489a65d25ba2ece90d2c7560bc3a9003db4ac6f4a67c7be304",
+        "libmkl_rt.so.2": "10e1e22a85c97625b44da141bda614fd21e912f953a06ed9f5b0afd54dabdbeb",
+        "libmkl_scalapack_ilp64.so.2": "ddfe894ed4b5076776bf87838a2cde180a1c42ce1a47211ef50710792d925d70",
+        "libmkl_scalapack_lp64.so.2": "6c6ba1443573a11d6ab1d98a5f176258bb3c15db2675d739c7336b1df8ef279f",
+        "libmkl_sequential.so.2": "bbacad5c8b2ebf641668dde2cf55ee2d6ae20945045e5d9839533db24319f0f7",
+        "libmkl_tbb_thread.so.2": "46ef602217a09101639175af4b93533c13d32471a3397cd3b533458e4bbb37c4",
+        "libmkl_vml_avx2.so.2": "bb5ebdc991735eadbc67eb07f70e96101b655daef731358729978240fba61af8",
+        "libmkl_vml_avx512.so.2": "f043c41fe75925106e532cf2d82620c38911cbf52957dd436d34721744bcec06",
+        "libmkl_vml_cmpt.so.2": "0e6a8604f258cdf16b68b0140d078100cbbd7b9ab71ea5f066d401b4c3740abf",
+        "libmkl_vml_def.so.2": "62765cd3ba2838809bb15308e737643a6c726066169ae305e789f525b711aba9",
+        "libmkl_vml_mc3.so.2": "d66e320f0643010f49cadc83ff9bb6e915482db6a235e4d81550680646ddac70"
+      }
+    },
+    "tokenizer_metadata": {
+      "model_sha256": "eacec2b0a77f336d4a2ca4a25a7047575d3c2b74de47e997f4c205126ed3135e",
+      "vocabulary_size": 8192,
+      "unknown_id": 0,
+      "unknown_piece": "<unk>",
+      "unknown_surface": " ⁇ "
+    },
+    "parent_source_sha256": {
+      "src/bin/hdb2c_positional.rs": "6dd73250ed4681d9b52400c017bc7dd3cad80ba74c7d63f7ad7d87813756fe25",
+      "src/bin/hdb2c_probe.rs": "137d12ebabbbda0b5d2209cd0bab62e9fcd8d6527b0d153ea483f5c71ec26004",
+      "src/bin/hdb2c_r5_probe.rs": "137d12ebabbbda0b5d2209cd0bab62e9fcd8d6527b0d153ea483f5c71ec26004",
+      "src/bin/hdb2c_r6_probe.rs": "137d12ebabbbda0b5d2209cd0bab62e9fcd8d6527b0d153ea483f5c71ec26004",
+      "src/bin/hdb2c_r7_probe.rs": "0ba91c7f5155f75001b7fc11655732de303dcbf7a7a98ce465677bd355fb20b1",
+      "src/bin/hdb2c_r8_probe.rs": "d42fd2832f31c40d8a9457ae24b97d15ad9025dced3b2b1460213dcbd6033680",
+      "src/lib.rs": "773d17115db6c135a694ab1a7492747a6d3b207937f377c8a522a88016f78d83",
+      "src/main.rs": "30f46cd3c9542548d15c26d0df6818923163ff32b0fb12a9ebef60909d7413a6",
+      "src/parakeet/alignment.rs": "308da57f5696ae27f20149ad1812609e9707a0a227bc0941b7ee9985359e50c8",
+      "src/parakeet/attention.rs": "0c1c6e774815806da8ea3f3a0f42647b9cbf0c30d8d2c2b1c9c65ea5fcd12210",
+      "src/parakeet/audio.rs": "e3fc4de8542c3d3586c0461964f2668b9cf23874df08f71ab744d569074061cf",
+      "src/parakeet/cache.rs": "eb057588e018e8916fd765dd7d72af2260470cb638e693cd3ce348bbf9549824",
+      "src/parakeet/conformer.rs": "5149d48c0ac7fe90c44d342377a3577551cfd17bfdb29fd9281833db9f0c210e",
+      "src/parakeet/ctc.rs": "84658ae4a3d7c54c39d0e69b094c25c2ad11aa76792cda65ed5fd25857ce1305",
+      "src/parakeet/hdb2c_nemo.rs": "3705f17e7e7c747afb2e009846fcd38799237ee834eb6a14e8f207ca51a36b1c",
+      "src/parakeet/hdb2c_r8.rs": "5a3fd4feada5e212dca23bd51ac71a813b99830deef5ab19021cc0080f6f6772",
+      "src/parakeet/mod.rs": "2c8ec3720f6c8cb4686284b41e76b0eacfe51058a2a1c0229f9a34f7b558f517",
+      "src/parakeet/model.rs": "d8650b1738dce2ed39c48141bbb25be5452893350eafdf5eb438ed89565a4248",
+      "src/parakeet/rnnt.rs": "364259f9c89ea33bc3e561824f03e915f178ab1826e994c6fe0c1d31fc823ed9",
+      "src/parakeet/tokenizer.rs": "87a6b3bd438d5dbfc3e2ed4684855472b19a641d1b9768696d8bcbc562a622c3",
+      "Cargo.toml": "84c8e20055da4bc84548ef37b2427e146161d273d905661b56f484c69917f6ef",
+      "Cargo.lock": "caa0aa9c1e0a36889b0f6e817c90d9580b2fd48173d66607b76bc2deeb4ee650"
+    },
+    "target_sha256": {
+      "src/bin/hdb2c_r9_probe.rs": "5084dee6f5fd51399dda30631ab0a8727482096dd025bc0ff7361b2407b3afbe",
+      "src/parakeet/model.rs": "d0ece1f0b45ea20819a71d416ee0b904d03950b4ca5de115701d03aaa5bbe611",
+      "src/parakeet/mod.rs": "8d683eb3eb8cc3e808b9a48c684f49ecc5602c5aeea752d930153605c9e1132b",
+      "src/parakeet/hdb2c_r9_text.rs": "8005f66493175f0c47b3afa8d29eee317648c8c922933305475416e49193fc71",
+      "src/bin/hdb2c_r10_probe.rs": "081a6eeda0e853a69959d56e8325b7f841f743b39505e5c55a0a1eb2190af249",
+      "src/parakeet/conformer.rs": "ca3fd60c4a8f67b140005212196fec2f674a4579801ccacfcb7cf9b3d89f1e27",
+      "build.rs": "3406fd351c30947e807a9b284cdb9d39ec22be27a9e911a7e02c7496fded99f6",
+      "src/parakeet/hdb2c_r10_mkl.rs": "c089f8b06aefd7acc8c5fa0cb5e68f964c6efe19e334ab3c37732db80a9b4f19",
+      "src/parakeet/hdb2c_r10_frontend.rs": "fbac696cfea568b665afca47675ad6986a5763f9c7311bf59f548e24d1afe53e",
+      "src/parakeet/hdb2c_r10_mkl.c": "3c3ddedda9dd8dabaf6d23e783e6787596bf96e7b2426da35d42b7000a549089"
+    }
+  },
+  "binary_sha256": "7f68b209afadf2172a0c231d834c8b83c22b3356b01b522d3470f7e129d54a57",
+  "execution_status": "COMPLETE",
+  "expected_clips": 14,
+  "completed_clips": 14,
+  "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+  "results": [
+    {
+      "clip": {
+        "id": "cafe-anger-6794242ad35a",
+        "split": "cafe",
+        "emotion": "anger",
+        "pcm_sha256": "6794242ad35ae6125884457d25f481d520251656044e4ba1f7bfb1c8ae0b1a52"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999946,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999961,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999943,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 4.291534423828125e-06,
+          "cosine": 0.9999999999999976,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999961,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999557,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999557,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.009765625,
+              "cosine": 0.9999999999999237,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999559,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.002685546875,
+              "cosine": 0.9999999999999137,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999554,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0037841796875,
+              "cosine": 0.9999999999997828,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0234375,
+              "cosine": 0.999999999999955,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.013671875,
+              "cosine": 0.9999999999999013,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999538,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.6333298087120056e-07,
+            "cosine": 0.9999999999994882,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999557,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999557,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.009765625,
+              "cosine": 0.9999999999999237,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999559,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.002685546875,
+              "cosine": 0.9999999999999137,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999554,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0037841796875,
+              "cosine": 0.9999999999997828,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0234375,
+              "cosine": 0.999999999999955,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.013671875,
+              "cosine": 0.9999999999999013,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999538,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.6333298087120056e-07,
+            "cosine": 0.9999999999994882,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 22,
+            "candidate_decisions": 22
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 22,
+            "candidate_decisions": 22
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-disgust-ae49ff259f21",
+        "split": "cafe",
+        "emotion": "disgust",
+        "pcm_sha256": "ae49ff259f21ccba7cc70ba7ac364c152c2eb3cf7ec21aef395128f3204cc65d"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000018,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000018,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000018,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000018,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999912,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999981,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999954,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999932,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999982,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999963,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999538,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999538,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.9999999999999227,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999543,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.06298828125,
+              "cosine": 0.9999999999948747,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0650634765625,
+              "cosine": 0.9999999999999205,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.00390625,
+              "cosine": 0.999999999999743,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0648193359375,
+              "cosine": 0.9999999999999211,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.026123046875,
+              "cosine": 0.9999999999998773,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.06951904296875,
+              "cosine": 0.9999999999999201,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.3213367462158203e-07,
+            "cosine": 0.9999999999995046,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999538,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999538,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.9999999999999227,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999543,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.06298828125,
+              "cosine": 0.9999999999948747,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0650634765625,
+              "cosine": 0.9999999999999205,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.00390625,
+              "cosine": 0.999999999999743,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0648193359375,
+              "cosine": 0.9999999999999211,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.026123046875,
+              "cosine": 0.9999999999998773,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.06951904296875,
+              "cosine": 0.9999999999999201,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.3213367462158203e-07,
+            "cosine": 0.9999999999995046,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 34,
+            "candidate_decisions": 34
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 34,
+            "candidate_decisions": 34
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-fear-ee405e4aa7b7",
+        "split": "cafe",
+        "emotion": "fear",
+        "pcm_sha256": "ee405e4aa7b79c3dfb67cefcb13b0709d878793511c3272f58a165ef15e4fb2d"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999951,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999964,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999943,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999977,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999966,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999563,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999563,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.009765625,
+              "cosine": 0.9999999999999218,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999569,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.018341064453125,
+              "cosine": 0.9999999999994238,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.020355224609375,
+              "cosine": 0.999999999999952,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0040283203125,
+              "cosine": 0.9999999999996049,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.020263671875,
+              "cosine": 0.9999999999999512,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999999181,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0203857421875,
+              "cosine": 0.9999999999999502,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.3213367462158203e-07,
+            "cosine": 0.9999999999994503,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999563,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999563,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.009765625,
+              "cosine": 0.9999999999999218,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999569,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.018341064453125,
+              "cosine": 0.9999999999994238,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.020355224609375,
+              "cosine": 0.999999999999952,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0040283203125,
+              "cosine": 0.9999999999996049,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.020263671875,
+              "cosine": 0.9999999999999512,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999999181,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0203857421875,
+              "cosine": 0.9999999999999502,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.3213367462158203e-07,
+            "cosine": 0.9999999999994503,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 28,
+            "candidate_decisions": 28
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 28,
+            "candidate_decisions": 28
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-happiness-7cf7df31b5c7",
+        "split": "cafe",
+        "emotion": "happiness",
+        "pcm_sha256": "7cf7df31b5c79f75c659af1a574fa7c93ce3d9b8126383ff20879005a58bbe56"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000016,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999962,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 0.0001373291015625,
+          "cosine": 0.9999999999999636,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999976,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999966,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999186,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999186,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.9999999999998954,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999198,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.020751953125,
+              "cosine": 0.9999999999993296,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999156,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.00286865234375,
+              "cosine": 0.9999999999997442,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999154,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999998936,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999142,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.0605664253234863e-07,
+            "cosine": 0.9999999999994621,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999186,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999186,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.9999999999998954,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999198,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.020751953125,
+              "cosine": 0.9999999999993296,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999156,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.00286865234375,
+              "cosine": 0.9999999999997442,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999154,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999998936,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999142,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.0605664253234863e-07,
+            "cosine": 0.9999999999994621,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 18,
+            "candidate_decisions": 18
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 18,
+            "candidate_decisions": 18
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-neutral-3863734a5ee4",
+        "split": "cafe",
+        "emotion": "neutral",
+        "pcm_sha256": "3863734a5ee478104a3152a293f5f5b6c57ba9edbbfe21bea84bda0c94f65028"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000013,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999936,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999964,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999942,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999974,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999963,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999576,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999576,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.9999999999999251,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.999999999999958,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.092041015625,
+              "cosine": 0.999999999990536,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.087890625,
+              "cosine": 0.9999999999998614,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.009521484375,
+              "cosine": 0.9999999999992811,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.087890625,
+              "cosine": 0.9999999999998639,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.0419921875,
+              "cosine": 0.9999999999998477,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0859375,
+              "cosine": 0.9999999999998668,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.8743019104003906e-07,
+            "cosine": 0.9999999999997272,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999576,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999576,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.9999999999999251,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.999999999999958,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.092041015625,
+              "cosine": 0.999999999990536,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.087890625,
+              "cosine": 0.9999999999998614,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.009521484375,
+              "cosine": 0.9999999999992811,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.087890625,
+              "cosine": 0.9999999999998639,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.0419921875,
+              "cosine": 0.9999999999998477,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0859375,
+              "cosine": 0.9999999999998668,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.8743019104003906e-07,
+            "cosine": 0.9999999999997272,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 16,
+            "candidate_decisions": 16
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 16,
+            "candidate_decisions": 16
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-sadness-343548448bb1",
+        "split": "cafe",
+        "emotion": "sadness",
+        "pcm_sha256": "343548448bb1d83f303d0c8b1804f3f9d8990c3160d90c046a37e7aabea831b4"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000016,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000016,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000018,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000016,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.999999999999993,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999959,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999938,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999979,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999966,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999999237,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999585,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.10821151733398438,
+              "cosine": 0.9999999999780975,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.103515625,
+              "cosine": 0.9999999999998082,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0049896240234375,
+              "cosine": 0.999999999999532,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.1025390625,
+              "cosine": 0.9999999999998105,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.037109375,
+              "cosine": 0.9999999999997341,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.10009765625,
+              "cosine": 0.9999999999998158,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.203749656677246e-07,
+            "cosine": 0.9999999999996155,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999999237,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999585,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.10821151733398438,
+              "cosine": 0.9999999999780975,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.103515625,
+              "cosine": 0.9999999999998082,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0049896240234375,
+              "cosine": 0.999999999999532,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.1025390625,
+              "cosine": 0.9999999999998105,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.037109375,
+              "cosine": 0.9999999999997341,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.10009765625,
+              "cosine": 0.9999999999998158,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.203749656677246e-07,
+            "cosine": 0.9999999999996155,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 24,
+            "candidate_decisions": 24
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 24,
+            "candidate_decisions": 24
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-surprise-e70c8fa23bb9",
+        "split": "cafe",
+        "emotion": "surprise",
+        "pcm_sha256": "e70c8fa23bb93b1eaafc525fd6811c0e9f04bc27564132da55bbdccf4311c8d3"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000013,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999942,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999964,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.4332275390625e-05,
+          "cosine": 0.9999999999999946,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 7.62939453125e-06,
+          "cosine": 0.9999999999999976,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999966,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999531,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999531,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0078125,
+              "cosine": 0.9999999999999273,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999536,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.02734375,
+              "cosine": 0.9999999999989416,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.04296875,
+              "cosine": 0.9999999999999457,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0079345703125,
+              "cosine": 0.9999999999995641,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.04296875,
+              "cosine": 0.9999999999999455,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999132,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.046875,
+              "cosine": 0.9999999999999446,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 2.682209014892578e-07,
+            "cosine": 0.9999999999996803,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999531,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999531,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0078125,
+              "cosine": 0.9999999999999273,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999536,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.02734375,
+              "cosine": 0.9999999999989416,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.04296875,
+              "cosine": 0.9999999999999457,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0079345703125,
+              "cosine": 0.9999999999995641,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.04296875,
+              "cosine": 0.9999999999999455,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999132,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.046875,
+              "cosine": 0.9999999999999446,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 2.682209014892578e-07,
+            "cosine": 0.9999999999996803,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 20,
+            "candidate_decisions": 20
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 20,
+            "candidate_decisions": 20
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-neutral-bd77387a7b93",
+        "split": "oreau",
+        "emotion": "neutral",
+        "pcm_sha256": "bd77387a7b93b39cc5e8868e599e0f65f1b6453b4590cf1e9d001d913c53af88"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999969,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.0517578125e-05,
+          "cosine": 0.9999999999999951,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999978,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 3.0517578125e-05,
+          "cosine": 0.9999999999999966,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999544,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999544,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0078125,
+              "cosine": 0.9999999999999277,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999553,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.10980224609375,
+              "cosine": 0.9999999999784327,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.109375,
+              "cosine": 0.9999999999996871,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.01318359375,
+              "cosine": 0.9999999999982431,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.107666015625,
+              "cosine": 0.9999999999997004,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.0330810546875,
+              "cosine": 0.9999999999995515,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.1044921875,
+              "cosine": 0.999999999999707,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 2.682209014892578e-07,
+            "cosine": 0.9999999999997914,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999544,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999544,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0078125,
+              "cosine": 0.9999999999999277,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999553,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.10980224609375,
+              "cosine": 0.9999999999784327,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.109375,
+              "cosine": 0.9999999999996871,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.01318359375,
+              "cosine": 0.9999999999982431,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.107666015625,
+              "cosine": 0.9999999999997004,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.0330810546875,
+              "cosine": 0.9999999999995515,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.1044921875,
+              "cosine": 0.999999999999707,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 2.682209014892578e-07,
+            "cosine": 0.9999999999997914,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 15,
+            "candidate_decisions": 15
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 15,
+            "candidate_decisions": 15
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-surprise-17c071bdf88e",
+        "split": "oreau",
+        "emotion": "surprise",
+        "pcm_sha256": "17c071bdf88e6f594151ca35896ad90e913aad80cdac9d3ac61ea6ee29c44c5c"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999957,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999947,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999983,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 4.57763671875e-05,
+          "cosine": 0.9999999999999968,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "out",
+              "max_abs": 0.001220703125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "pre_encode",
+              "max_abs": 0.001220703125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.03125,
+              "cosine": 0.9999999999999571,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "layer_12",
+              "max_abs": 0.00146484375,
+              "cosine": 0.9999999999986842,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.03125,
+              "cosine": 0.9999999999999571,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0068359375,
+              "cosine": 0.9999999999999318,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.03125,
+              "cosine": 0.9999999999999575,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.009033203125,
+              "cosine": 0.999999999999923,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0390625,
+              "cosine": 0.9999999999999549,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.003326416015625,
+              "cosine": 0.999999999999722,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0390625,
+              "cosine": 0.9999999999999545,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999257,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0390625,
+              "cosine": 0.999999999999953,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.129243850708008e-07,
+            "cosine": 0.999999999999678,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "out",
+              "max_abs": 0.001220703125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "pre_encode",
+              "max_abs": 0.001220703125,
+              "cosine": 0.9999999999999581,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.03125,
+              "cosine": 0.9999999999999571,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "layer_12",
+              "max_abs": 0.00146484375,
+              "cosine": 0.9999999999986842,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.03125,
+              "cosine": 0.9999999999999571,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0068359375,
+              "cosine": 0.9999999999999318,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.03125,
+              "cosine": 0.9999999999999575,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.009033203125,
+              "cosine": 0.999999999999923,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0390625,
+              "cosine": 0.9999999999999549,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.003326416015625,
+              "cosine": 0.999999999999722,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0390625,
+              "cosine": 0.9999999999999545,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999257,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0390625,
+              "cosine": 0.999999999999953,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.129243850708008e-07,
+            "cosine": 0.999999999999678,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 17,
+            "candidate_decisions": 17
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 17,
+            "candidate_decisions": 17
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-sadness-51a5eef70768",
+        "split": "oreau",
+        "emotion": "sadness",
+        "pcm_sha256": "51a5eef7076828ba31439f7698b06bc3e85ae3ee421cebf93c06f580ad7d71e2"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000009,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999956,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999951,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999972,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 3.0517578125e-05,
+          "cosine": 0.9999999999999962,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999524,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999524,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.999999999999926,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999529,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.031982421875,
+              "cosine": 0.9999999999993556,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.028564453125,
+              "cosine": 0.999999999999938,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.001983642578125,
+              "cosine": 0.999999999999867,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.029296875,
+              "cosine": 0.9999999999999375,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999998984,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.025390625,
+              "cosine": 0.999999999999936,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.129243850708008e-07,
+            "cosine": 0.9999999999997554,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999524,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999524,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0107421875,
+              "cosine": 0.999999999999926,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999529,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.031982421875,
+              "cosine": 0.9999999999993556,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.028564453125,
+              "cosine": 0.999999999999938,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.001983642578125,
+              "cosine": 0.999999999999867,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.029296875,
+              "cosine": 0.9999999999999375,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999998984,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.025390625,
+              "cosine": 0.999999999999936,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.129243850708008e-07,
+            "cosine": 0.9999999999997554,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 16,
+            "candidate_decisions": 16
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 16,
+            "candidate_decisions": 16
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-happiness-40d7959b6532",
+        "split": "oreau",
+        "emotion": "happiness",
+        "pcm_sha256": "40d7959b653221790edb964c93e859a4e5b0220c4d67e4e8ad841ab685c5f098"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999967,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.999999999999996,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 0.00011444091796875,
+          "cosine": 0.9999999999999655,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999978,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 7.62939453125e-05,
+          "cosine": 0.9999999999999875,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999182,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999182,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0126953125,
+              "cosine": 0.9999999999998777,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999184,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.0048828125,
+              "cosine": 0.9999999999999225,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999152,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.00262451171875,
+              "cosine": 0.9999999999998289,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999153,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999998918,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999136,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 2.905726432800293e-07,
+            "cosine": 0.9999999999997826,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999182,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999182,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.0126953125,
+              "cosine": 0.9999999999998777,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999184,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.0048828125,
+              "cosine": 0.9999999999999225,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999152,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.00262451171875,
+              "cosine": 0.9999999999998289,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999153,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999998918,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0234375,
+              "cosine": 0.9999999999999136,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 2.905726432800293e-07,
+            "cosine": 0.9999999999997826,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 15,
+            "candidate_decisions": 15
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 15,
+            "candidate_decisions": 15
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-disgust-bd4f77f5c27b",
+        "split": "oreau",
+        "emotion": "disgust",
+        "pcm_sha256": "bd4f77f5c27b87ecd8ac4093c9de17b228f60444eb8f8ab69438817e7dc0b7f0"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999997,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999999,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999982,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999974,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999953,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999973,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 3.0517578125e-05,
+          "cosine": 0.9999999999999966,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999525,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999525,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.017578125,
+              "cosine": 0.9999999999999192,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999526,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.02880859375,
+              "cosine": 0.9999999999982417,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.032470703125,
+              "cosine": 0.9999999999999313,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.004638671875,
+              "cosine": 0.9999999999997121,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.032470703125,
+              "cosine": 0.9999999999999314,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999087,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.032470703125,
+              "cosine": 0.9999999999999301,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.5762786865234375e-07,
+            "cosine": 0.9999999999996498,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999525,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999525,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.017578125,
+              "cosine": 0.9999999999999192,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999526,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.02880859375,
+              "cosine": 0.9999999999982417,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.032470703125,
+              "cosine": 0.9999999999999313,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.004638671875,
+              "cosine": 0.9999999999997121,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.032470703125,
+              "cosine": 0.9999999999999314,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.01953125,
+              "cosine": 0.9999999999999087,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.032470703125,
+              "cosine": 0.9999999999999301,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.5762786865234375e-07,
+            "cosine": 0.9999999999996498,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 11,
+            "candidate_decisions": 11
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 11,
+            "candidate_decisions": 11
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-anger-aa4ce25e2ed2",
+        "split": "oreau",
+        "emotion": "anger",
+        "pcm_sha256": "aa4ce25e2ed256d9d935d4ea9c77a99db60ef07c96cea2cfe696632df592edca"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999994,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.000000000000001,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999948,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999989,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999968,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999951,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999986,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 6.103515625e-05,
+          "cosine": 0.9999999999999971,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999603,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999603,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.009765625,
+              "cosine": 0.9999999999999358,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999605,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.003173828125,
+              "cosine": 0.999999999999944,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999589,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0029296875,
+              "cosine": 0.9999999999997677,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.021484375,
+              "cosine": 0.9999999999999588,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999318,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0224609375,
+              "cosine": 0.999999999999957,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.129243850708008e-07,
+            "cosine": 0.9999999999996521,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999603,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999603,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.009765625,
+              "cosine": 0.9999999999999358,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999605,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.003173828125,
+              "cosine": 0.999999999999944,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.0205078125,
+              "cosine": 0.9999999999999589,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0029296875,
+              "cosine": 0.9999999999997677,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.021484375,
+              "cosine": 0.9999999999999588,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999318,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.0224609375,
+              "cosine": 0.999999999999957,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 3.129243850708008e-07,
+            "cosine": 0.9999999999996521,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 25,
+            "candidate_decisions": 25
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 25,
+            "candidate_decisions": 25
+          }
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-fear-264f4f372712",
+        "split": "oreau",
+        "emotion": "fear",
+        "pcm_sha256": "264f4f3727129cbdaed2d3bdf7182246649e2dfbba6c5b545fc03959e1b7a4d4"
+      },
+      "qualification": "NUMERIC_PARITY_NOT_ESTABLISHED",
+      "frontend": {
+        "preemphasis": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000004,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "frames": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "normalized": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_output": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_frontend": {
+        "window": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "filterbank": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "fft_complex": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999998,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "magnitude": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "power": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "mel_projection": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "log_mel": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000007,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "common_subsampling": {
+        "conv_00": {
+          "max_abs": 0.0,
+          "cosine": 0.9999999999999972,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "relu_00": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_02": {
+          "max_abs": 1.9073486328125e-06,
+          "cosine": 0.9999999999999977,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_03": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999952,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_03": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_05": {
+          "max_abs": 3.814697265625e-06,
+          "cosine": 0.9999999999999984,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "conv_06": {
+          "max_abs": 3.814697265625e-05,
+          "cosine": 0.9999999999999967,
+          "numeric_pass": true,
+          "bitwise_equal": false
+        },
+        "relu_06": {
+          "max_abs": 0.0,
+          "cosine": 1.0000000000000002,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        },
+        "out": {
+          "max_abs": 0.0,
+          "cosine": 1.0,
+          "numeric_pass": true,
+          "bitwise_equal": true
+        }
+      },
+      "encoder": {
+        "native": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999551,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999551,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999999312,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999556,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.0211181640625,
+              "cosine": 0.9999999999989788,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.021484375,
+              "cosine": 0.9999999999999438,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0035400390625,
+              "cosine": 0.9999999999997576,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.02099609375,
+              "cosine": 0.9999999999999438,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.017578125,
+              "cosine": 0.9999999999999232,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.02001953125,
+              "cosine": 0.9999999999999427,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.805624485015869e-07,
+            "cosine": 0.9999999999994548,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        },
+        "shared_mel": {
+          "failed_stages": [
+            {
+              "name": "post_pos_enc",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999551,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_input",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999551,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff1",
+              "max_abs": 0.01171875,
+              "cosine": 0.9999999999999312,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff1",
+              "max_abs": 0.015625,
+              "cosine": 0.9999999999999556,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_attention",
+              "max_abs": 0.0211181640625,
+              "cosine": 0.9999999999989788,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_attention",
+              "max_abs": 0.021484375,
+              "cosine": 0.9999999999999438,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_convolution",
+              "max_abs": 0.0035400390625,
+              "cosine": 0.9999999999997576,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_convolution",
+              "max_abs": 0.02099609375,
+              "cosine": 0.9999999999999438,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_ff2",
+              "max_abs": 0.017578125,
+              "cosine": 0.9999999999999232,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            },
+            {
+              "name": "block0_after_ff2",
+              "max_abs": 0.02001953125,
+              "cosine": 0.9999999999999427,
+              "numeric_pass": false,
+              "bitwise_equal": false
+            }
+          ],
+          "valid_final_output": {
+            "max_abs": 4.805624485015869e-07,
+            "cosine": 0.9999999999994548,
+            "numeric_pass": true,
+            "bitwise_equal": false
+          }
+        }
+      },
+      "tdt": {
+        "native": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 22,
+            "candidate_decisions": 22
+          }
+        },
+        "shared_mel": {
+          "numeric_pass": true,
+          "tdt_discrete_exact": true,
+          "output_exact": {
+            "ids": true,
+            "frames": true,
+            "durations": true,
+            "text": true
+          },
+          "decision_counts": {
+            "exact": true,
+            "reference_decisions": 22,
+            "candidate_decisions": 22
+          }
+        }
+      }
+    }
+  ],
+  "independent_r7_r8b_control": "NOT_RERUN_IN_THIS_LOCAL_MEASUREMENT_NEW_CI_RUN_REQUIRED",
+  "gpu": "NOT_RUN",
+  "microphone": "NOT_RUN"
+}
