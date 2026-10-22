@@ -1,5 +1,35 @@
 # Half Duplex: ninth standalone Extended component
 
+## R14 — FP64 operator audit and expanded corpus
+
+The Half Duplex source is pinned to
+`7351b3e9695d76cbb7484a6632b290c8b32d6c5c`. It retains R9 native Rust math
+and the original numerical gates while adding exact decoding controls and
+CPU FP64 replays on observed operands. The integrated CPU profile keeps full
+R13 qualification on the original 14 and also exercises the FP64 oracle on
+their real inputs. The physical CUDA profile measures those same 14 PCM hashes
+plus 28 additional distinct CAMEO utterances, with separate cohort summaries.
+
+Relative tolerances are surveyed element by element; none is automatically
+fitted or approved from the GPU outputs. Cross-backend float bits remain
+diagnostic. FP64 references are local operator replays, not a full FP64 ASR
+reference or an activation substitute. An audit can complete all 42 clips and
+still block promotion because original numerical gates remain mandatory.
+
+Local preparation validation: 194 software contracts pass, actual installed
+NeMo modules pass 23 FP64 reference replays and 41 candidate-layout replays,
+and all 22 generated R9 Rust source files are byte-identical to the previous
+candidate. No physical GPU was executed during this preparation.
+
+The user separately confirmed native CUDA microphone transcription outside
+Podman/CI with candidate `711776ce60b3558b3f338f90ae7687552f0a0c84`. This is
+user-reported functional evidence, not a WER or numerical qualification. The
+local R9 command requires `HDB2C6_MASK_MODE=both`, as the CI launcher supplies.
+No private recording or transcription is published. See the source's
+`half_duplex/ci/README-R14-CUDA-AUDIT.md` for evidence and scope.
+
+## Original nine-source integration
+
 The user requested hosted preparation/CPU/CUDA compilation now and a later
 physical GPU run started with the existing local unified runner.
 `half_duplex_standalone` is a main-based source copy of the application on
