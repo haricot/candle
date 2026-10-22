@@ -1,0 +1,13 @@
+/target/
+/models/
+/reports/
+/reference-data/
+/.venv-reference/
+/.venv-convert/
+/integration/
+!Cargo.lock
+*.wav
+*.flac
+*.mp3
+*.safetensors
+*.onnx

@@ -1,0 +1,31 @@
+{
+  "scope": "FOUR_PUBLIC_TURNS_WITH_REFERENCE_FIRERED_AND_SMART_FP32_NO_ASR",
+  "reference_smart_dtype": "FP32",
+  "turns": [
+    {
+      "reason": "SMART_TURN_CONFIRMED",
+      "samples": 51200,
+      "pcm_sha256": "a99eb999a1b5e03b5822ed6b20a92b5a9180d470aee5930e1a49ee54d89853ef"
+    },
+    {
+      "reason": "SMART_TURN_CONFIRMED",
+      "samples": 59200,
+      "pcm_sha256": "b52be170929cad95329ebc1cbc075f69d0625403e27f1a1e520b456c12f5f127"
+    },
+    {
+      "reason": "SMART_TURN_CONFIRMED",
+      "samples": 51200,
+      "pcm_sha256": "d2d8f647df662612d0d66cf9401db9e5f3739c46d544465877fa1192dbddb66f"
+    },
+    {
+      "reason": "SMART_TURN_CONFIRMED",
+      "samples": 60800,
+      "pcm_sha256": "3cec0f68ddfa3efc0696ec2cde9ca939e99bdd847a89293c0f209d7ef8debe2a"
+    }
+  ],
+  "turn_pcm_and_reason_exact": true,
+  "controller_events_and_sample_clocks_exact": true,
+  "native_python_runtime": false,
+  "native_onnx_runtime": false,
+  "pass": true
+}

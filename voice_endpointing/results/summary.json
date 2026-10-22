@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-22",
+  "base_main_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+  "extended_sha": "6b29b7f43a574fae32984b34b46de7c1d9b145eb",
+  "rust": "1.99.0",
+  "rust_unit_tests": {
+    "passed": 6,
+    "failed": 0
+  },
+  "native_model_cases_on_main": 10,
+  "native_model_cases_on_extended": 10,
+  "model_paths": [
+    "native_pcm",
+    "shared_reference_features"
+  ],
+  "multi_turn_pcm_reason_and_sample_events_exact": true,
+  "multi_turn_count": 4,
+  "resident_combined_cpu_build": "PASS",
+  "resident_combined_gpu_execution": "NOT_RUN",
+  "native_microphone_on_user_hardware": "NOT_RUN",
+  "r9_library_and_probe_sources_unchanged": true,
+  "python_or_onnx_linked_in_native_executable": false,
+  "optional_upstream_hub_cli_disabled": true,
+  "cpu_binary_sha256": "804bb5848d460e4ffeff626648a6478863eb3630663089bd52162dcb4b1f90e8",
+  "artifacts": {
+    "qualification-extended.json": "519876c6b12ad0b2cccbe413ca1d76193a6e1c8110f0f2e9cc52bd227520008e",
+    "qualification-main.json": "519876c6b12ad0b2cccbe413ca1d76193a6e1c8110f0f2e9cc52bd227520008e",
+    "resident-build.json": "6479babe4aaa7354cce357788bc33b7969ba0a0fb4c595688729d016e28da4c2",
+    "session-qualification.json": "59e764c624f36547f72ba3d324b641d387261f1afe711702602f40424e408f4e"
+  }
+}

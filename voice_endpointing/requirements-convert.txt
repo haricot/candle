@@ -1,0 +1,6 @@
+# One-time asset conversion and R9 build preparation. Not runtime dependencies.
+numpy==2.5.4
+onnx==1.23.2
+safetensors==0.8.0
+kaldiio==2.18.1
+PyYAML==6.0.3

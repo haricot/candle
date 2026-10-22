@@ -1,0 +1,63 @@
+name: Native voice endpointing CPU
+on:
+  push:
+    branches: [voice_endpointing_standalone]
+    paths:
+      - 'voice_endpointing/**'
+      - '.github/workflows/voice-endpointing.yml'
+      - 'Cargo.toml'
+      - 'candle-core/src/npy.rs'
+      - 'candle-core/src/pickle.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-endpointing-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      RAYON_NUM_THREADS: '4'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      ENDPOINT_REFERENCE_CACHE: ${{ runner.temp }}/endpoint-cache
+      ENDPOINT_REPORT_ROOT: ${{ runner.temp }}/endpoint-report
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r voice_endpointing/requirements-reference.txt
+      - name: Native models against pinned real upstream references
+        run: bash voice_endpointing/ci/check.sh
+      - name: Compile resident half-duplex against the promoted Extended source
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/endpoint-extended" 6b29b7f43a574fae32984b34b46de7c1d9b145eb
+          python voice_endpointing/tools/check_session.py \
+            --half-root "$RUNNER_TEMP/endpoint-extended/half_duplex" \
+            --models "$ENDPOINT_REPORT_ROOT/models" --cache "$ENDPOINT_REFERENCE_CACHE" \
+            --binary voice_endpointing/target/release/voice-endpointing \
+            --output "$ENDPOINT_REPORT_ROOT/session"
+          python voice_endpointing/tools/prepare_half_duplex.py \
+            --half-root "$RUNNER_TEMP/endpoint-extended/half_duplex" \
+            --candle-root "$RUNNER_TEMP/endpoint-extended" \
+            --output "$RUNNER_TEMP/endpoint-resident"
+          cargo check --release --locked \
+            --manifest-path "$RUNNER_TEMP/endpoint-resident/r9/Cargo.toml" --bin hdb1_native
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-endpointing-cpu-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/endpoint-report/qualification.json
+            ${{ runner.temp }}/endpoint-report/cases/qualification.json
+            ${{ runner.temp }}/endpoint-report/session/session-qualification.json
+            ${{ runner.temp }}/endpoint-resident/native-build.json
+          if-no-files-found: warn
