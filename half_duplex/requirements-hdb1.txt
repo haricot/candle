@@ -1,0 +1,7 @@
+# Separate CPU ONNX environment; Candle remains in its Rust runtime.
+numpy>=1.24,<3
+onnxruntime>=1.18,<2
+kaldi-native-fbank>=1.15,<2
+kaldiio>=2.18,<3
+transformers>=4.40,<5
+huggingface_hub>=0.25,<2
