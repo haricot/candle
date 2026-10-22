@@ -1,3 +1,4 @@
+#ifndef NO_WMMA_KERNEL
 /**
  *  @brief  WMMA-based grouped MoE GEMM kernel.
  *
@@ -285,3 +286,4 @@ extern "C" void moe_gemm_wmma(
     }
 #endif
 }
+#endif
