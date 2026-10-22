@@ -44,3 +44,30 @@ unchanged.
 The standalone source carries the same ZIP9.0.3 dependency/API migration as
 the other reviewed sources (Cargo.toml, candle-core/src/npy.rs and pickle.rs).
 This avoids main's yanked ZIP8.6.0 without changing neural numerical kernels.
+
+## Hosted CUDA toolchain repair — 2026-10-22
+
+Run 39738701484 passed all 9 independent CPU jobs and the integrated CPU gate.
+The actual integrated R13 artifact 12410272308 contains 29 JSON files and
+confirms 14/14 PASS_ALL_DECLARED_NUMERIC_GATES with unchanged thresholds.
+Its ZIP SHA256 is `4b9281ba1e2549ce8e4e7eb9d5f9fd2aaab3013558519b529bccd7b6d4c759c3`.
+
+Hosted CUDA stopped before native STT compilation: the application requests
+Rust 1.99.0/rustfmt/clippy, while the compiler image installed only stable 1.99.1.
+Rustup attempted installation into root-owned /opt/rustup from the non-root
+Docker job, failing with permission denied. The physical GPU job was skipped.
+
+Preinstall the exact 1.99.0 toolchain and both requested components while
+building the hosted image. A new image-build preflight uses UID 65534 and an
+unreachable Rust distribution server to resolve the same complete toolchain
+file and run cargo/rustc/rustfmt/clippy without installation or write access.
+Local real Rustup testing confirms all four commands resolve offline against
+the application's actual toolchain file; the local host maps only UID 0, so
+the non-root check is explicitly performed by the hosted image build.
+
+The model/application sources, numerical thresholds and standalone source
+pins remain unchanged. Launch a fresh Extended campaign so its immutable
+orchestration checkout uses the repaired image. Old-run retries would retain
+the broken recipe; the existing run-bound CPU gates and runner selection
+remain enforced for the new campaign. The user's local runner image does
+not require this hosted-image repair.

@@ -2,6 +2,7 @@
 # Experimental: Ubuntu 26.04 + official NVIDIA ubuntu2404 CUDA packages.
 # Pinned versions reproduce the physical Pascal SM61 Podman build.
 FROM docker.io/library/ubuntu:26.04
+ARG HALF_DUPLEX_RUST_TOOLCHAIN=1.99.0
 ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda-12.9 \
     CUDA_ROOT=/usr/local/cuda-12.9 \
@@ -74,7 +75,23 @@ RUN set -eux; \
 RUN set -eux; \
     curl --fail --location --show-error --silent --retry 3 https://sh.rustup.rs \
       | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable; \
+    /opt/cargo/bin/rustup toolchain install "$HALF_DUPLEX_RUST_TOOLCHAIN" \
+      --profile minimal --component rustfmt --component clippy; \
     /opt/cargo/bin/rustc --version; \
     /opt/cargo/bin/cargo --version; \
     chmod -R a+rX /opt/rustup /opt/cargo
+# The hosted job uses a non-root UID and a root-owned, read-only toolchain.
+# Exercise the application's complete toolchain file without network access.
+USER 65534:65534
+RUN --network=none set -eux; \
+    probe="$(mktemp -d)"; \
+    cd "$probe"; \
+    printf '[toolchain]\nchannel = "%s"\nprofile = "minimal"\ncomponents = ["rustfmt", "clippy"]\n' \
+      "$HALF_DUPLEX_RUST_TOOLCHAIN" > rust-toolchain.toml; \
+    export RUSTUP_DIST_SERVER=http://127.0.0.1:9; \
+    /opt/cargo/bin/cargo --version; \
+    /opt/cargo/bin/rustc --version; \
+    /opt/cargo/bin/rustfmt --version; \
+    /opt/cargo/bin/cargo-clippy --version
+USER root
 WORKDIR /work
