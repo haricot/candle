@@ -1,0 +1,36 @@
+/target/
+/reports/*
+!/reports/.gitkeep
+/models/
+# All personal recordings remain local, including inside tests/fixtures.
+# Only the known synthetic tone is versioned; never use a broad fixtures exception.
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.ogg
+*.opus
+*.aif
+*.aiff
+*.aac
+!/tests/fixtures/hdb0-tone-16k.wav
+
+# Local-only evaluation material and derived ASR outputs (any extension).
+/tests/local/
+/tests/private/
+/tests/recordings/
+/tests/audio-private/
+/local-tests/
+/local-recordings/
+*.onnx
+*.gguf
+*.safetensors
+*.nemo
+*.log
+/.venv/
+/integration/parakeet-candle/runtime/
+/__pycache__/
+
+.venv-hdb1/
+models/hdb1/
+external/

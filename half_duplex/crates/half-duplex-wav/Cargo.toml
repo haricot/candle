@@ -1,0 +1,8 @@
+[package]
+name = "half-duplex-wav"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+half-duplex-core = { path = "../half-duplex-core" }
