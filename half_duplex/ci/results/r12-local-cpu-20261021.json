@@ -1,0 +1,964 @@
+{
+  "scope": "BLOCK0_NORM_FF1_COMMON_INPUT_ONLY_NOT_FULL_STT",
+  "expected_clips": 14,
+  "completed_clips": 14,
+  "backend_requested": "cpu",
+  "execution_status": "COMPLETE",
+  "cpu_bitwise_passed": 14,
+  "cuda_bitwise_passed": 0,
+  "qualification": "PASS_BITWISE_14_COMMON_INPUTS",
+  "gpu_execution": "NOT_RUN",
+  "full_stt_qualification": "NOT_EVALUATED",
+  "model_operator_replaced": false,
+  "microphone": "NOT_RUN",
+  "results": [
+    {
+      "clip": {
+        "id": "cafe-anger-6794242ad35a",
+        "split": "cafe",
+        "emotion": "anger",
+        "pcm_sha256": "6794242ad35ae6125884457d25f481d520251656044e4ba1f7bfb1c8ae0b1a52"
+      },
+      "shape": [
+        1,
+        42,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "8502a0a8386b881622bd258c76ea72399db5bb9086e4fe8aecb3632fc807667e",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "e97241d00de93cfe7c0880a9ee74b434fb0d3d247c411f84e810a2be3e983f89",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          42
+        ],
+        "elements": 26880,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000007,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          42,
+          640
+        ],
+        "elements": 26880,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 0.9999999999999999,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-disgust-ae49ff259f21",
+        "split": "cafe",
+        "emotion": "disgust",
+        "pcm_sha256": "ae49ff259f21ccba7cc70ba7ac364c152c2eb3cf7ec21aef395128f3204cc65d"
+      },
+      "shape": [
+        1,
+        58,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "0edce8af51b18fc92e15bf84193e06724be4bc3d409a09848b2e02253c4113c2",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "b795dd7335ef80d013c647133ae59a58a370e505e03b536f09347d5bc96b0514",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          58
+        ],
+        "elements": 37120,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.000000000000001,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          58,
+          640
+        ],
+        "elements": 37120,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-fear-ee405e4aa7b7",
+        "split": "cafe",
+        "emotion": "fear",
+        "pcm_sha256": "ee405e4aa7b79c3dfb67cefcb13b0709d878793511c3272f58a165ef15e4fb2d"
+      },
+      "shape": [
+        1,
+        42,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "218978ec90adc8bc91b16b7fd66a236d2f1661103ce0ea2c554a3522a359f0c5",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "b05b274957dfe189a5eb44c9c3430fa45174f4564529ba40c6c3973940926434",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          42
+        ],
+        "elements": 26880,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          42,
+          640
+        ],
+        "elements": 26880,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-happiness-7cf7df31b5c7",
+        "split": "cafe",
+        "emotion": "happiness",
+        "pcm_sha256": "7cf7df31b5c79f75c659af1a574fa7c93ce3d9b8126383ff20879005a58bbe56"
+      },
+      "shape": [
+        1,
+        48,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "6ce520119d00b3e5a16f006ce5ae2a91293a5fbd2d7dcfd20a3eb4d68ae891cc",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "c87e13dfa79198a33a4ec88cbc3ff447be47d86ddaab40d199d583afe6c2b6b7",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          48
+        ],
+        "elements": 30720,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000009,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          48,
+          640
+        ],
+        "elements": 30720,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-neutral-3863734a5ee4",
+        "split": "cafe",
+        "emotion": "neutral",
+        "pcm_sha256": "3863734a5ee478104a3152a293f5f5b6c57ba9edbbfe21bea84bda0c94f65028"
+      },
+      "shape": [
+        1,
+        50,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "b392ae9b2501bd602338bedf47b0d4e9f4234245f11e810b426387d01b33a7ec",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "6a22d39d403444c7a78cdefc802dd487136fecb6c63beddbf457c6d4e577bb3d",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          50
+        ],
+        "elements": 32000,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          50,
+          640
+        ],
+        "elements": 32000,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-sadness-343548448bb1",
+        "split": "cafe",
+        "emotion": "sadness",
+        "pcm_sha256": "343548448bb1d83f303d0c8b1804f3f9d8990c3160d90c046a37e7aabea831b4"
+      },
+      "shape": [
+        1,
+        52,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "f7ac9b7d201c8d33dde6546611e047b2eae618dbbf5ef430d883233c0adeb3c2",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "39483e0cec134be64290ccc395992bc1d875bbb432e999bdb75d2a4e8c3fb760",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          52
+        ],
+        "elements": 33280,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000007,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          52,
+          640
+        ],
+        "elements": 33280,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "cafe-surprise-e70c8fa23bb9",
+        "split": "cafe",
+        "emotion": "surprise",
+        "pcm_sha256": "e70c8fa23bb93b1eaafc525fd6811c0e9f04bc27564132da55bbdccf4311c8d3"
+      },
+      "shape": [
+        1,
+        44,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "bc112e9c26171aaa7def32c90d391016b2afb71b51eddcc15762c622a6675d0d",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "060fdd62690fce1db092db0335816594d28b4f50ecca265cb9bec039ce5da98e",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          44
+        ],
+        "elements": 28160,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000007,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          44,
+          640
+        ],
+        "elements": 28160,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-neutral-bd77387a7b93",
+        "split": "oreau",
+        "emotion": "neutral",
+        "pcm_sha256": "bd77387a7b93b39cc5e8868e599e0f65f1b6453b4590cf1e9d001d913c53af88"
+      },
+      "shape": [
+        1,
+        30,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "c3dea822b4c7e44b8b6be3d95086fda14a56ca77e54f1a270e830051b29bcf4d",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "57ed0d26dbd52253dae060d6777c40a0fb6149936b81fbf08c542cfc9f22b010",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          30
+        ],
+        "elements": 19200,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 0.9999999999999998,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          30,
+          640
+        ],
+        "elements": 19200,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-surprise-17c071bdf88e",
+        "split": "oreau",
+        "emotion": "surprise",
+        "pcm_sha256": "17c071bdf88e6f594151ca35896ad90e913aad80cdac9d3ac61ea6ee29c44c5c"
+      },
+      "shape": [
+        1,
+        36,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "326c647696ff4b290f04c2409dd0dc529e0d130a137dd3589acd5eb404636512",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "4dd04164df8ea26ce8ea2ebc67c39d586d78b13a239b591bf1fc689425c7e8a1",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          36
+        ],
+        "elements": 23040,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          36,
+          640
+        ],
+        "elements": 23040,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-sadness-51a5eef70768",
+        "split": "oreau",
+        "emotion": "sadness",
+        "pcm_sha256": "51a5eef7076828ba31439f7698b06bc3e85ae3ee421cebf93c06f580ad7d71e2"
+      },
+      "shape": [
+        1,
+        30,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "0a63cb15a7762c2c029f3e5252a939b15e886558e8196abca96f771f21de305a",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "1fc82f21ca090b1e04e7d0aa2953c91279f32d8e1d344cafab44cde06c855b1f",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          30
+        ],
+        "elements": 19200,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          30,
+          640
+        ],
+        "elements": 19200,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000007,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-happiness-40d7959b6532",
+        "split": "oreau",
+        "emotion": "happiness",
+        "pcm_sha256": "40d7959b653221790edb964c93e859a4e5b0220c4d67e4e8ad841ab685c5f098"
+      },
+      "shape": [
+        1,
+        32,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "d817537a820b84ca58b074a1df90fdc8f31707688090e4dd93b23ea9dd564e03",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "1690fb6eeff7042bf79231ef2393b401a9b57df29e0c68d8e79d7c78ac7b865d",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          32
+        ],
+        "elements": 20480,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          32,
+          640
+        ],
+        "elements": 20480,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-disgust-bd4f77f5c27b",
+        "split": "oreau",
+        "emotion": "disgust",
+        "pcm_sha256": "bd4f77f5c27b87ecd8ac4093c9de17b228f60444eb8f8ab69438817e7dc0b7f0"
+      },
+      "shape": [
+        1,
+        26,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "99ff45bd5db2e0db3909992caf493dd82958bfac33f6ca611872e1354a56d585",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "50285ba159e55c984115ed80a7e859224cd5c64de05a5dcef6246ef3c0bece87",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          26
+        ],
+        "elements": 16640,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          26,
+          640
+        ],
+        "elements": 16640,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-anger-aa4ce25e2ed2",
+        "split": "oreau",
+        "emotion": "anger",
+        "pcm_sha256": "aa4ce25e2ed256d9d935d4ea9c77a99db60ef07c96cea2cfe696632df592edca"
+      },
+      "shape": [
+        1,
+        36,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "e91220edb59a40630d4337fc3e39adefc5a5dbf941a56b3a2a3f0a9b05c92598",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "8b123a84549880928712f37dbcbb24582b11930f6ea0b594e1b436ecc13f2cf7",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          36
+        ],
+        "elements": 23040,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000004,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          36,
+          640
+        ],
+        "elements": 23040,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    },
+    {
+      "clip": {
+        "id": "oreau-fear-264f4f372712",
+        "split": "oreau",
+        "emotion": "fear",
+        "pcm_sha256": "264f4f3727129cbdaed2d3bdf7182246649e2dfbba6c5b545fc03959e1b7a4d4"
+      },
+      "shape": [
+        1,
+        26,
+        640
+      ],
+      "epsilon": 1e-05,
+      "lanes": 8,
+      "input_sha256": "fc99c85015b362985851cad978a3dae573ccf3ef1a2b088fe60b25b03c054de9",
+      "gamma_sha256": "fc8b7cc02f386ef9a803546c00990916904b11a38b91afdefc67474f29fcd45f",
+      "beta_sha256": "deba058f84e6f0dabc81d083e9750d4e15f0b52bf07167d2f4f20cf9621bb2e0",
+      "reference_output_sha256": "cb62beb27410fe90d39e47a0170a30c246727efcb2ab2e9f3b6bae281ca912b0",
+      "instrumentation_control": {
+        "shape": [
+          1,
+          640,
+          26
+        ],
+        "elements": 16640,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      },
+      "cpu_vs_nemo": {
+        "shape": [
+          1,
+          26,
+          640
+        ],
+        "elements": 16640,
+        "bitwise_equal": true,
+        "status": "PASS_BITWISE",
+        "mismatching_f32_words": 0,
+        "mismatching_bits": 0,
+        "max_ulp": 0,
+        "first_difference": null,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "cosine": 1.0000000000000002,
+        "numeric_pass": true,
+        "numeric_limits": {
+          "max_abs": 0.001,
+          "min_cosine": 0.999
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "cpu": {
+      "backend": "CPU_AVX2_ORDERED_FP32",
+      "source_sha256": "69bb5cc772d1d55866042e0f9ddea29ae76dce8c5d60c5b0ef168c8881f51e17",
+      "library_sha256": "5927f8ae4e3ce350239b6fb24d16cff55fa7cf3950e46a539156641ea88471de",
+      "flags": [
+        "-shared",
+        "-fPIC",
+        "-O2",
+        "-mavx2",
+        "-mfma",
+        "-fno-math-errno",
+        "-ffp-contract=fast"
+      ],
+      "compiler": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0"
+    },
+    "source_sha256": {
+      "hdb2c/c3_r12_layernorm.py": "fabd476ebeaab865222ba26eef6bd5201fc32deedb6ecbf966feed5ef5ca9c3c",
+      "hdb2c/layernorm_operator.py": "2217e1c05551ee6e9418cae6f41f4eee06ccbe2cd15d9ce639c3f93c30836ceb",
+      "ci/r12_layernorm.sh": "0e77492826637cd559608fdbb8d65ecb4b37405a1d4ce92cb0414e80cffee373",
+      "ci/local_layernorm.py": "16e2ac24cb98705a3a0db21591a91a9d186969c9a1a7322043f19c78f70d3845"
+    },
+    "reference": {
+      "torch": "2.12.1+cpu",
+      "nemo_toolkit": "2.7.3",
+      "checkpoint_sha256": "0acdaf1e1ebf09094400263006d134d33b0ebb871ebb064253cfd3a7c528903c",
+      "threads": 4,
+      "cpu_capability": "AVX2",
+      "eval_state": {
+        "status": "ALL_MODULES_EVAL_VERIFIED",
+        "before_eval": {
+          "model_training": false,
+          "encoder_training": false,
+          "training_module_count": 0,
+          "training_module_names": [],
+          "position_dropout": {
+            "dropout": {
+              "p": 0.1,
+              "training": false
+            },
+            "dropout_emb": {
+              "p": 0.1,
+              "training": false
+            }
+          }
+        },
+        "after_eval": {
+          "model_training": false,
+          "encoder_training": false,
+          "training_module_count": 0,
+          "training_module_names": [],
+          "position_dropout": {
+            "dropout": {
+              "p": 0.1,
+              "training": false
+            },
+            "dropout_emb": {
+              "p": 0.1,
+              "training": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": []
+}

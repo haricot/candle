@@ -1,0 +1,13 @@
+[package]
+name = "half-duplex-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "half-duplex"
+path = "src/main.rs"
+
+[dependencies]
+half-duplex-core = { path = "../half-duplex-core" }
+half-duplex-wav = { path = "../half-duplex-wav" }
