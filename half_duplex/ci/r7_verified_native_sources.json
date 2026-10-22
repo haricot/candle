@@ -1,0 +1,13 @@
+{
+  "tested_commit": "d98e8120c8f8371576c37de7c52c2619e57b56c4",
+  "run_id": 39456066299,
+  "checkpoint_sha256": "0acdaf1e1ebf09094400263006d134d33b0ebb871ebb064253cfd3a7c528903c",
+  "native_source_sha256": {
+    "src/parakeet/audio.rs": "ca2f7ed03dc1f6b82144e9e24dbb6cf57fcc3649e0f020c064d648580091660d",
+    "src/parakeet/hdb2c_nemo.rs": "e9368c51686ee558e743bece98d3bd1572fe9a82c54b380bff41c7043d6a6be9",
+    "src/parakeet/conformer.rs": "3ecb4ad11003f7e5a3966193fd7929d8565e11b8f13d3ca48a034e0696620915",
+    "src/parakeet/attention.rs": "0c1c6e774815806da8ea3f3a0f42647b9cbf0c30d8d2c2b1c9c65ea5fcd12210",
+    "src/parakeet/model.rs": "d8650b1738dce2ed39c48141bbb25be5452893350eafdf5eb438ed89565a4248",
+    "src/bin/hdb2c_r7_probe.rs": "0ba91c7f5155f75001b7fc11655732de303dcbf7a7a98ce465677bd355fb20b1"
+  }
+}
