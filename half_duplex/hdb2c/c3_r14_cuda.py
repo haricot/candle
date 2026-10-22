@@ -45,7 +45,7 @@ def cohort_summary(results):
     return out
 
 
-def main(corpus, *, keep_raw=False, require_numeric=False):
+def main(corpus, *, keep_raw=False, require_numeric=False, require_functional=False):
     s = settings()
     s['reports'].mkdir(parents=True, exist_ok=True)
     run = take_run_dir(s['reports'])
@@ -71,6 +71,12 @@ def main(corpus, *, keep_raw=False, require_numeric=False):
             reference = report/'nemo'
             ref = json.loads((reference/'manifest.json').read_text())
             discrete = discrete_controls(result)
+            functional = None
+            if require_functional:
+                from .c3_r15_regression import assess, finite_trace
+                finite_trace(reference)
+                functional = {mode: assess(reference, report/('r9_'+mode),
+                    variant='cuda-cudnn', mode=mode) for mode in ('native', 'shared_mel')}
             precision, surveys = {}, {}
             for mode in ('native', 'shared_mel'):
                 target = report/('r9_'+mode)
@@ -84,6 +90,7 @@ def main(corpus, *, keep_raw=False, require_numeric=False):
                 'checkpoint_sha256': result['checkpoint_sha256'],
                 'execution_status': 'COMPLETE' if complete else 'FP64_AUDIT_INCOMPLETE',
                 'discrete_controls': discrete, 'fp64_precision': precision, 'encoder_tolerance_survey': surveys,
+                'functional_controls': functional,
                 'legacy_qualification': result['qualification'],
                 'cross_backend_bitwise': {'status': result['global_bitwise_status'], 'acceptance_gate': False},
                 'tolerance_policy': 'ORIGINAL_GATES_RETAINED_RELATIVE_SURVEY_NOT_APPROVED',
@@ -93,6 +100,7 @@ def main(corpus, *, keep_raw=False, require_numeric=False):
             write_json(published/f'r14-cuda-{index:02}.json', payload)
             results.append({'clip': result['clip'], 'cohort': row['cohort'],
                 'discrete_exact': all(d['all_exact'] for d in discrete.values()),
+                'functional_pass': all(m['pass'] for m in functional.values()) if functional is not None else None,
                 'fp64_complete': complete, 'legacy_qualification': result['qualification'],
                 'final_encoder': result['encoder']['native']['valid_final_output']})
             print(f'HDB2C3_R14_CLIP={index+1}/{len(rows)} cohort={row["cohort"]} '
@@ -118,12 +126,18 @@ def main(corpus, *, keep_raw=False, require_numeric=False):
         'relative_tolerances': 'REVIEW_PENDING_SURVEY_ONLY',
         'cross_backend_bits_block_promotion': False,
         'results': results, 'errors': errors,
+        'functional_qualification': ('PASS_FUNCTIONAL_REGRESSION' if complete and
+            all(r['functional_pass'] is True for r in results) else 'FAIL_FUNCTIONAL_REGRESSION')
+            if require_functional else 'NOT_REQUESTED',
         'limits': 'Same public datasets, additional utterances; no speaker-disjoint, microphone, streaming or broad WER claim.'}
     write_json(published/'r14-cuda-summary.json', summary)
     write_json(run/'summary.json', summary)
     print('HDB2C3_R14='+summary['execution_status']+' '+summary['qualification'], flush=True)
     print('HDB2C3_R14_REPORT='+str(run), flush=True)
-    return 1 if not complete else 2 if require_numeric and not numeric else 0
+    if require_functional:
+        print('HDB2C3_R14_FUNCTIONAL='+summary['functional_qualification'], flush=True)
+    functional_failed = require_functional and summary['functional_qualification'] != 'PASS_FUNCTIONAL_REGRESSION'
+    return 1 if not complete else 2 if functional_failed or (require_numeric and not numeric) else 0
 
 
 if __name__ == '__main__':
@@ -132,5 +146,7 @@ if __name__ == '__main__':
     parser.add_argument('--variant', choices=('cuda-cudnn',), default='cuda-cudnn')
     parser.add_argument('--keep-raw', action='store_true')
     parser.add_argument('--require-numeric', action='store_true')
+    parser.add_argument('--require-functional', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.corpus, keep_raw=args.keep_raw, require_numeric=args.require_numeric))
+    raise SystemExit(main(args.corpus, keep_raw=args.keep_raw, require_numeric=args.require_numeric,
+                          require_functional=args.require_functional))

@@ -18,25 +18,39 @@ case "$stage" in
       --output "$RUNNER_TEMP/halfduplex-extended-cpu-build"
     ;;
   cpu|gpu)
+    policy=../candle-integration/half-duplex-ci.json
+    minimum=short
+    if [[ -f "$policy" ]];then
+      minimum="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile"])' "$policy")"
+    fi
+    profile="${HDB_CI_PROFILE:-$minimum}"
+    case "$minimum/$profile" in
+      short/short|short/full|short/audit|full/full|full/audit|audit/audit) ;;
+      *) echo "HALF_DUPLEX_INVALID_OR_DOWNGRADED_PROFILE=$minimum/$profile" >&2;exit 3 ;;
+    esac
+    export HDB_CI_PROFILE="$profile"
+    # Legacy flags must never select an additional implicit campaign.
+    export HDB2C_R13_CPU_FULL=0 HDB2C_R14_CUDA=0 HDB2C_R14_FP64_REFERENCE=0
+    echo "HALF_DUPLEX_CI_PROFILE=$profile"
     if ! command -v uv >/dev/null;then
       python3 ci/bootstrap_local_uv.py "$RUNNER_TEMP/halfduplex-tools"
       export PATH="$RUNNER_TEMP/halfduplex-tools:$PATH"
     fi
     if [[ "$stage" == cpu ]];then
-      export HDB2C_R13_CPU_FULL=1 HDB2C_R8_VARIANT=cpu
-      export HDB2C_R14_FP64_REFERENCE=1 HDB2C_R14_CUDA=0
+      export HDB2C_R8_VARIANT=cpu
     else
       test "$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i 0 | tr -d '[:space:]')" = 6.1
       export CUDA_COMPUTE_CAP=61 HDB2C_R8_CORPUS=1 HDB2C_R9_TEXT=1
       export HDB2C_R8_VARIANT=cuda-cudnn HDB2C_R13_CPU_FULL=0
-      export HDB2C_R14_CUDA=1 HDB2C_R14_FP64_REFERENCE=0
       echo 'HALF_DUPLEX_GPU=REAL_NATIVE_CUDA_CUDNN_CPU_NEMO_REFERENCE'
       echo 'HALF_DUPLEX_GPU_SCOPE=R9_NATIVE_GPU_NOT_THE_CPU_ONLY_R13_KERNELS'
-      echo 'HALF_DUPLEX_GPU_AUDIT=FP64_OPERATORS_14_REGRESSION_28_ADDITIONAL_CLIPS'
+      if [[ "$profile" == audit ]];then
+        export HDB2C_R14_CUDA=1 HDB2C_R14_REQUIRE_FUNCTIONAL=1
+        echo 'HALF_DUPLEX_GPU_AUDIT=EXPLICIT_FP64_42_CLIPS'
+      fi
     fi
-    # Original full numerical gates remain mandatory; R14 surveys relative
-    # tolerances without approving them from candidate outputs.
-    # The installed Torch wheel stays CPU-only on Pascal in both stages.
+    # Both stages keep the original CPU NeMo reference. Detailed FP64 replay
+    # runs only for an explicitly requested audit; no legacy threshold is fitted.
     bash ci/full_cpu.sh
     ;;
   *) echo 'usage: extended_gate.sh contracts|build|cpu|gpu' >&2;exit 2 ;;

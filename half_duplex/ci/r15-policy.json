@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "policy": "r15-functional",
+  "migration_baseline": {
+    "candidate_sha": "50ed7c1636e93fa5c8bf0a16e90bcce6a5ad7cc1",
+    "run_id": 39815786458,
+    "gpu_artifact_sha256": "075014d7a81b029969f4a768fddd67c08bb16816bc4763330de7ac4a2aa8870a",
+    "cpu_artifact_sha256": "70a6f051871de6f2d53f1ee0824d4c3b88c5378bc2b19f6ef36db3bd929cf549",
+    "functional_cuda_clips": 42,
+    "exact_tdt_decisions_per_path": 965,
+    "cpu_legacy_numeric_clips": 14,
+    "legacy_intermediate_numeric_status": "NUMERIC_PARITY_NOT_ESTABLISHED",
+    "review": "Functional scope accepted by the user; legacy run remains failed and unpromoted."
+  },
+  "short_clips": 4,
+  "full_clips": 42,
+  "final_encoder_limits": {"max_abs": 0.001, "min_cosine": 0.999},
+  "intermediate_numeric_and_bits": "DIAGNOSTIC",
+  "fp64": "EXPLICIT_AUDIT_ONLY"
+}

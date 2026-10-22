@@ -2,6 +2,17 @@
 # Heavy real-model CPU validation; R8+ profiles use all 14 CaFE/Oréau excerpts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ -n "${HDB_CI_PROFILE:-}" ]];then
+  case "$HDB_CI_PROFILE" in short|full|audit) ;; *) echo 'INVALID_HDB_CI_PROFILE' >&2;exit 3 ;; esac
+  case "${HDB2C_R8_VARIANT:-cpu}" in cpu|cuda-cudnn) ;; *) echo 'INVALID_R15_DEVICE' >&2;exit 3 ;; esac
+  for legacy in HDB2C_R13_CPU_FULL HDB2C_R10_CPU HDB2C_R7_FOCUSED HDB2C_R14_FP64_REFERENCE;do
+    if [[ "${!legacy:-0}" == 1 ]];then echo "R15_LEGACY_PROFILE_CONFLICT=$legacy" >&2;exit 3;fi
+  done
+  if [[ "${HDB2C_R14_CUDA:-0}" == 1 && "$HDB_CI_PROFILE" != audit ]];then
+    echo 'R15_FP64_REQUIRES_EXPLICIT_AUDIT' >&2;exit 3
+  fi
+  export HDB2C_R8_CORPUS=1
+fi
 if [[ "${HDB2C_R14_CUDA:-0}" == 1 ]];then
   test "${HDB2C_R8_VARIANT:-cpu}" = cuda-cudnn || { echo 'R14_REAL_CUDA_REQUIRED' >&2;exit 3; }
   test "${HDB2C_R13_CPU_FULL:-0}" = 0 || { echo 'R14_CUDA_AND_R13_CPU_PROFILES_CONFLICT' >&2;exit 3; }
@@ -39,19 +50,32 @@ bootstrap_args=()
 if [[ -n "${HDB2A_CANDLE_ROOT:-}" ]];then
   bootstrap_args=(--candle-root "$HDB2A_CANDLE_ROOT")
 fi
-./run-hdb2a.sh bootstrap "${bootstrap_args[@]}"
+if [[ -z "${HDB_CI_PROFILE:-}" || "${HDB2C_R14_CUDA:-0}" == 1 ]];then
+  ./run-hdb2a.sh bootstrap "${bootstrap_args[@]}"
+fi
 ./run-hdb2a.sh prepare-model "$HDB2C_NEMO"
 ./run-hdb2a.sh check-model-config
 # HDB2-B's in-process measurement hooks must be installed in the freshly
 # bootstrapped pinned runtime before its build gate checks the source marker.
 # This is idempotent and only edits $HDB2A_RUNTIME_DIR (the CI temp checkout).
-./run-hdb2b.sh repair-runtime
+if [[ -z "${HDB_CI_PROFILE:-}" || "${HDB2C_R14_CUDA:-0}" == 1 ]];then ./run-hdb2b.sh repair-runtime;fi
 if [[ "${HDB2C_R7_FOCUSED:-0}" != 1 && "${HDB2C_R8_CORPUS:-0}" != 1 ]];then
   ./run-hdb2b.sh build cpu
 fi
 corpus_quota=1
-if [[ "${HDB2C_R14_CUDA:-0}" == 1 ]];then corpus_quota=3;fi
+if [[ "${HDB2C_R14_CUDA:-0}" == 1 || "${HDB_CI_PROFILE:-}" == full || "${HDB_CI_PROFILE:-}" == audit ]];then corpus_quota=3;fi
 "$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion "$corpus_quota"
+if [[ -n "${HDB_CI_PROFILE:-}" ]];then
+  if [[ "${HDB2C_R14_CUDA:-0}" == 1 ]];then
+    "$HDB2C_PYTHON" -m hdb2c.c3_r14_cuda --corpus "$RUNNER_TEMP/cameo/manifest.json" --require-functional
+  else
+    regression_profile=full
+    if [[ "$HDB_CI_PROFILE" == short ]];then regression_profile=short;fi
+    "$HDB2C_PYTHON" -m hdb2c.c3_r15_regression --corpus "$RUNNER_TEMP/cameo/manifest.json" \
+      --variant "${HDB2C_R8_VARIANT:-cpu}" --profile "$regression_profile"
+  fi
+  exit
+fi
 if [[ "${HDB2C_R8_CORPUS:-0}" == 1 ]];then
   module=hdb2c.c3_r8
   extra_args=()

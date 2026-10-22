@@ -1,3 +1,37 @@
+# R15 — CI à trois niveaux / 2026-10-22
+
+Décision utilisateur : CI courante courte, campagne complète si les sources du
+moteur/backend changent, audit FP64 détaillé uniquement à la demande.
+
+Preuve R14 lue : run 39815786458, candidat
+`50ed7c1636e93fa5c8bf0a16e90bcce6a5ad7cc1`. CPU R13 : 14/14 réussis selon
+les seuils numériques d’origine. CUDA R9 : 42/42 sorties exactes, 965/965 décisions
+TDT exactes dans chacun des deux chemins, 42/42 sorties finales conformes ;
+max_abs final maximal 1.564621925354004e-6. Le run reste historiquement rouge
+pour ses seuils intermédiaires et n’a pas été promu. Les empreintes des artefacts
+et le périmètre accepté sont conservés dans `ci/r15-policy.json`.
+
+Implémentation R15 : 4 PCM publics fixés par SHA256 en routine ; 42 en complet ;
+référence NeMo FP32 CPU chargée une fois, calcul Rust R9 inchangé. Exactitude des
+sorties/décisions, longueurs/périphérique, finitude des traces et seuils finaux
+restent bloquants. Les écarts intermédiaires finis et les bits deviennent
+diagnostiques. Aucun seuil relatif n’est ajusté automatiquement.
+
+Extended enregistre le profil dans son candidat immuable. Une modification
+des sources natives, générateurs, conversion ou core/nn/kernels impose `full` ;
+`short` ne peut pas la contourner. `audit` exécute le FP64 R14 explicitement,
+avec qualification fonctionnelle et verdict numérique distincts. Les anciennes
+campagnes restent disponibles. Voir `ci/README-R15-CI-PROFILES.md`.
+
+Préparation locale : contrats logiciels et contrôles de sélection/échecs testés.
+Les 21 fichiers Rust de la sonde R9 et de sa bibliothèque sont identiques aux
+empreintes du candidat R14 mesuré. Seul le `main.rs` de l’autre CLI, non compilé
+par `--bin hdb2c_r9_probe`, reste sans les anciens hooks temporels HDB2-B.
+La nouvelle campagne réelle R15 et son temps d’exécution restent à mesurer en CI.
+Pas de nouvelle qualification microphone/streaming/diarisation revendiquée.
+
+---
+
 # HDB2-C v0.6.0 — STATE-MEMORY / 2026-10-18
 
 Décision : priorité à la parité **NeMo original .nemo vs Candle QVAC**. Le test de voix avec microphone direct fournit un texte imparfait même sans VAD ; +12 dB ne suffit pas. Ne pas imposer une voix plus forte ni modifier HDB1/R1 en parallèle.
