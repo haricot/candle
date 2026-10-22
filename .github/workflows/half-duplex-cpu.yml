@@ -1,0 +1,185 @@
+name: Half Duplex CPU and CaFE qualification
+on:
+  push:
+    branches: [half_duplex]
+    paths:
+      - 'half_duplex/**'
+      - '.github/workflows/half-duplex-cpu.yml'
+  workflow_dispatch:
+    inputs:
+      real_asr:
+        description: 'Download real TranscribePsy and run CaFE NeMo/Candle/C2 A/B'
+        required: false
+        type: boolean
+        default: false
+      r8_corpus:
+        description: 'R8 frontend attribution, common-input operators and all 14 real clips'
+        required: false
+        type: boolean
+        default: false
+      r9_text:
+        description: 'R9 original unknown-token rendering, all 14 clips and R8B math controls'
+        required: false
+        type: boolean
+        default: false
+      r10_cpu:
+        description: 'R10 isolated native CPU MKL profile, unchanged gates and all 14 clips'
+        required: false
+        type: boolean
+        default: false
+      r12_layernorm:
+        description: 'R12 first LayerNorm only: ordered CPU candidate on 14 actual common inputs'
+        required: false
+        type: boolean
+        default: false
+      r13_cpu_full:
+        description: 'R13 full CPU pipeline: integrated ordered LayerNorm, original gates, all 14 clips'
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  python-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install CPU-only dependencies for software contract tests
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.12.1+cpu'
+          python -m pip install 'numpy<3' 'PyYAML' 'safetensors' 'sentencepiece' 'soundfile' 'protobuf'
+      - name: Full Python unit test suite (no fake inference)
+        working-directory: half_duplex
+        run: |
+          set -euo pipefail
+          for module in hdb2a hdb2b hdb2b2 hdb2c hdb1; do
+            python -m unittest discover -s "tests/$module" -p 'test_*.py' -v
+          done
+          bash -n install_update.sh
+          bash -n ci/compile_cpu.sh
+          bash -n ci/full_cpu.sh
+          bash -n ci/r8_sm61.sh
+          bash -n ci/r8_microphone.sh
+          bash -n ci/r9_microphone.sh
+          bash -n ci/r12_layernorm.sh
+      - name: Verify personal WAVs are not silently committed
+        run: |
+          python - <<'PY'
+          import pathlib,subprocess
+          names=subprocess.check_output(['git','ls-files','half_duplex'],text=True).splitlines()
+          audio=[p for p in names if pathlib.Path(p).suffix.lower() in ('.wav','.flac','.mp3','.m4a','.ogg')]
+          assert audio==['half_duplex/tests/fixtures/hdb0-tone-16k.wav'],audio
+          # Fail closed for local recordings placed alongside Rust/Python fixtures.
+          forbidden=[
+              'half_duplex/tests/local/bluetooth.wav',
+              'half_duplex/tests/private/voice.wav',
+              'half_duplex/tests/recordings/audio.flac',
+              'half_duplex/tests/fixtures/personal.wav',
+              'half_duplex/tests/fixtures/personal.mp3'
+          ]
+          for path in forbidden:
+              blocked=subprocess.run(['git','check-ignore','--no-index','-q',path]).returncode==0
+              assert blocked, f'local audio is not ignored: {path}'
+          allowed='half_duplex/tests/fixtures/hdb0-tone-16k.wav'
+          is_ignored=subprocess.run(['git','check-ignore','--no-index','-q',allowed]).returncode==0
+          assert not is_ignored, f'synthetic test fixture unexpectedly ignored: {allowed}'
+          print('HALF_DUPLEX_SOURCE_AUDIO=ONE_SYNTHETIC_FIXTURE_ONLY')
+          print('HALF_DUPLEX_LOCAL_AUDIO=GITIGNORE_GUARD_PASS')
+          PY
+  rust-c2-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Python requirements needed for C2 source conversion
+        run: python -m pip install 'numpy<3' PyYAML
+      - name: Compile real Rust frontend and run Rust unit tests on CPU
+        run: bash half_duplex/ci/compile_cpu.sh
+  cafe-corpus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CAMEO dataset reader
+        run: python -m pip install 'datasets==3.6.0' 'soundfile' 'numpy<3'
+      - name: Test corpus selection
+        working-directory: half_duplex
+        run: python -m unittest discover -s ci -p test_cameo_subset.py -v
+      - name: Decode real CaFE/Oréau WAVs and inspect reference transcripts
+        run: |
+          python half_duplex/ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
+          python - "$RUNNER_TEMP/cameo/manifest.json" <<'PY'
+          import json,pathlib,sys,wave
+          m=json.load(open(sys.argv[1])); rows=m["rows"]
+          assert len(rows)==14,len(rows)
+          assert {x["split"] for x in rows}=={"cafe","oreau"}
+          for row in rows:
+              with wave.open(row["wav"],"rb") as w:
+                  assert (w.getframerate(),w.getnchannels(),w.getsampwidth())==(16000,1,2)
+              assert pathlib.Path(row["reference_file"]).read_text().strip()
+          print("HALF_DUPLEX_CAMEO=PASS_14_REAL_FRENCH_CLIPS_ASR_NOT_RUN")
+          PY
+  layernorm-cpu:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.r12_layernorm }}
+    needs: [python-contracts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: System dependencies for the CPU reference and standalone C++ operator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ ffmpeg libsndfile1-dev
+      - name: Actual first LayerNorm common operands on 14 clips, CPU only
+        run: bash half_duplex/ci/r12_layernorm.sh cpu
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: half-duplex-r12-layernorm-cpu-report
+          path: halfduplex-ci-published/r12-layernorm-cpu.json
+          if-no-files-found: warn
+          retention-days: 14
+  real-cpu-asr:
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.real_asr || inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu || inputs.r13_cpu_full)) || contains(github.event.head_commit.message, '[real-asr]') || contains(github.event.head_commit.message, '[r10-cpu]') || contains(github.event.head_commit.message, '[r13-cpu-full]') }}
+    needs: [python-contracts, rust-c2-cpu, cafe-corpus]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - uses: astral-sh/setup-uv@v6
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg unzip libsndfile1-dev g++ cmake ninja-build pkg-config libssl-dev
+      - name: Real NeMo vs Candle frontend, encoder and production TDT on CPU
+        env:
+          HDB2C_R7_FOCUSED: ${{ contains(github.event.head_commit.message, '[r7-focused]') && '1' || '0' }}
+          HDB2C_R8_CORPUS: ${{ (inputs.r8_corpus || inputs.r9_text || inputs.r10_cpu || inputs.r13_cpu_full || contains(github.event.head_commit.message, '[r8-corpus]') || contains(github.event.head_commit.message, '[r10-cpu]') || contains(github.event.head_commit.message, '[r13-cpu-full]')) && '1' || '0' }}
+          HDB2C_R9_TEXT: ${{ (inputs.r9_text || contains(github.event.head_commit.message, '[r9-text]')) && '1' || '0' }}
+          HDB2C_R10_CPU: ${{ (inputs.r10_cpu || contains(github.event.head_commit.message, '[r10-cpu]')) && '1' || '0' }}
+          HDB2C_R13_CPU_FULL: ${{ (inputs.r13_cpu_full || contains(github.event.head_commit.message, '[r13-cpu-full]')) && '1' || '0' }}
+        run: bash half_duplex/ci/full_cpu.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: half-duplex-real-cpu-cafe-reports
+          path: halfduplex-ci-published/*.json
+          if-no-files-found: warn
+          retention-days: 14
