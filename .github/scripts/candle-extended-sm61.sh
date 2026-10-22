@@ -130,7 +130,8 @@ if has_feature asd_core_v3_standalone; then
 fi
 
 if has_feature half_duplex_standalone; then
-  run_gate half_duplex_full_gpu bash half_duplex/ci/extended_gate.sh gpu
+  cp candle-integration/half-duplex-ci.json "$REPORT_DIR/half-duplex-ci.json"
+  run_gate half_duplex_gpu bash half_duplex/ci/extended_gate.sh gpu
 fi
 
 echo "EXTENDED_SM61_CANDIDATE=$actual_sha" | tee -a "$REPORT_DIR/summary.txt"

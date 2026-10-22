@@ -1,6 +1,49 @@
 # Half Duplex: ninth standalone Extended component
 
-## R14 — FP64 operator audit and expanded corpus
+## Current R15 policy — functional CI at three levels
+
+The default Extended input is `half_duplex_profile=auto`. The assembler records
+the resolved choice in the immutable candidate's
+`candle-integration/half-duplex-ci.json`. CPU and physical CUDA use this same
+choice; users cannot downgrade a candidate requiring a larger campaign.
+
+- `short`: four hash-pinned public clips, original CPU NeMo reference and both
+  native R9 decoding paths. No detailed FP64 replay or CPU MKL/oneDNN/SLEEF build.
+- `full`: all 42 distinct R14 clips on CPU and CUDA, with encoder intermediate
+  diagnostics. Automatically selected when the actual engine/generator/conversion
+  or shared core/nn/kernel source diff changes.
+- `audit`: explicit complete campaign plus R14 FP64 operator replays on the GPU
+  stage. Its legacy numerical qualification remains visible separately.
+
+Exact tokens/text/frames/durations/TDT decisions, correct device/config/lengths,
+finite observed tensors, and the original final-encoder limits remain mandatory.
+Finite intermediate discrepancies and cross-backend bits are diagnostic, with
+no fitted relative tolerances. Missing clips, missing traces or errors fail.
+NeMo/PyTorch remain a CPU-only CI reference; the native application is unchanged.
+
+The migration baseline is candidate
+`50ed7c1636e93fa5c8bf0a16e90bcce6a5ad7cc1`, measured in run `39815786458`:
+42/42 exact CUDA results, 965 exact decisions per execution path, all final
+encoder gates pass (worst max_abs `1.564621925354004e-6`), and 14/14 CPU R13
+numerical passes. The historical run remains failed/unpromoted for intermediate
+thresholds. The user accepted this functional scope before R15 implementation.
+After a successful R15 promotion, the last promoted Extended tree is the baseline.
+
+Force the complete campaign or audit using workflow dispatch:
+
+```bash
+gh workflow run candle-extended-composite.yml \
+  --repo haricot/candle --ref orch/extended-v1 \
+  -f campaign="hdb-full-$(date -u +%Y%m%dT%H%M%S)" \
+  -f publish=true -f half_duplex_profile=full
+```
+
+Use a new campaign name and `half_duplex_profile=audit` for detailed FP64.
+The existing local run-bound V6.3 runner remains responsible for physical GPU
+execution. Promotion still waits for every CPU, CUDA compile and physical gate.
+See the source's `half_duplex/ci/README-R15-CI-PROFILES.md` for details.
+
+## Historical R14 — FP64 operator audit and expanded corpus
 
 The Half Duplex source is pinned to
 `7351b3e9695d76cbb7484a6632b290c8b32d6c5c`. It retains R9 native Rust math
@@ -28,7 +71,7 @@ local R9 command requires `HDB2C6_MASK_MODE=both`, as the CI launcher supplies.
 No private recording or transcription is published. See the source's
 `half_duplex/ci/README-R14-CUDA-AUDIT.md` for evidence and scope.
 
-## Original nine-source integration
+## Historical nine-source integration
 
 The user requested hosted preparation/CPU/CUDA compilation now and a later
 physical GPU run started with the existing local unified runner.

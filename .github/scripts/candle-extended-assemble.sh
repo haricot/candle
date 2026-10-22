@@ -207,6 +207,26 @@ PY
 fi
 
 mkdir -p "$aggregate/candle-integration"
+if jq -e '.features | any(.feature == "half_duplex_standalone")' "$cfg" >/dev/null; then
+  # Compare immutable engine trees, not commit counts or a mutable branch name.
+  # R14 established functional parity even though its legacy intermediate gate
+  # stayed red. Its reviewed candidate is the one-time migration baseline.
+  qualification_anchor=50ed7c1636e93fa5c8bf0a16e90bcce6a5ad7cc1
+  for baseline in "$qualification_anchor" "$oldintegration"; do
+    [[ -n "$baseline" ]] || continue
+    if ! git -C "$aggregate" cat-file -e "$baseline^{commit}" 2>/dev/null; then
+      git -C "$aggregate" fetch --no-tags origin "$baseline"
+    fi
+  done
+  python3 "$aggregate/half_duplex/ci/resolve_profile.py" --repository "$aggregate" \
+    --candidate HEAD --baseline "$oldintegration" \
+    --requested "${HALF_DUPLEX_PROFILE_REQUESTED:-auto}" \
+    --output "$aggregate/candle-integration/half-duplex-ci.json"
+  cp "$aggregate/candle-integration/half-duplex-ci.json" "$report/half-duplex-ci.json"
+  echo "half_duplex_profile=$(jq -r .profile "$report/half-duplex-ci.json")" >> "$GITHUB_OUTPUT"
+else
+  echo 'half_duplex_profile=not-in-composition' >> "$GITHUB_OUTPUT"
+fi
 jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
@@ -226,6 +246,9 @@ jq -e --slurpfile cfg "$cfg" '
   echo "::error::Extended manifest dropped or changed reviewed CUDA capabilities"; exit 3;
 }
 git -C "$aggregate" add candle-integration/extended.json
+if [[ -f "$aggregate/candle-integration/half-duplex-ci.json" ]]; then
+  git -C "$aggregate" add candle-integration/half-duplex-ci.json
+fi
 git -C "$aggregate" diff --cached --check
 git -C "$aggregate" commit -m "integrate: lock ${#features[@]} Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
 

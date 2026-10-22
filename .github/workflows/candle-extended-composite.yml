@@ -34,6 +34,12 @@ on:
         type: boolean
         required: true
         default: true
+      half_duplex_profile:
+        description: 'Half Duplex: auto selects 4 clips, or 42 when native engine/kernel sources changed; audit adds FP64'
+        type: choice
+        required: true
+        default: auto
+        options: [auto, short, full, audit]
 
 permissions:
   contents: read
@@ -58,6 +64,7 @@ jobs:
       published: ${{ steps.assemble.outputs.published }}
       has_lean: ${{ steps.assemble.outputs.has_lean }}
       has_half_duplex: ${{ steps.assemble.outputs.has_half_duplex }}
+      half_duplex_profile: ${{ steps.assemble.outputs.half_duplex_profile }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -74,6 +81,7 @@ jobs:
           STRATEGY: exact-delta
           BASE_SHA_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || '' }}
           PUBLISH: ${{ github.event_name == 'push' && 'true' || inputs.publish }}
+          HALF_DUPLEX_PROFILE_REQUESTED: ${{ inputs.half_duplex_profile || 'auto' }}
         run: bash .github/scripts/candle-extended-assemble.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -178,7 +186,7 @@ jobs:
       - id: check
         if: needs.prepare.outputs.has_half_duplex != 'true'
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
-      - name: System dependencies for the complete CPU STT reference
+      - name: System dependencies for the CPU STT regression
         if: needs.prepare.outputs.has_half_duplex == 'true'
         run: |
           sudo apt-get update
@@ -196,7 +204,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Preserve full CPU Half Duplex numerical evidence
+      - name: Preserve CPU Half Duplex regression evidence
         if: always() && needs.prepare.outputs.has_half_duplex == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -304,7 +312,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Preserve full native GPU Half Duplex numerical evidence
+      - name: Preserve native GPU Half Duplex regression or requested FP64 evidence
         if: always() && needs.prepare.outputs.has_half_duplex == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

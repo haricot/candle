@@ -94,8 +94,9 @@ if [[ "$MODE" == integrated ]]; then
     }
   fi
   if has_feature half_duplex_standalone; then
-    bash half_duplex/ci/extended_gate.sh cpu > "$report/half-duplex-full-cpu.log" 2>&1 || {
-      tail -n 120 "$report/half-duplex-full-cpu.log"; exit 1;
+    cp candle-integration/half-duplex-ci.json "$report/half-duplex-ci.json"
+    bash half_duplex/ci/extended_gate.sh cpu > "$report/half-duplex-cpu.log" 2>&1 || {
+      tail -n 120 "$report/half-duplex-cpu.log"; exit 1;
     }
   fi
   jq -n --arg sha "$SHA" --arg campaign "$CAMPAIGN" --arg manifest "$MANIFEST_SHA" \

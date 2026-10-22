@@ -90,7 +90,7 @@
       "feature": "half_duplex_standalone",
       "source_ref": "half_duplex_standalone",
       "target_ref": "half_duplex_standalone",
-      "review_source_sha": "7351b3e9695d76cbb7484a6632b290c8b32d6c5c",
+      "review_source_sha": "7a90193aa384f4e6eb37fa8200c063fc25488210",
       "pin_source_sha": true,
       "cpu_tests": "half-duplex-native",
       "cuda_features": [
