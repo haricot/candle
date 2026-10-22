@@ -607,3 +607,31 @@ The main-based standalone also carries the existing reviewed ZIP9.0.3
 dependency/API migration from embeddinggemma2 (Cargo.toml, npy.rs, pickle.rs),
 because main still requests yanked ZIP8.6.0. These exact serialization changes
 match the other components and do not modify neural numerical kernels.
+
+## 2026-10-22 — Native CUDA microphone confirmation and R14 audit
+
+The user reported successful native microphone transcription outside Podman/CI
+with integrated candidate711776ce60b3558b3f338f90ae7687552f0a0c84, scope
+NATIVE_PCM_FRONTEND_ENCODER_TDT and device Cuda(CudaDevice(DeviceId(1))).
+The missing local HDB2C6_MASK_MODE=both selector was corrected; it is the same
+attention+convolution masking configuration used by the qualification launcher.
+This is user-reported functional evidence with some technical-term recognition
+errors, not an independent WER/numerical/bitwise qualification. No private audio
+or transcription is committed.
+
+User authorized preserving exact tokens/frames/durations/TDT decisions,
+examining failing operators with higher precision, keeping cross-backend f32
+bits diagnostic and widening the corpus before general quality conclusions.
+R14 adds CPU FP64 copies of actual NeMo modules on common and autonomous
+observed operands, plus elementwise absolute/relative surveys and conservative
+direct-dot roundoff diagnostics. Generated native R9 Rust bytes remain unchanged.
+The original14 PCM hashes stay fixed and28 additional distinct utterances are
+selected at the pinned CAMEO revision. They are not a speaker-disjoint or broad
+WER benchmark, and choosing a policy after inspecting their metrics requires
+fresh unseen data for independent validation.
+
+Original numerical gates are still mandatory. Relative survey results are
+unapproved diagnostics, never an automatic threshold fitter or promotion.
+The integrated CPU profile retains full R13 on14 and adds FP64 reference checks;
+the physical Extended profile collects R14 on42. New GPU numerical conclusions
+require an actual physical run. See ci/README-R14-CUDA-AUDIT.md.

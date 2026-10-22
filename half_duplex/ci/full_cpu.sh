@@ -2,6 +2,11 @@
 # Heavy real-model CPU validation; R8+ profiles use all 14 CaFE/Oréau excerpts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ "${HDB2C_R14_CUDA:-0}" == 1 ]];then
+  test "${HDB2C_R8_VARIANT:-cpu}" = cuda-cudnn || { echo 'R14_REAL_CUDA_REQUIRED' >&2;exit 3; }
+  test "${HDB2C_R13_CPU_FULL:-0}" = 0 || { echo 'R14_CUDA_AND_R13_CPU_PROFILES_CONFLICT' >&2;exit 3; }
+  export HDB2C_R8_CORPUS=1
+fi
 if [[ "${HDB2C_R13_CPU_FULL:-0}" == 1 ]];then
   test "${HDB2C_R8_VARIANT:-cpu}" = cpu || { echo 'R13_CPU_ONLY' >&2;exit 3; }
   export HDB2C_R8_CORPUS=1
@@ -19,6 +24,9 @@ mkdir -p "$HDB2A_REPORT_ROOT" "$RUNNER_TEMP/checkpoint"
 ./run-hdb2c.sh install-nemo
 ./run-hdb2c.sh verify-nemo
 export PATH="$HDB2C_ENV_DIR/bin:$PATH"
+if [[ "${HDB2C_R14_FP64_REFERENCE:-0}" == 1 || "${HDB2C_R14_CUDA:-0}" == 1 ]];then
+  "$HDB2C_PYTHON" ci/check_r14_nemo_fp64.py
+fi
 uv pip install --no-config --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple \
   -c "$HDB2C_ENV_DIR/hdb2c-constraints.txt" \
   'datasets==3.6.0' 'fsspec==2024.12.0' 'setuptools>=79,<82' 'soundfile' 'huggingface_hub'
@@ -41,11 +49,16 @@ fi
 if [[ "${HDB2C_R7_FOCUSED:-0}" != 1 && "${HDB2C_R8_CORPUS:-0}" != 1 ]];then
   ./run-hdb2b.sh build cpu
 fi
-"$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion 1
+corpus_quota=1
+if [[ "${HDB2C_R14_CUDA:-0}" == 1 ]];then corpus_quota=3;fi
+"$HDB2C_PYTHON" ci/cameo_subset.py --out "$RUNNER_TEMP/cameo" --per-emotion "$corpus_quota"
 if [[ "${HDB2C_R8_CORPUS:-0}" == 1 ]];then
   module=hdb2c.c3_r8
   extra_args=()
   if [[ "${HDB2C_R9_TEXT:-0}" == 1 ]];then module=hdb2c.c3_r9_text;fi
+  if [[ "${HDB2C_R14_CUDA:-0}" == 1 ]];then
+    module=hdb2c.c3_r14_cuda
+  fi
   if [[ "${HDB2C_R10_CPU:-0}" == 1 ]];then
     test "${HDB2C_R8_VARIANT:-cpu}" = cpu || { echo 'R10_CPU_ONLY' >&2;exit 3; }
     uv pip install --no-config --python "$HDB2C_PYTHON" --default-index https://pypi.org/simple 'mkl==2024.2.2' 'mkl-include==2024.2.2'

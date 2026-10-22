@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import inspect
 import json
+import os
 import textwrap
 import types
 from pathlib import Path
@@ -252,6 +253,20 @@ def execute(nemo, model_dir, wav, output):
         'converted_tdt_weights':weights,
         'preprocessor_state':{'pad_to':int(model.preprocessor.featurizer.pad_to),'pad_value':float(model.preprocessor.featurizer.pad_value)},
         'reference_scope':'ACTUAL_UNREPLACED_NEMO_GREEDY_BATCHED_TDT_ON_REAL_PCM'})
+    if os.environ.get('HDB2C_R14_FP64_REFERENCE') == '1':
+        from .c3_r14_precision import Fp64Auditor
+        from .c3_r8 import write_json
+        ensure_probe_eval(model)
+        control = Fp64Auditor(model).evaluate(output)
+        control['checkpoint_sha256'] = result['checkpoint_sha256']
+        control['pcm_sha256'] = result['pcm_sha256']
+        published = Path(os.environ.get('GITHUB_WORKSPACE', str(output.parent)))/'halfduplex-ci-published'
+        write_json(published/('r14-fp64-reference-'+result['pcm_sha256'][:16]+'.json'), control)
+        if control['execution_status'] != 'COMPLETE':
+            raise RuntimeError('R14 real FP64 reference operator control incomplete')
+        result['r14_fp64_reference_control'] = {'execution_status': 'COMPLETE',
+            'local_operator_replays': len(control['local_operator_replays']),
+            'reference_dtype': 'float64', 'original_model_dtype_preserved': True}
     (output/'manifest.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('HDB2C3_R8_NEMO=REAL_REFERENCE_AND_PRIMITIVES decisions='+str(len(result['decisions'])),flush=True)
 

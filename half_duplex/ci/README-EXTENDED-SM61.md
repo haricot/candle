@@ -51,5 +51,12 @@ the runner; the assistant does not start a process on the physical laptop.
 Artifacts are separated into independent source CPU proofs, combined CPU
 proof, `*-half-duplex-cpu`, hosted CUDA proof, physical SM61 proof and
 `*-half-duplex-gpu`. Only JSON metrics are uploaded for the STT corpus.
+R14 extends the physical audit to the original14 and28 additional distinct
+utterances, with separate CPU FP64 operator replays and elementwise relative
+tolerance surveys. The integrated CPU job also checks the FP64 reference on
+the original14. Original numerical gates stay mandatory while the new policy
+is being investigated; cross-backend bits remain diagnostic. See
+`README-R14-CUDA-AUDIT.md` for scope and promotion semantics.
+
 Microphone/streaming tests remain separate. Extended's existing atomic
 promotion is reachable only after the actual physical runtime job succeeds.
