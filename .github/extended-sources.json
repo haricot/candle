@@ -70,7 +70,7 @@
       "feature": "embeddinggemma2",
       "source_ref": "embeddinggemma2",
       "target_ref": "embeddinggemma2",
-      "review_source_sha": "0b9b9935d3b9d0e63e8c0d4bccbd13bb2ed7ce23",
+      "review_source_sha": "806a44bae9e539f59ad088c4d72922433c6a9018",
       "cpu_tests": "embedding-gemma2-native",
       "cuda_features": [
         "cuda"
@@ -81,10 +81,22 @@
       "feature": "lean4_standalone",
       "source_ref": "lean4_standalone",
       "target_ref": "lean4_standalone",
-      "review_source_sha": "d175523d14c792042eab1d5ff375d6baae5b660c",
+      "review_source_sha": "1e19833d48f98ae7c9e978edd5665725df0adaf6",
       "pin_source_sha": true,
       "cpu_tests": "lean4-contracts",
       "cuda_features": []
+    },
+    {
+      "feature": "half_duplex_standalone",
+      "source_ref": "half_duplex_standalone",
+      "target_ref": "half_duplex_standalone",
+      "review_source_sha": "c5e78d05d72d10a32f2114726632ee603817a33c",
+      "pin_source_sha": true,
+      "cpu_tests": "half-duplex-native",
+      "cuda_features": [
+        "cuda",
+        "cudnn"
+      ]
     }
   ],
   "publication": {
@@ -95,7 +107,7 @@
       "combined_hosted_cuda_sm61_compiles",
       "physical_sm61_extended_pass"
     ],
-    "hosted_validation_state": "HOSTED_CI_PASSED_GPU_PENDING",
+    "hosted_validation_state": "PENDING_NINE_SOURCE_CPU_CUDA_AND_PHYSICAL_SM61",
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
     "never_push_to_main": true,

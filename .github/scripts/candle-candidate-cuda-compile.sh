@@ -162,6 +162,20 @@ if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_ru
     done
   fi
 fi
+if [[ "$CHECK_BRANCH" == extended_integration && "$build_rc" -eq 0 ]] &&
+   jq -e '.features | any(.feature == "half_duplex_standalone")' "$manifest" >/dev/null; then
+  half_duplex_rc=0
+  python3 half_duplex/ci/extended_build.py --backend cuda-cudnn \
+    --candle-root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/halfduplex-extended-cuda-build" \
+    > "$report/half-duplex-cuda-check.log" 2>&1 || half_duplex_rc=$?
+  if ((half_duplex_rc != 0)); then
+    tail -n 120 "$report/half-duplex-cuda-check.log"
+    build_rc=$half_duplex_rc
+  else
+    cp "$RUNNER_TEMP/halfduplex-extended-cuda-build/report.json" "$report/half-duplex-cuda-build.json"
+  fi
+fi
+
 status=CUDA_COMPILE_PASSED
 ((build_rc == 0)) || status=CUDA_COMPILE_FAILED
 jq -n --arg branch "$CHECK_BRANCH" --arg campaign "$CHECK_CAMPAIGN" \

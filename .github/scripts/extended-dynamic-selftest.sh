@@ -13,9 +13,9 @@ for script in \
   bash -n "$script"
 done
 
-# Exercise cardinality 6, 7 and 8 without encoding any of them in the
+# Exercise cardinalities through the nine-source Half Duplex composition.
 # production assembler. Validate source uniqueness and candidate parity.
-for count in 6 7 8; do
+for count in 6 7 8 9; do
   jq --argjson count "$count" '.features |= .[:$count]' "$config" > "$scratch/config.json"
   jq -e --argjson count "$count" '
     .schema_version == 1 and .kind == "extended-main-exact-delta" and
@@ -27,7 +27,7 @@ for count in 6 7 8; do
       (.feature | test("^[a-z][a-z0-9_]{0,63}$")) and
       (.review_source_sha | test("^[a-f0-9]{40}$")) and
       (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
-        "embedding-gemma2-native","moe-selection","lean4-contracts"] | index($tests) != null))
+        "embedding-gemma2-native","moe-selection","lean4-contracts","half-duplex-native"] | index($tests) != null))
   ' "$scratch/config.json" >/dev/null
   jq --argjson count "$count" '
     {schema_version:1,kind:"extended-multi",integration_target:"extended",

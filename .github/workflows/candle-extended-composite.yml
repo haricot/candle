@@ -11,6 +11,7 @@ on:
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh
+      - .github/container/Containerfile.cuda1292-ubuntu2604
       - .github/scripts/candle-promote-validated.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
@@ -56,11 +57,14 @@ jobs:
       matrix: ${{ steps.assemble.outputs.matrix }}
       published: ${{ steps.assemble.outputs.published }}
       has_lean: ${{ steps.assemble.outputs.has_lean }}
+      has_half_duplex: ${{ steps.assemble.outputs.has_half_duplex }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Validate dynamic source contract before assembly
+        run: bash .github/scripts/extended-dynamic-selftest.sh
       - name: Prepare manifest-defined Extended candidate
         id: assemble
         shell: bash
@@ -115,6 +119,19 @@ jobs:
           build: true
           use-github-cache: false
       - name: Independent source CPU gate
+        if: matrix.feature != 'half_duplex_standalone'
+        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
+      - if: matrix.feature == 'half_duplex_standalone'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: CPU-only dependencies for the native Half Duplex contracts
+        if: matrix.feature == 'half_duplex_standalone'
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.12.1+cpu'
+          python -m pip install 'numpy<3' PyYAML safetensors sentencepiece soundfile protobuf
+      - name: Independent native Half Duplex CPU gate
+        if: matrix.feature == 'half_duplex_standalone'
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -128,9 +145,9 @@ jobs:
     needs: [prepare, standalone_cpu]
     if: needs.standalone_cpu.result == 'success'
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     outputs:
-      lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
+      lock_sha256: ${{ steps.check_half_duplex.outputs.lock_sha256 || steps.check.outputs.lock_sha256 }}
     env:
       MODE: integrated
       SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -159,12 +176,32 @@ jobs:
           build: true
           use-github-cache: false
       - id: check
+        if: needs.prepare.outputs.has_half_duplex != 'true'
+        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
+      - name: System dependencies for the complete CPU STT reference
+        if: needs.prepare.outputs.has_half_duplex == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build pkg-config libssl-dev
+      - if: needs.prepare.outputs.has_half_duplex == 'true'
+        uses: astral-sh/setup-uv@v6
+      - id: check_half_duplex
+        if: needs.prepare.outputs.has_half_duplex == 'true'
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: extended-${{ needs.prepare.outputs.campaign }}-integrated-cpu
           path: ${{ runner.temp }}/extended-integrated-cpu/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Preserve full CPU Half Duplex numerical evidence
+        if: always() && needs.prepare.outputs.has_half_duplex == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-half-duplex-cpu
+          path: halfduplex-ci-published/*.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -264,6 +301,15 @@ jobs:
         with:
           name: extended-${{ needs.prepare.outputs.campaign }}-sm61
           path: ${{ runner.temp }}/extended-sm61-proof/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Preserve full native GPU Half Duplex numerical evidence
+        if: always() && needs.prepare.outputs.has_half_duplex == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-half-duplex-gpu
+          path: halfduplex-ci-published/*.json
           if-no-files-found: warn
           retention-days: 30
 

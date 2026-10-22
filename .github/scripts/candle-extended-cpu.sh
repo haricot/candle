@@ -93,6 +93,11 @@ if [[ "$MODE" == integrated ]]; then
       tail -n 120 "$report/lean4-contracts.log"; exit 1;
     }
   fi
+  if has_feature half_duplex_standalone; then
+    bash half_duplex/ci/extended_gate.sh cpu > "$report/half-duplex-full-cpu.log" 2>&1 || {
+      tail -n 120 "$report/half-duplex-full-cpu.log"; exit 1;
+    }
+  fi
   jq -n --arg sha "$SHA" --arg campaign "$CAMPAIGN" --arg manifest "$MANIFEST_SHA" \
     --arg lock "$lock" --argjson features "$(jq '[.features[].feature]' "$manifest")" \
     '{status:"CPU_PASSED",candidate_sha:$sha,campaign:$campaign,
@@ -104,6 +109,10 @@ if [[ "$MODE" == integrated ]]; then
 fi
 
 case "$FEATURE" in
+  half_duplex_standalone)
+    bash half_duplex/ci/extended_gate.sh contracts > "$report/half-duplex-contracts.log" 2>&1 &&
+    bash half_duplex/ci/extended_gate.sh build > "$report/cpu-tests.log" 2>&1 &&
+    cp "$RUNNER_TEMP/halfduplex-extended-cpu-build/report.json" "$report/half-duplex-native-build.json" ;;
   lean4_standalone)
     bash tools/lean4-standalone/scripts/check.sh > "$report/cpu-tests.log" 2>&1 ;;
   fp4_candle)

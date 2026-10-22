@@ -129,6 +129,10 @@ if has_feature asd_core_v3_standalone; then
   run_gate asd_runtime_profile_swap cargo run -p candle-core --release --example asd_v3_phase_d_runtime_profile_swap_validate --features "$CORE_FEATURES"
 fi
 
+if has_feature half_duplex_standalone; then
+  run_gate half_duplex_full_gpu bash half_duplex/ci/extended_gate.sh gpu
+fi
+
 echo "EXTENDED_SM61_CANDIDATE=$actual_sha" | tee -a "$REPORT_DIR/summary.txt"
 echo "EXTENDED_SM61_CAMPAIGN=$campaign" | tee -a "$REPORT_DIR/summary.txt"
 echo "EXTENDED_SM61_VALIDATION=PASS" | tee -a "$REPORT_DIR/summary.txt"

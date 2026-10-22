@@ -22,7 +22,7 @@ jq -e '
     (.target_ref | type == "string" and test("^[A-Za-z0-9_./-]+$")) and
     (.review_source_sha | type == "string" and test("^[a-f0-9]{40}$")) and
     (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
-      "embedding-gemma2-native","moe-selection","lean4-contracts"] | index($tests) != null) and
+      "embedding-gemma2-native","moe-selection","lean4-contracts","half-duplex-native"] | index($tests) != null) and
     (.cuda_features | type == "array" and all(.[]; type == "string" and test("^[a-z0-9_-]+$"))) and
     ((.pin_source_sha // false) | type == "boolean"))
 ' "$cfg" >/dev/null
@@ -240,6 +240,7 @@ jq -e --argjson count "${#features[@]}" '
   ([.include[].feature] | unique | length) == $count
 ' "$report/matrix.json" >/dev/null
 echo "has_lean=$(jq -r '[.features[].feature] | index("lean4_standalone") != null' "$cfg")" >> "$GITHUB_OUTPUT"
+echo "has_half_duplex=$(jq -r '[.features[].feature] | index("half_duplex_standalone") != null' "$cfg")" >> "$GITHUB_OUTPUT"
 
 echo "matrix=$(cat "$report/matrix.json")" >> "$GITHUB_OUTPUT"
 
