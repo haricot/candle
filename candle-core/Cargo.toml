@@ -40,6 +40,7 @@ parking_lot = "0.12.5"
 tokenizers = { workspace = true, features = ["fancy-regex"] }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 criterion = { workspace = true }
@@ -49,6 +50,9 @@ default = []
 cuda = ["cudarc", "dep:candle-kernels"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]
 cuda-legacy-fp8 = ["cuda", "candle-kernels/cuda-legacy-fp8"]
+# Opt-in software NVFP4 E2M1/E4M3FN kernels on Pascal and other pre-native devices.
+# MXFP4 remains available normally; this is not native FP4 Tensor Core support.
+cuda-legacy-fp4 = ["cuda", "candle-kernels/cuda-legacy-fp4"]
 cutile = ["cuda", "dep:cutile"]
 cudnn = ["cuda", "cudarc/cudnn"]
 nccl = ["cuda", "cudarc/nccl"]
