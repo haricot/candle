@@ -602,3 +602,8 @@ change: ./run-once.sh check candle/extended --run-id RUN_ID, then start with
 the same profile/run. Hosted jobs must succeed and the physical SM61 job must
 be queued. See ci/README-EXTENDED-SM61.md. No physical GPU execution occurred
 during preparation of this source; no GPU parity is claimed.
+
+The main-based standalone also carries the existing reviewed ZIP9.0.3
+dependency/API migration from embeddinggemma2 (Cargo.toml, npy.rs, pickle.rs),
+because main still requests yanked ZIP8.6.0. These exact serialization changes
+match the other components and do not modify neural numerical kernels.

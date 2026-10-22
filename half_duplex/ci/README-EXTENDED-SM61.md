@@ -2,8 +2,10 @@
 
 `half_duplex_standalone` is based on fork `main` and contains the complete
 Half Duplex source from `half_duplex@79430e051bc6c7a2ac4d10cb101199313b4bb2ff`.
-It adds only its application folder and the two existing application workflows;
-it does not import an older Candle core into Extended. The old dedicated GPU
+It imports its application folder and the two existing application workflows.
+The only additional root compatibility edit is the already reviewed ZIP9.0.3
+dependency/API migration shared by the other standalone sources; it does not
+import an older Candle numerical implementation into Extended. The old dedicated GPU
 workflow/launcher remain paused. The explicitly requested GPU route is the
 manifest-driven `Candle Extended` workflow on `orch/extended-v1`.
 
