@@ -21,12 +21,14 @@ jobs:
     env:
       RAYON_NUM_THREADS: '4'
       HF_HUB_DISABLE_TELEMETRY: '1'
-      ENDPOINT_REFERENCE_CACHE: ${{ runner.temp }}/endpoint-cache
-      ENDPOINT_REPORT_ROOT: ${{ runner.temp }}/endpoint-report
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Define runner-local reference paths
+        run: |
+          echo "ENDPOINT_REFERENCE_CACHE=$RUNNER_TEMP/endpoint-cache" >> "$GITHUB_ENV"
+          echo "ENDPOINT_REPORT_ROOT=$RUNNER_TEMP/endpoint-report" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.0'
