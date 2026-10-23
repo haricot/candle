@@ -354,7 +354,6 @@ fn conv2d_native(vb: VarBuilder<'_>, input: usize, output: usize,
 struct Subsample {
     convs: Vec<(Conv2d, bool)>,
     projection: Linear,
-    stages: usize,
 }
 
 impl Subsample {
@@ -374,7 +373,6 @@ impl Subsample {
         Ok(Self {
             convs,
             projection: candle_nn::linear(c * frequency, cfg.d_model, vb.pp("out"))?,
-            stages,
         })
     }
 
@@ -531,7 +529,7 @@ mod tests {
     fn native_encoder_layout_and_masked_padding() -> Result<()> {
         let cfg = sample_config();
         let mut tensors = tensor_map(&cfg)?;
-        let vb = VarBuilder::from_tensors(tensors.clone(), DType::F32, &Device::Cpu);
+        let vb = VarBuilder::from_tensors(tensors.clone(), DType::F32, &Device::Cpu).pp("encoder");
         let encoder = FastConformer::load(cfg.clone(), vb)?;
         let data = Tensor::from_vec(vec![0.3f32; 2 * 5 * 4], (2, 5, 4), &Device::Cpu)?;
         let (out, lengths) = encoder.forward(&data, &[5, 3])?;
@@ -540,7 +538,7 @@ mod tests {
         assert!(out.flatten_all()?.to_vec1::<f32>()?.iter().all(|x| x.is_finite()));
         tensors.remove("encoder.layers.0.self_attn.pos_bias_v");
         let missing = FastConformer::load(
-            cfg, VarBuilder::from_tensors(tensors, DType::F32, &Device::Cpu)
+            cfg, VarBuilder::from_tensors(tensors, DType::F32, &Device::Cpu).pp("encoder")
         );
         assert!(missing.is_err(), "relative positional bias is mandatory");
         Ok(())
