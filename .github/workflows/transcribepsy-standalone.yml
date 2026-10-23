@@ -2,11 +2,8 @@ name: TranscribePsy standalone model contracts
 
 on:
   push:
-    branches: [TranscribePsy]
-    paths:
-      - 'candle-transformers/src/models/transcribepsy/**'
-      - 'candle-transformers/src/models/mod.rs'
-      - '.github/workflows/transcribepsy-standalone.yml'
+    branches:
+      - TranscribePsy
   workflow_dispatch:
 
 permissions:
@@ -21,6 +18,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.0'
-      - uses: Swatinem/rust-cache@v2
-      - name: Compile and test only the standalone TranscribePsy components
-        run: cargo test -p candle-transformers transcribepsy:: --lib
+      - name: Test native QVAC predictor and TDT policies
+        run: |
+          cargo test -p candle-transformers --lib transcribepsy
