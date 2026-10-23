@@ -1,0 +1,365 @@
+{
+  "scope": "SAME_CPU_MODEL_EXTRACTION_COMPATIBILITY",
+  "baseline_commit": "fced4317d64715174c32f48bc3bc9211f514c342",
+  "python_onnx_runtime_loaded": false,
+  "cases": [
+    {
+      "name": "cafe-anger",
+      "kind": "PUBLIC_SPEECH",
+      "samples": 51644,
+      "pcm_sha256": "6794242ad35ae6125884457d25f481d520251656044e4ba1f7bfb1c8ae0b1a52",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "cafe-anger-prefix",
+      "kind": "TRUNCATED_PUBLIC_SPEECH",
+      "samples": 28404,
+      "pcm_sha256": "af505e4c20bc947eb103a64e3e1f5b0e1f3c2089ffdf07f9c1623e27197a02dc",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "cafe-neutral",
+      "kind": "PUBLIC_SPEECH",
+      "samples": 63110,
+      "pcm_sha256": "3863734a5ee478104a3152a293f5f5b6c57ba9edbbfe21bea84bda0c94f65028",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "cafe-neutral-prefix",
+      "kind": "TRUNCATED_PUBLIC_SPEECH",
+      "samples": 34710,
+      "pcm_sha256": "e4b63451af78754da9c1227476c809b9ab2dd38f7a607f05d4dac6e96af22941",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "oreau-fear",
+      "kind": "PUBLIC_SPEECH",
+      "samples": 32694,
+      "pcm_sha256": "264f4f3727129cbdaed2d3bdf7182246649e2dfbba6c5b545fc03959e1b7a4d4",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "oreau-fear-prefix",
+      "kind": "TRUNCATED_PUBLIC_SPEECH",
+      "samples": 17981,
+      "pcm_sha256": "b8c8f97f7ff13d78c7bc32b71c5e973492d9e6e0495fb0f7d71c05909dc9857e",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "oreau-surprise",
+      "kind": "PUBLIC_SPEECH",
+      "samples": 44583,
+      "pcm_sha256": "17c071bdf88e6f594151ca35896ad90e913aad80cdac9d3ac61ea6ee29c44c5c",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "oreau-surprise-prefix",
+      "kind": "TRUNCATED_PUBLIC_SPEECH",
+      "samples": 24520,
+      "pcm_sha256": "d3d046099b1e41ff80fad5e1bf97f0bd3c500f50850a772b67f0a7b2a9a3532c",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "silence",
+      "kind": "SYNTHETIC_SILENCE",
+      "samples": 32000,
+      "pcm_sha256": "4f7988030a00d082fe445e00a2ac5dab502300ff1b80e8592dd569867b60ef74",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    {
+      "name": "tone",
+      "kind": "SYNTHETIC_TONE",
+      "samples": 32000,
+      "pcm_sha256": "8295a6496f6c6c209f77ddc9621ddbe0c9320516f6ddf64291868d820b6d995d",
+      "paths": {
+        "native": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        },
+        "shared": {
+          "tensor_bits_equal": {
+            "smart.pooled.f32le": true,
+            "vad.cache.f32le": true,
+            "smart.features.f32le": true,
+            "vad.features.f32le": true,
+            "vad.probs.f32le": true,
+            "smart.encoder.f32le": true
+          },
+          "result_and_decisions_exact": true,
+          "finite": true,
+          "pass": true
+        }
+      },
+      "pass": true
+    }
+  ],
+  "session": {
+    "turn_count": 4,
+    "turns_and_events_exact": true,
+    "python_runtime": false,
+    "onnx_runtime": false
+  },
+  "case_count": 10,
+  "pass": true
+}

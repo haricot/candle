@@ -4,6 +4,7 @@
 /reference-data/
 /.venv-reference/
 /.venv-convert/
+/.venv-native-check/
 /integration/
 !Cargo.lock
 *.wav

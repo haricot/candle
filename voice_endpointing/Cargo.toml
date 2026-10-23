@@ -11,9 +11,9 @@ description = "Native Candle FireRedVAD and Smart Turn v3.2, without Python or O
 anyhow = "1"
 candle = { package = "candle-core", path = "../candle-core" }
 candle-nn = { path = "../candle-nn" }
+candle-transformers = { path = "../candle-transformers" }
 clap = { version = "4", features = ["derive"] }
 hound = "3.5"
-rustfft = "6.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

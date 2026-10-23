@@ -1,22 +1,13 @@
-//! FireRedTeam Stream-VAD DFSMN, with the exact eight recurrent cache tensors.
+//! Compatible FireRedVAD package/audio adapter around the Candle model.
 use crate::{frontend::KaldiFbank, weights};
 use anyhow::{ensure, Result};
-use candle::{Device, IndexOp, Module, Tensor};
-use candle_nn::{linear, linear_no_bias, Linear};
+use candle::{Device, Tensor};
+use candle_transformers::models::fireredvad;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-struct Block {
-    fc1: Linear,
-    fc2: Linear,
-    filter: Tensor,
-}
-
 pub struct FireRedModel {
-    blocks: Vec<Block>,
-    dnn: Linear,
-    out: Linear,
-    device: Device,
+    inner: fireredvad::Model,
 }
 
 impl FireRedModel {
@@ -40,25 +31,9 @@ impl FireRedModel {
             "Invalid CMVN values"
         );
         let vb = weights::load(root, "fireredvad-stream", device)?;
-        let mut blocks = Vec::new();
-        for i in 0..8 {
-            let b = vb.pp(format!("blocks.{i}"));
-            blocks.push(Block {
-                fc1: linear(if i == 0 { 80 } else { 128 }, 256, b.pp("fc1"))?,
-                fc2: if i == 0 {
-                    linear(256, 128, b.pp("fc2"))?
-                } else {
-                    linear_no_bias(256, 128, b.pp("fc2"))?
-                },
-                filter: b.get((128, 1, 20), "filter")?,
-            });
-        }
         Ok((
             Self {
-                blocks,
-                dnn: linear(128, 256, vb.pp("dnn"))?,
-                out: linear(256, 1, vb.pp("out"))?,
-                device: device.clone(),
+                inner: fireredvad::Model::new(&fireredvad::Config::default(), vb)?,
             },
             config.mean,
             config.invstd,
@@ -66,34 +41,11 @@ impl FireRedModel {
     }
 
     pub fn zero_cache(&self) -> candle::Result<Tensor> {
-        Tensor::zeros((8, 1, 128, 19), candle::DType::F32, &self.device)
+        self.inner.zero_cache()
     }
 
     pub fn forward(&self, features: &Tensor, caches: &Tensor) -> Result<(Tensor, Tensor)> {
-        let (b, t, d) = features.dims3()?;
-        ensure!(
-            b == 1 && t > 0 && d == 80 && caches.dims() == [8, 1, 128, 19],
-            "FireRed input/cache shape mismatch"
-        );
-        let mut x = features.clone();
-        let mut new_cache = Vec::new();
-        for (i, block) in self.blocks.iter().enumerate() {
-            let h = block.fc1.forward(&x)?.relu()?;
-            let p = block.fc2.forward(&h)?;
-            let p = if i == 0 { p.relu()? } else { p };
-            let p = p.transpose(1, 2)?.contiguous()?;
-            let all = Tensor::cat(&[&caches.i(i)?, &p], 2)?;
-            new_cache.push(all.narrow(2, t, 19)?.contiguous()?);
-            // The historical cache supplies all left context; no right padding
-            // or lookahead is introduced by the native grouped convolution.
-            let memory = (&p + all.conv1d(&block.filter, 0, 1, 1, 128)?)?
-                .transpose(1, 2)?
-                .contiguous()?;
-            x = if i == 0 { memory } else { (&x + memory)? };
-        }
-        let probability =
-            candle_nn::ops::sigmoid(&self.out.forward(&self.dnn.forward(&x)?.relu()?)?)?;
-        Ok((probability, Tensor::stack(&new_cache, 0)?))
+        Ok(self.inner.forward(features, caches)?)
     }
 }
 

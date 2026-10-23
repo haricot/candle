@@ -1,0 +1,4 @@
+# Native Rust comparison only. No ONNX Runtime or Transformers.
+-r requirements-convert.txt
+pyarrow==26.0.0
+soundfile==0.14.0

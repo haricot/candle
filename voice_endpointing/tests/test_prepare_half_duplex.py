@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
 
 
@@ -12,6 +13,20 @@ SPEC.loader.exec_module(PREPARE)
 
 
 class CrateCopyTests(unittest.TestCase):
+    def test_transformers_overlay_uses_selected_backend(self):
+        core = PREPARE.ROOT.parent
+        with tempfile.TemporaryDirectory() as temp:
+            target = PREPARE.prepare_transformers(core, Path(temp))
+            workspace = tomllib.loads((target.parent / 'Cargo.toml').read_text())['workspace']
+            for name, package in (('candle', 'candle-core'), ('candle-nn', 'candle-nn')):
+                self.assertEqual(Path(workspace['dependencies'][name]['path']), core / package)
+            for name in PREPARE.MODEL_FILES:
+                self.assertEqual((target / 'src/models' / name).read_bytes(),
+                                 (core / 'candle-transformers/src/models' / name).read_bytes())
+            self.assertEqual((target / 'src/models/whisper/model.rs').read_bytes(),
+                             (core / 'candle-transformers/src/models/whisper/model.rs').read_bytes())
+            self.assertFalse((target / 'target').exists())
+
     def test_real_checkout_copies_sources_and_attribution(self):
         source = PREPARE.ROOT
         integration = source / 'integration'

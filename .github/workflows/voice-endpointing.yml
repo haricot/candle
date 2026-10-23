@@ -4,11 +4,23 @@ on:
     branches: [voice_endpointing_standalone]
     paths:
       - 'voice_endpointing/**'
+      - 'candle-transformers/src/models/fireredvad.rs'
+      - 'candle-transformers/src/models/fireredvad/**'
+      - 'candle-transformers/src/models/smart_turn.rs'
+      - 'candle-transformers/src/models/smart_turn/**'
+      - 'candle-transformers/Cargo.toml'
+      - 'candle-transformers/src/models/SMART-TURN-LICENSE'
+      - 'candle-transformers/src/models/mod.rs'
       - '.github/workflows/voice-endpointing.yml'
       - 'Cargo.toml'
       - 'candle-core/src/npy.rs'
       - 'candle-core/src/pickle.rs'
   workflow_dispatch:
+    inputs:
+      reference_comparison:
+        description: Run the separate upstream ONNX reference campaign
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -36,28 +48,38 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: python -m pip install -r voice_endpointing/requirements-reference.txt
-      - name: Native models against pinned real upstream references
-        run: bash voice_endpointing/ci/check.sh
+      - run: python -m pip install -r voice_endpointing/requirements-native-check.txt
+      - name: Native models against the qualified Rust baseline
+        run: bash voice_endpointing/ci/check-extraction.sh
       - name: Compile resident half-duplex against the promoted Extended source
         run: |
           git worktree add --detach "$RUNNER_TEMP/endpoint-extended" 6b29b7f43a574fae32984b34b46de7c1d9b145eb
-          python voice_endpointing/tools/check_session.py \
-            --half-root "$RUNNER_TEMP/endpoint-extended/half_duplex" \
-            --models "$ENDPOINT_REPORT_ROOT/models" --cache "$ENDPOINT_REFERENCE_CACHE" \
-            --binary voice_endpointing/target/release/voice-endpointing \
-            --output "$ENDPOINT_REPORT_ROOT/session"
           python voice_endpointing/tools/prepare_half_duplex.py \
             --half-root "$RUNNER_TEMP/endpoint-extended/half_duplex" \
             --candle-root "$RUNNER_TEMP/endpoint-extended" \
             --output "$GITHUB_WORKSPACE/voice_endpointing/integration/ci-resident"
           cargo check --release --locked \
             --manifest-path voice_endpointing/integration/ci-resident/r9/Cargo.toml --bin hdb1_native
+          cargo test --release --manifest-path voice_endpointing/integration/ci-resident/candle-models/candle-transformers/Cargo.toml \
+            --lib models::fireredvad
+          cargo test --release --manifest-path voice_endpointing/integration/ci-resident/candle-models/candle-transformers/Cargo.toml \
+            --lib models::smart_turn
+      - name: Optional upstream reference campaign
+        if: github.event_name == 'workflow_dispatch' && inputs.reference_comparison
+        run: |
+          python -m pip install -r voice_endpointing/requirements-reference.txt
+          bash voice_endpointing/ci/check.sh
+          python voice_endpointing/tools/check_session.py \
+            --half-root "$RUNNER_TEMP/endpoint-extended/half_duplex" \
+            --models "$ENDPOINT_REPORT_ROOT/models" --cache "$ENDPOINT_REFERENCE_CACHE" \
+            --binary voice_endpointing/target/release/voice-endpointing \
+            --output "$ENDPOINT_REPORT_ROOT/session"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: native-endpointing-cpu-${{ github.run_id }}
           path: |
+            ${{ runner.temp }}/endpoint-report/extraction-compatibility.json
             ${{ runner.temp }}/endpoint-report/qualification.json
             ${{ runner.temp }}/endpoint-report/cases/qualification.json
             ${{ runner.temp }}/endpoint-report/session/session-qualification.json

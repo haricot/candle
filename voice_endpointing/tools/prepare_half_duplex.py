@@ -14,8 +14,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 
 ROOT=Path(__file__).resolve().parents[1]
+MODEL_FILES=('fireredvad.rs','fireredvad/audio.rs','smart_turn.rs','smart_turn/audio.rs','SMART-TURN-LICENSE')
 
 def digest_sources(root):
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest()
@@ -33,6 +35,56 @@ def copy_endpointing_crate(source, destination):
         shutil.copy2(source/name,destination/name)
     shutil.copytree(source/'src',destination/'src')
 
+def toml_value(value):
+    """Serialize the scalar/inline values in Candle's workspace metadata."""
+    if isinstance(value,str):return json.dumps(value,ensure_ascii=False)
+    if isinstance(value,bool):return 'true' if value else 'false'
+    if isinstance(value,(int,float)):return str(value)
+    if isinstance(value,list):return '['+', '.join(toml_value(v) for v in value)+']'
+    if isinstance(value,dict):return '{'+', '.join(json.dumps(k)+' = '+toml_value(v) for k,v in value.items())+'}'
+    raise TypeError(f'Unsupported workspace metadata: {type(value)}')
+
+def prepare_transformers(core, work):
+    """Overlay only the models in an isolated crate, keeping one exact backend.
+
+    An older promoted Extended checkout does not yet contain these models. Its
+    backend and existing model sources remain unchanged. A small private
+    workspace binds the copied transformer crate to that checkout's absolute
+    dependency paths; no second candle-core is built from the feature branch.
+    """
+    core=core.resolve()
+    source=ROOT.parent/'candle-transformers/src/models'
+    for name in MODEL_FILES:
+        if not (source/name).is_file():raise ValueError(f'Missing Candle model source: {source/name}')
+    support=work/'candle-models';support.mkdir()
+    target=support/'candle-transformers';target.mkdir()
+    for name in ('Cargo.toml','README.md'):
+        shutil.copy2(core/'candle-transformers'/name,target/name)
+    shutil.copytree(core/'candle-transformers/src',target/'src')
+    for name in MODEL_FILES:
+        dst=target/'src/models'/name;dst.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(source/name,dst)
+    manifest=target/'Cargo.toml';text=manifest.read_text()
+    if 'rustfft' not in tomllib.loads(text)['dependencies']:
+        text=text.replace('[dependencies]','[dependencies]\nrustfft = { workspace = true }',1)
+    manifest.write_text(text)
+    exports=target/'src/models/mod.rs';text=exports.read_text()
+    for name in ('fireredvad','smart_turn'):
+        if f'pub mod {name};' not in text:text+=f'\npub mod {name};\n'
+    exports.write_text(text)
+    workspace=tomllib.loads((core/'Cargo.toml').read_text())['workspace']
+    dependencies=workspace['dependencies']
+    dependencies.setdefault('rustfft',tomllib.loads((ROOT.parent/'Cargo.toml').read_text())['workspace']['dependencies']['rustfft'])
+    for value in dependencies.values():
+        if isinstance(value,dict) and 'path' in value:
+            value['path']=str((core/value['path']).resolve())
+    content='[workspace]\nmembers = ["candle-transformers"]\nresolver = "2"\n'
+    for section,values in [('package',workspace['package']),('dependencies',dependencies)]:
+        content+=f'\n[workspace.{section}]\n'
+        content+=''.join(json.dumps(k)+' = '+toml_value(v)+'\n' for k,v in values.items())
+    (support/'Cargo.toml').write_text(content)
+    return target
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--half-root',type=Path,required=True)
@@ -40,6 +92,7 @@ def main():
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args();half=a.half_root.resolve();core=a.candle_root.resolve();work=a.output.resolve()
     work.mkdir(parents=True,exist_ok=False)
+    transformers=prepare_transformers(core,work)
     sys.path.insert(0,str(half))
     spec=importlib.util.spec_from_file_location('qualified_r9_builder',half/'ci/extended_build.py')
     builder=importlib.util.module_from_spec(spec);spec.loader.exec_module(builder)
@@ -53,6 +106,7 @@ def main():
     manifest=(endpoint/'Cargo.toml').read_text()
     for name in ('candle-core','candle-nn'):
         manifest=manifest.replace(f'path = "../{name}"',f'path = {json.dumps(str(core/name))}')
+    manifest=manifest.replace('path = "../candle-transformers"',f'path = {json.dumps(str(transformers))}')
     (endpoint/'Cargo.toml').write_text(manifest)
     manifest=(r9/'Cargo.toml').read_text()
     if manifest.count('\n[features]')!=1:raise ValueError('Qualified R9 manifest anchor changed')
@@ -73,6 +127,10 @@ def main():
         'candle_sha':subprocess.check_output(['git','-C',str(core),'rev-parse','HEAD'],text=True).strip(),
         'qualified_r9_sources_unchanged':True,'r9_source_sha256':original,
         'upstream_hub_cli_dependency_optional':True,
+        'voice_models_provider':'candle-transformers::models::{fireredvad,smart_turn}',
+        'voice_model_sha256':{name:hashlib.sha256((transformers/'src/models'/name).read_bytes()).hexdigest()
+            for name in MODEL_FILES},
+        'backend_source_paths':{name:str(core/name) for name in ('candle-core','candle-nn')},
         'new_binary_sha256':hashlib.sha256(code.encode()).hexdigest(),
         'endpointing_sources_sha256':digest_sources(endpoint)}
     (work/'native-build.json').write_text(json.dumps(report,indent=2)+'\n')

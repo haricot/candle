@@ -1,7 +1,9 @@
 # Half-duplex natif Rust / Candle
 
-FireRedVAD Stream et Smart Turn v3.2 sont implémentés ici comme deux modules
-Rust indépendants. L'inférence emploie Candle ; le traitement audio emploie
+FireRedVAD Stream et Smart Turn v3.2 sont implémentés dans
+`candle-transformers/src/models/{fireredvad,smart_turn}.rs`. Le crate autonome
+`voice_endpointing/` fournit les adaptateurs audio et le contrôleur.
+L'inférence emploie Candle ; le traitement audio emploie
 Rust et rustfft. Aucun interpréteur Python, ONNX Runtime, Transformers ou
 Kaldi natif n'est chargé par les exécutables.
 
@@ -9,7 +11,18 @@ La branche `voice_endpointing_standalone`, basée sur `main`
 `c68b24997319b8d76e5a4e775dab197c7f26322a`, regroupe ces deux ports et leur
 contrôleur commun. Ce choix évite de dupliquer les buffers, le traitement audio,
 la politique de fin de tour et l'intégration R9 entre deux branches.
-Les deux modèles restent utilisables séparément depuis la bibliothèque.
+Les deux modèles sont utilisables directement depuis `candle-transformers`,
+avec `Config`, `VarBuilder` et des entrées/sorties `Tensor`, sans ce SDK.
+FireRed reçoit des features CMVN et un cache explicite ; Smart Turn reçoit
+des features Whisper et expose aussi les sorties intermédiaires de diagnostic.
+Ils ne chargent ni fichier, ni microphone, ni politique de silence.
+
+Les prétraitements sans I/O sont également réutilisables via
+`fireredvad::audio::KaldiFbank` et `smart_turn::audio::WhisperFeatures`.
+Les méthodes publiques existantes de `FireRedModel`, `FireRedVad`, `SmartTurn`
+et les scripts micro restent disponibles via des adaptateurs. La lecture des WAV,
+les empreintes des paquets, seuils, état de dialogue et chargement ASR résident
+restent dans le SDK. Les poids convertis existants sont réutilisés.
 
 | Composant | Exécution native |
 | --- | --- |
@@ -77,6 +90,11 @@ L'installateur réutilise les modèles convertis présents et prépare un nouvea
 dossier `integration/resident-*`. La copie du crate se limite à `src/`,
 `Cargo.toml`, `Cargo.lock` et `NOTICE.md` ; elle ne parcourt ni les anciens builds
 dans `integration/` ni `.venv-convert/`.
+
+La préparation instancie également un crate `candle-transformers` isolé à partir
+du checkout Extended choisi et y ajoute uniquement les deux modèles. Ses chemins
+de dépendance pointent tous vers ce même `candle-core` / `candle-nn` Extended :
+le backend promu n'est pas modifié et aucun second backend n'est introduit.
 
 ## Essai microphone avec R9 CUDA résident
 
@@ -157,8 +175,25 @@ Ce choix est local au nouveau port ; aucun kernel Candle ou calcul R9 n'est chan
 
 ## Qualification courte et reproductible
 
-La CI `Native voice endpointing CPU` réalise les contrôles Rust, puis compare
-les deux modèles aux sources ONNX CPU, sans NeMo et sans campagne ASR complète.
+La CI `Native voice endpointing CPU` compare l'extraction à l'implémentation Rust
+qualifiée `fced4317d64715174c32f48bc3bc9211f514c342` sur le même backend CPU.
+Dix cas sont rejoués depuis le PCM et depuis des features communes : les bits
+des tenseurs, scores et décisions doivent être conservés par cette refactorisation.
+Quatre interventions successives vérifient également les PCM découpés, motifs
+de clôture et événements, sans charger ONNX Runtime. Ce contrôle de déplacement
+de code ne crée aucune exigence bit à bit entre CPU et CUDA.
+
+```bash
+python3 -m venv voice_endpointing/.venv-native-check
+voice_endpointing/.venv-native-check/bin/python -m pip install \
+  -r voice_endpointing/requirements-native-check.txt
+ENDPOINT_PYTHON="$PWD/voice_endpointing/.venv-native-check/bin/python" \
+  bash voice_endpointing/ci/check-extraction.sh
+```
+
+La campagne aux références ONNX CPU reste disponible séparément, sans NeMo
+et sans campagne ASR complète. Elle s'active manuellement avec l'option
+`reference_comparison` du workflow, ou avec les commandes suivantes.
 La télémétrie ONNX Runtime est désactivée avant toute session de référence.
 Ces dépendances Python sont isolées et réservées à la qualification.
 
@@ -178,7 +213,7 @@ référence. Les formes, la finitude, les limites absolues **et** relatives, les
 diagnostic. Les bornes sont déclarées dans `tools/qualify.py` avant les mesures.
 Les fichiers audio et les activations ne sont pas publiés par la CI.
 
-Un second contrôle rejoue quatre interventions consécutives devant le
+Le contrôle de référence optionnel rejoue aussi quatre interventions consécutives devant le
 contrôleur HDB1 existant avec la référence Smart Turn **FP32** : PCM découpés,
 raisons, événements et horloges d'échantillons doivent être identiques.
 La CI compile aussi le binaire combiné contre le checkout Extended promu

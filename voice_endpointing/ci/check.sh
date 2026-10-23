@@ -11,7 +11,9 @@ export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-4}"
 cargo fmt --manifest-path "$ROOT/Cargo.toml" -- --check
 cargo test --release --locked --manifest-path "$ROOT/Cargo.toml" --lib
 cargo build --release --locked --manifest-path "$ROOT/Cargo.toml" --bins
-"$PYTHON" "$ROOT/tools/convert.py" --cache "$CACHE" --output "$REPORT/models" > "$REPORT/conversion.log"
+if [[ ! -d "$REPORT/models" ]]; then
+  "$PYTHON" "$ROOT/tools/convert.py" --cache "$CACHE" --output "$REPORT/models" > "$REPORT/conversion.log"
+fi
 "$PYTHON" "$ROOT/tools/qualify.py" --models "$REPORT/models" --cache "$CACHE" \
   --binary "${CARGO_TARGET_DIR:-$ROOT/target}/release/probe" --output "$REPORT/cases"
 cp "$REPORT/cases/qualification.json" "$REPORT/qualification.json"

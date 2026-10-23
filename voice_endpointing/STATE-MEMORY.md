@@ -112,3 +112,50 @@ corrigé et un troisième test copie le vrai checkout dans un sous-dossier
 `integration/`, puis compare les manifestes, la notice et les empreintes de
 tous les fichiers Rust. Ce test reproduit l'erreur avant correction et passe
 après, en complément des deux contrôles de disposition des fichiers.
+
+## Extraction des modèles dans candle-transformers — 2026-10-23
+
+Décision utilisateur : placer les modèles dans `candle-transformers/src/models`
+en conservant toutes les possibilités du parcours natif déjà essayé au micro.
+La branche reste `voice_endpointing_standalone` ; aucun changement de checkout,
+de commande de lancement ou de paquet de poids n'est imposé au laptop.
+
+- `fireredvad::Model` et `smart_turn::Model` exposent `Config`, `VarBuilder`
+  et une inférence Tensor sans I/O. Le cache FireRed est explicite ; les
+  positions Smart Turn entraînées, la normalisation centrée FP64 et l'ordre
+  des opérations du modèle FP32 sont conservés.
+- Leurs sous-modules `audio` portent les deux prétraitements distincts et
+  leurs tests. Ils n'importent ni I/O WAV, ni microphone, ni moteur externe.
+- Le crate SDK `voice_endpointing` conserve les types/méthodes publics
+  existants via des adaptateurs, les paquets vérifiés, CMVN, le post-traitement
+  VAD, les politiques de tour, la capture PipeWire et l'intégration R9 résidente.
+  Les deux architectures neuronales ne sont plus dupliquées dans le SDK.
+- La préparation construit un crate transformers isolé depuis le checkout
+  Extended sélectionné, avec seulement les nouveaux modules/helpers ajoutés.
+  Tous les chemins core/nn pointent vers ce checkout ; aucune modification du
+  backend promu et aucun second exemplaire de ces crates ne sont introduits.
+
+Validation locale Rust 1.99.0 : trois tests SDK, quatre tests modèles et quatre
+tests de préparation réussis ; binaire résident CPU compilé contre Extended
+exact `6b29b7f43a574fae32984b34b46de7c1d9b145eb`, aide CLI exécutée.
+Cargo metadata confirme un seul core, un seul nn et un seul transformers.
+Les anciens fichiers Rust R9 restent vérifiés identiques. Les dépendances
+dynamiques du binaire CPU restent libc, libm et libgcc_s.
+
+Dix cas du corpus fixé, avec PCM natif et features communes, comparés à la
+version Rust qualifiée `fced4317d64715174c32f48bc3bc9211f514c342` sur le même
+backend CPU : les 120 tenseurs comparés et tous les scores/décisions sont
+identiques bit à bit. Quatre tours rejoués dans les deux contrôleurs donnent
+les mêmes PCM, motifs et événements, après exclusion de la seule latence de
+calcul. Ce contrôle de refactorisation n'étend pas l'exigence aux CPU/CUDA.
+Voir `results/model-extraction-{compatibility,build}.json`.
+
+Le contrôle automatique a refusé la relance locale de la référence ONNX en
+signalant une télémétrie Microsoft non autorisée malgré le disable existant.
+La validation a donc utilisé uniquement les deux exécutables Rust et un module
+de corpus qui ne charge aucun moteur externe. La CI par défaut emploie ce
+contrôle natif. L'ancienne campagne ONNX reste séparée et activable à la demande
+(`reference_comparison`), avec ses exigences de qualification inchangées.
+L'extraction n'a pas relancé d'inférence ASR, de micro ou de GPU dans cet
+environnement ; le rapport micro CUDA utilisateur de huit tours précède ce
+déplacement. Le raccordement R9 et ses sources sont conservés.
