@@ -25,6 +25,12 @@ pub struct EncoderConfig {
     pub convolution_bias: bool,
     pub scale_input: bool,
     pub hidden_act: String,
+    #[serde(default = "default_positions")]
+    pub max_position_embeddings: usize,
+}
+
+fn default_positions() -> usize {
+    5000
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -66,6 +72,7 @@ impl Config {
             || self.prompt_intermediate_size == 0
             || self.max_symbols_per_step == 0
             || e.hidden_size == 0
+            || e.hidden_size % 2 != 0
             || e.intermediate_size == 0
             || e.num_hidden_layers == 0
             || e.num_attention_heads == 0
@@ -80,6 +87,7 @@ impl Config {
             || e.subsampling_conv_kernel_size != 3
             || e.subsampling_conv_stride != 2
             || e.sliding_window == 0
+            || e.max_position_embeddings == 0
             || e.supported_num_lookahead_tokens.is_empty()
             || !e
                 .supported_num_lookahead_tokens
@@ -92,7 +100,7 @@ impl Config {
     }
 
     /// Nominal audio block sizes, not a measurement of inference latency.
-    /// The runtime cache protocol is intentionally not inferred from these sizes.
+    /// Includes the distinct first-block size required by the reference protocol.
     pub fn chunk_plan(&self, processor: &ProcessorConfig, lookahead: usize) -> Result<ChunkPlan> {
         processor.validate(self)?;
         let e = &self.encoder_config;
@@ -115,6 +123,7 @@ impl Config {
             mel_frames,
             audio_samples,
             sample_rate: processor.feature_extractor.sampling_rate,
+            first_mel_frames: 1 + e.subsampling_factor * lookahead,
         })
     }
 }
@@ -187,6 +196,7 @@ pub struct ChunkPlan {
     pub mel_frames: usize,
     pub audio_samples: usize,
     pub sample_rate: usize,
+    pub first_mel_frames: usize,
 }
 
 #[cfg(test)]
