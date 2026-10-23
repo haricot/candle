@@ -50,9 +50,9 @@ jobs:
           python voice_endpointing/tools/prepare_half_duplex.py \
             --half-root "$RUNNER_TEMP/endpoint-extended/half_duplex" \
             --candle-root "$RUNNER_TEMP/endpoint-extended" \
-            --output "$RUNNER_TEMP/endpoint-resident"
+            --output "$GITHUB_WORKSPACE/voice_endpointing/integration/ci-resident"
           cargo check --release --locked \
-            --manifest-path "$RUNNER_TEMP/endpoint-resident/r9/Cargo.toml" --bin hdb1_native
+            --manifest-path voice_endpointing/integration/ci-resident/r9/Cargo.toml --bin hdb1_native
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -61,5 +61,5 @@ jobs:
             ${{ runner.temp }}/endpoint-report/qualification.json
             ${{ runner.temp }}/endpoint-report/cases/qualification.json
             ${{ runner.temp }}/endpoint-report/session/session-qualification.json
-            ${{ runner.temp }}/endpoint-resident/native-build.json
+            voice_endpointing/integration/ci-resident/native-build.json
           if-no-files-found: warn

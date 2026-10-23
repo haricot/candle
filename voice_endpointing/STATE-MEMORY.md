@@ -83,3 +83,24 @@ La première référence a été bloquée par le contrôle automatique pour une
 connexion de télémétrie ONNX Runtime. Toutes les références actives appellent
 disable_telemetry_events avant création de session ; la validation reprise a
 réussi. Cette dépendance n'existe pas dans l'application native.
+
+## Correction de préparation locale — 2026-10-23
+
+L'installateur plaçait son output sous `voice_endpointing/integration/`, puis
+`prepare_half_duplex.py` recopiait tout `voice_endpointing/` sans exclure ce
+dossier. La sortie se recopiait dans elle-même jusqu'à l'erreur de chemin.
+La CI ne reproduisait pas ce problème : sa sortie était hors du checkout.
+La copie globale embarquait également `.venv-convert/` sur le laptop.
+
+La préparation copie désormais seulement les entrées du crate : `src/`,
+`Cargo.toml`, `Cargo.lock` et `NOTICE`. Elle accepte les sorties sous
+`integration/` sans parcourir les builds existants et refuse une destination
+dans les sources Rust. Les anciens fichiers Rust R9 restent vérifiés inchangés.
+Les modèles déjà convertis et les anciens dossiers de travail sont conservés.
+
+Deux tests Python stdlib passent : sorties imbriquée/externe avec un ancien
+build et un environnement de conversion présents, puis refus d'une sortie
+dans `src/`. Le même cas reproduit l'erreur avec l'ancienne copie globale.
+Ces tests sont exécutés avant les builds dans `ci/check.sh`. La CI prépare
+maintenant réellement le binaire résident sous `voice_endpointing/integration/`
+avant sa compilation, comme l'installateur. Aucun calcul Rust n'est modifié.

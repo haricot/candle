@@ -21,6 +21,18 @@ def digest_sources(root):
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted((root/'src').rglob('*.rs'))}
 
+def copy_endpointing_crate(source, destination):
+    """Copy build inputs, including when output lives under source/integration."""
+    source=source.resolve();destination=destination.resolve()
+    if destination==source or destination.is_relative_to(source/'src'):
+        raise ValueError('Endpointing crate output must be outside its Rust sources')
+    destination.mkdir(parents=True,exist_ok=False)
+    # Never traverse integration, virtualenvs, weights or other local artifacts:
+    # the installer creates its output inside this checkout's integration/.
+    for name in ('Cargo.toml','Cargo.lock','NOTICE'):
+        shutil.copy2(source/name,destination/name)
+    shutil.copytree(source/'src',destination/'src')
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--half-root',type=Path,required=True)
@@ -37,7 +49,7 @@ def main():
     matches=re.findall(r'cfg\["hdb2c9_tokenizer"\]=serde_json::from_str\(r###"(.*?)"###\)',probe)
     if len(matches)!=1:raise ValueError('Qualified R9 tokenizer anchor changed')
     endpoint=work/'voice_endpointing'
-    shutil.copytree(ROOT,endpoint,ignore=shutil.ignore_patterns('.git','target','models','reports','reference-data','.venv-reference','__pycache__'))
+    copy_endpointing_crate(ROOT,endpoint)
     manifest=(endpoint/'Cargo.toml').read_text()
     for name in ('candle-core','candle-nn'):
         manifest=manifest.replace(f'path = "../{name}"',f'path = {json.dumps(str(core/name))}')

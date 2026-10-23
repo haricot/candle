@@ -7,6 +7,7 @@ REPORT="${ENDPOINT_REPORT_ROOT:-$ROOT/reports/qualification-$(date -u +%Y%m%dT%H
 mkdir -p "$CACHE" "$REPORT"
 export HF_HUB_DISABLE_TELEMETRY=1
 export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-4}"
+"$PYTHON" -m unittest discover -s "$ROOT/tests" -p 'test_*.py'
 cargo fmt --manifest-path "$ROOT/Cargo.toml" -- --check
 cargo test --release --locked --manifest-path "$ROOT/Cargo.toml" --lib
 cargo build --release --locked --manifest-path "$ROOT/Cargo.toml" --bins
