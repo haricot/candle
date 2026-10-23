@@ -27,9 +27,9 @@ jobs:
         run: python3 -m compileall -q tools/transcribepsy_tp3
 
   # TP3 downloads ~2 GB of official weights plus one public CaFE subset.
-  # Keep it opt-in until its dependency and provenance contracts are green.
+  # Run on explicit dispatch or a one-shot [tp3-real] commit; subsequent ordinary pushes remain light.
   tp3-real-cpu-f32:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[tp3-real]')
     needs: tp3-driver-contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 90
