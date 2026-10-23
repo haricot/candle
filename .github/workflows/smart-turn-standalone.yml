@@ -1,0 +1,25 @@
+name: Smart Turn standalone model contracts
+on:
+  push:
+    branches: [smart_turn_standalone]
+    paths:
+      - 'Cargo.toml'
+      - 'candle-transformers/**'
+      - '.github/workflows/smart-turn-standalone.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt
+      - name: Verify model format
+        run: rustfmt --edition 2021 --check candle-transformers/src/models/smart_turn.rs candle-transformers/src/models/smart_turn/audio.rs
+      - name: Smart Turn model and feature contracts
+        run: cargo test --locked -p candle-transformers --lib models::smart_turn -- --nocapture
