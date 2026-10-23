@@ -9,6 +9,7 @@ use candle::{D, Result, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
 use serde::Deserialize;
 
+pub mod encoder;
 pub mod tdt;
 
 #[derive(Debug, Clone, Deserialize)]
