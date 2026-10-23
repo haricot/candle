@@ -94,6 +94,15 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
+      - name: Verify standalone Lean4 kernel and provision Lake
+        if: matrix.feature == 'lean4_standalone'
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
+        with:
+          lake-package-directory: tools/lean4-standalone/lean
+          auto-config: false
+          build: true
+          axiom-audit: true
+          use-github-cache: false
       - name: Independent source CPU gate
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
       - if: always()
@@ -131,6 +140,14 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
+      - name: Verify integrated Lean4 kernel and provision Lake
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
+        with:
+          lake-package-directory: tools/lean4-standalone/lean
+          auto-config: false
+          build: true
+          axiom-audit: true
+          use-github-cache: false
       - id: check
         run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
       - if: always()
