@@ -22,4 +22,4 @@ jobs:
       - name: Verify model format
         run: rustfmt --edition 2021 --check candle-transformers/src/models/smart_turn.rs candle-transformers/src/models/smart_turn/audio.rs
       - name: Smart Turn model and feature contracts
-        run: cargo test --locked -p candle-transformers --lib models::smart_turn -- --nocapture
+        run: cargo test -p candle-transformers --lib models::smart_turn -- --nocapture
