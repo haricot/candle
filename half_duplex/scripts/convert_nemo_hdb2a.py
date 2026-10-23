@@ -244,7 +244,6 @@ def extract_model(nemo_path: Path, dest: Path):
             'original_dither': original_dither, 'inference_dither': 0.0,
             'original_pad_to': original_pad_to, 'effective_pad_to': cfg['preprocessor']['pad_to'],
             'd_model': cfg['encoder']['d_model'],
-            'model_dir': str(dest.resolve()),
             'asr_qualified': False,
         }
         (dest / 'conversion.json').write_text(json.dumps(meta,indent=2,ensure_ascii=False)+'\n', encoding='utf-8')
