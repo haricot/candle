@@ -23,6 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.0'
+          components: rustfmt
       - name: Format new module
         run: rustfmt --edition 2021 --check candle-transformers/src/models/nemotron3_5_asr/mod.rs
       - name: Official config and language projection contracts (no ASR parity claim)
