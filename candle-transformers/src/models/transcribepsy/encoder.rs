@@ -232,16 +232,17 @@ impl RelativeAttention {
         let (b, t, d) = x.dims3()?;
         let shape = (b, t, self.heads, self.head_dim);
         let q = self.query.forward(x)?.reshape(shape)?;
-        let k = self.key.forward(x)?.reshape(shape)?.transpose(1, 2)?;
-        let v = self.value.forward(x)?.reshape(shape)?.transpose(1, 2)?;
+        let k = self.key.forward(x)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
+        let v = self.value.forward(x)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
         let p = self.position.forward(position)?
             .reshape((1, 2 * t - 1, self.heads, self.head_dim))?
             .transpose(1, 2)?
-            .broadcast_as((b, self.heads, 2 * t - 1, self.head_dim))?;
+            .broadcast_as((b, self.heads, 2 * t - 1, self.head_dim))?
+            .contiguous()?;
         let u = q.broadcast_add(&self.bias_u.reshape((1, 1, self.heads, self.head_dim))?)?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?.contiguous()?;
         let w = q.broadcast_add(&self.bias_v.reshape((1, 1, self.heads, self.head_dim))?)?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?.contiguous()?;
         let content = u.matmul(&k.transpose(2, 3)?.contiguous()?)?;
         let relative = w.matmul(&p.transpose(2, 3)?.contiguous()?)?;
         // Transformer-XL's relative shift: align the zero-relative index with
