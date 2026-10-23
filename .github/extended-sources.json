@@ -87,15 +87,47 @@
       "cuda_features": []
     },
     {
-      "feature": "half_duplex_standalone",
-      "source_ref": "half_duplex_standalone",
-      "target_ref": "half_duplex_standalone",
-      "review_source_sha": "7a90193aa384f4e6eb37fa8200c063fc25488210",
+      "feature": "fireredvad_standalone",
+      "source_ref": "fireredvad_standalone",
+      "target_ref": "fireredvad_standalone",
+      "review_source_sha": "1036751fcdd03c4ce598cfbda347de3efb116e2c",
       "pin_source_sha": true,
-      "cpu_tests": "half-duplex-native",
+      "cpu_tests": "fireredvad-native",
       "cuda_features": [
-        "cuda",
-        "cudnn"
+        "cuda"
+      ]
+    },
+    {
+      "feature": "smart_turn_standalone",
+      "source_ref": "smart_turn_standalone",
+      "target_ref": "smart_turn_standalone",
+      "review_source_sha": "aff15a2060f68c1bfe90fe8f82e729ffda93c62a",
+      "pin_source_sha": true,
+      "cpu_tests": "smart-turn-native",
+      "cuda_features": [
+        "cuda"
+      ]
+    },
+    {
+      "feature": "transcribepsy_standalone",
+      "source_ref": "TranscribePsy",
+      "target_ref": "TranscribePsy",
+      "review_source_sha": "265cd52841fdf80620736d613b2b917bfb5dc863",
+      "pin_source_sha": true,
+      "cpu_tests": "transcribepsy-native",
+      "cuda_features": [
+        "cuda"
+      ]
+    },
+    {
+      "feature": "nemotron_asr_streaming_standalone",
+      "source_ref": "nemotron_asr_streaming_standalone",
+      "target_ref": "nemotron_asr_streaming_standalone",
+      "review_source_sha": "98ac45349275af3235a28e28a41c2373f1d83587",
+      "pin_source_sha": true,
+      "cpu_tests": "nemotron-asr-native",
+      "cuda_features": [
+        "cuda"
       ]
     }
   ],
@@ -105,9 +137,10 @@
       "all_independent_cpu_pass",
       "combined_hosted_cpu_pass",
       "combined_hosted_cuda_sm61_compiles",
-      "physical_sm61_extended_pass"
+      "physical_sm61_extended_pass",
+      "all_voice_model_contracts_and_cli_pass"
     ],
-    "hosted_validation_state": "PENDING_NINE_SOURCE_CPU_CUDA_AND_PHYSICAL_SM61",
+    "hosted_validation_state": "PENDING_TWELVE_SOURCE_CPU_CUDA_AND_PHYSICAL_SM61",
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
     "never_push_to_main": true,
