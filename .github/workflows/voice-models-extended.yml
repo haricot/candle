@@ -1,0 +1,34 @@
+name: Extended voice models CPU qualification
+on:
+  push:
+    branches: [voice_models_extended_candidate, extended]
+    paths:
+      - 'Cargo.toml'
+      - 'candle-transformers/Cargo.toml'
+      - 'candle-transformers/src/models/fireredvad.rs'
+      - 'candle-transformers/src/models/fireredvad/**'
+      - 'candle-transformers/src/models/smart_turn.rs'
+      - 'candle-transformers/src/models/smart_turn/**'
+      - 'candle-transformers/src/models/transcribepsy/**'
+      - 'candle-transformers/src/models/mod.rs'
+      - '.github/workflows/voice-models-extended.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  model-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - name: FireRedVAD CPU
+        run: cargo test -p candle-transformers --lib models::fireredvad
+      - name: Smart Turn CPU
+        run: cargo test -p candle-transformers --lib models::smart_turn
+      - name: TranscribePsy predictor encoder TDT
+        run: cargo test -p candle-transformers --lib models::transcribepsy
+      - name: TP3 driver contract
+        run: cargo test -p candle-examples --example transcribepsy_tp3
