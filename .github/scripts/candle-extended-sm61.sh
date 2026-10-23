@@ -129,9 +129,30 @@ if has_feature asd_core_v3_standalone; then
   run_gate asd_runtime_profile_swap cargo run -p candle-core --release --example asd_v3_phase_d_runtime_profile_swap_validate --features "$CORE_FEATURES"
 fi
 
-if has_feature half_duplex_standalone; then
-  cp candle-integration/half-duplex-ci.json "$REPORT_DIR/half-duplex-ci.json"
-  run_gate half_duplex_gpu bash half_duplex/ci/extended_gate.sh gpu
+# Compile and execute native voice model contracts on the physical SM61 runner.
+# These checks establish native CUDA build compatibility; real tensor parity
+# for Nemotron is separately required below.
+if has_feature fireredvad_standalone; then
+  run_gate fireredvad_cuda_contracts cargo test -p candle-transformers --lib --release --locked --features cuda models::fireredvad
+fi
+if has_feature smart_turn_standalone; then
+  run_gate smart_turn_cuda_contracts cargo test -p candle-transformers --lib --release --locked --features cuda models::smart_turn
+fi
+if has_feature transcribepsy_standalone; then
+  run_gate transcribepsy_cuda_contracts cargo test -p candle-transformers --lib --release --locked --features cuda models::transcribepsy
+  run_gate transcribepsy_cuda_cli cargo test -p candle-examples --example transcribepsy_tp3 --release --locked --features cuda
+fi
+if has_feature nemotron_asr_streaming_standalone; then
+  run_gate nemotron_asr_cuda_contracts cargo test -p candle-transformers --lib --release --locked --features cuda nemotron3_5_asr
+  run_gate nemotron_asr_cuda_cli cargo build -p candle-examples --example nemotron_asr --release --locked --features cuda,cudnn
+  # Real model parity is a mandatory runtime gate, never inferred from
+  # successful CUDA compilation or CPU-only contracts.
+  model_dir="${CANDLE_NEMOTRON_MODEL_DIR:-/run/haricot/models/nemotron-3.5-asr}"
+  fixture_wav="${CANDLE_NEMOTRON_TEST_WAV:-/run/haricot/fixtures/cameo-fr-16k.wav}"
+  [[ -d "$model_dir" ]] || fail "missing Nemotron official model: $model_dir"
+  [[ -f "$fixture_wav" ]] || fail "missing Nemotron mono 16 kHz WAV: $fixture_wav"
+  run_gate nemotron_asr_cuda_real_parity bash tools/nemotron_asr_streaming/qualify-local.sh \
+    "$model_dir" "$fixture_wav" "$REPORT_DIR/nemotron-real-parity" cuda-cudnn
 fi
 
 echo "EXTENDED_SM61_CANDIDATE=$actual_sha" | tee -a "$REPORT_DIR/summary.txt"
