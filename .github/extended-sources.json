@@ -70,7 +70,7 @@
       "feature": "embeddinggemma2",
       "source_ref": "embeddinggemma2",
       "target_ref": "embeddinggemma2",
-      "review_source_sha": "806a44bae9e539f59ad088c4d72922433c6a9018",
+      "review_source_sha": "e99e623b89647f92e781618f42511acec523351f",
       "cpu_tests": "embedding-gemma2-native",
       "cuda_features": [
         "cuda"
@@ -81,7 +81,7 @@
       "feature": "lean4_standalone",
       "source_ref": "lean4_standalone",
       "target_ref": "lean4_standalone",
-      "review_source_sha": "1e19833d48f98ae7c9e978edd5665725df0adaf6",
+      "review_source_sha": "d753baf07fcebef53712f63b6cb79c24b0aa2930",
       "pin_source_sha": true,
       "cpu_tests": "lean4-contracts",
       "cuda_features": []
