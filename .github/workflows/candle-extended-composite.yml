@@ -48,7 +48,7 @@ jobs:
           ref: orch/extended-full-voice-no-half-20261023
           fetch-depth: 0
           persist-credentials: false
-      - name: Prepare exact twelve-source Extended candidate
+      - name: Prepare full 12-source candidate (audited Cargo reconciliation)
         id: assemble
         shell: bash
         env:
