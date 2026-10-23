@@ -65,6 +65,33 @@ if [[ "$MODE" == integrated ]]; then
       tail -n 120 "$report/embedding-gemma2-tests.log"; exit 1;
     }
   fi
+
+  if has_feature fireredvad_standalone; then
+    cargo test -p candle-transformers --lib --locked models::fireredvad > "$report/fireredvad-tests.log" 2>&1 || {
+      tail -n 120 "$report/fireredvad-tests.log"; exit 1;
+    }
+  fi
+  if has_feature smart_turn_standalone; then
+    cargo test -p candle-transformers --lib --locked models::smart_turn > "$report/smart-turn-tests.log" 2>&1 || {
+      tail -n 120 "$report/smart-turn-tests.log"; exit 1;
+    }
+  fi
+  if has_feature transcribepsy_standalone; then
+    cargo test -p candle-transformers --lib --locked models::transcribepsy > "$report/transcribepsy-tests.log" 2>&1 || {
+      tail -n 120 "$report/transcribepsy-tests.log"; exit 1;
+    }
+    cargo test -p candle-examples --example transcribepsy_tp3 --locked > "$report/transcribepsy-cli-tests.log" 2>&1 || {
+      tail -n 120 "$report/transcribepsy-cli-tests.log"; exit 1;
+    }
+  fi
+  if has_feature nemotron_asr_streaming_standalone; then
+    cargo test -p candle-transformers --lib --locked nemotron3_5_asr > "$report/nemotron-asr-tests.log" 2>&1 || {
+      tail -n 120 "$report/nemotron-asr-tests.log"; exit 1;
+    }
+    cargo build -p candle-examples --example nemotron_asr --locked > "$report/nemotron-asr-cli.log" 2>&1 || {
+      tail -n 120 "$report/nemotron-asr-cli.log"; exit 1;
+    }
+  fi
   cargo test -p candle-core --no-default-features --locked --lib > "$report/core-lib-tests.log" 2>&1 || {
     tail -n 120 "$report/core-lib-tests.log"; exit 1;
   }
@@ -93,12 +120,6 @@ if [[ "$MODE" == integrated ]]; then
       tail -n 120 "$report/lean4-contracts.log"; exit 1;
     }
   fi
-  if has_feature half_duplex_standalone; then
-    cp candle-integration/half-duplex-ci.json "$report/half-duplex-ci.json"
-    bash half_duplex/ci/extended_gate.sh cpu > "$report/half-duplex-cpu.log" 2>&1 || {
-      tail -n 120 "$report/half-duplex-cpu.log"; exit 1;
-    }
-  fi
   jq -n --arg sha "$SHA" --arg campaign "$CAMPAIGN" --arg manifest "$MANIFEST_SHA" \
     --arg lock "$lock" --argjson features "$(jq '[.features[].feature]' "$manifest")" \
     '{status:"CPU_PASSED",candidate_sha:$sha,campaign:$campaign,
@@ -110,12 +131,19 @@ if [[ "$MODE" == integrated ]]; then
 fi
 
 case "$FEATURE" in
-  half_duplex_standalone)
-    bash half_duplex/ci/extended_gate.sh contracts > "$report/half-duplex-contracts.log" 2>&1 &&
-    bash half_duplex/ci/extended_gate.sh build > "$report/cpu-tests.log" 2>&1 &&
-    cp "$RUNNER_TEMP/halfduplex-extended-cpu-build/report.json" "$report/half-duplex-native-build.json" ;;
   lean4_standalone)
     bash tools/lean4-standalone/scripts/check.sh > "$report/cpu-tests.log" 2>&1 ;;
+  fireredvad_standalone)
+    cargo test -p candle-transformers --lib --locked models::fireredvad > "$report/cpu-tests.log" 2>&1 ;;
+  smart_turn_standalone)
+    cargo test -p candle-transformers --lib --locked models::smart_turn > "$report/cpu-tests.log" 2>&1 ;;
+  transcribepsy_standalone)
+    cargo test -p candle-transformers --lib --locked models::transcribepsy > "$report/cpu-tests.log" 2>&1 &&
+    cargo test -p candle-examples --example transcribepsy_tp3 --locked >> "$report/cpu-tests.log" 2>&1 ;;
+  nemotron_asr_streaming_standalone)
+    cargo test -p candle-transformers --lib --locked nemotron3_5_asr > "$report/cpu-tests.log" 2>&1 &&
+    cargo build -p candle-examples --example nemotron_asr --locked >> "$report/cpu-tests.log" 2>&1 ;;
+
   fp4_candle)
     cargo test -p candle-core --no-default-features --locked       --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests > "$report/cpu-tests.log" 2>&1 ;;
   asd_core_v3_standalone)
