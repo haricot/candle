@@ -1,6 +1,11 @@
-name: Candle Extended — Legacy CUDA + ASD-Core V3
+name: Candle Extended — Full 12 sources (no HalfDuplex)
 
 on:
+  push:
+    branches:
+      - orch/extended-full-voice-run-20261023
+    paths:
+      - .github/workflows/candle-extended-composite.yml
   workflow_dispatch:
     inputs:
       campaign:
@@ -20,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: candle-extended-${{ inputs.campaign }}
+  group: candle-extended-${{ inputs.campaign || format('voice-full-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -40,18 +45,18 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: orch/extended-v1
+          ref: orch/extended-full-voice-no-half-20261023
           fetch-depth: 0
           persist-credentials: false
-      - name: Prepare exact six-source Extended candidate
+      - name: Prepare exact twelve-source Extended candidate
         id: assemble
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          CAMPAIGN: ${{ inputs.campaign }}
+          CAMPAIGN: ${{ inputs.campaign || format('voice-full-{0}', github.run_id) }}
           STRATEGY: exact-delta
           BASE_SHA_INPUT: ${{ inputs.base_sha }}
-          PUBLISH: ${{ inputs.publish }}
+          PUBLISH: ${{ github.event_name == 'push' && 'true' || inputs.publish }}
         run: bash .github/scripts/candle-extended-assemble.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -82,7 +87,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: orch/extended-v1
+          ref: orch/extended-full-voice-no-half-20261023
           path: .ci-tools
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
@@ -119,7 +124,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: orch/extended-v1
+          ref: orch/extended-full-voice-no-half-20261023
           path: .ci-tools
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
@@ -156,7 +161,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: orch/extended-v1
+          ref: orch/extended-full-voice-no-half-20261023
           path: .ci-tools
           persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
@@ -221,7 +226,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: orch/extended-v1
+          ref: orch/extended-full-voice-no-half-20261023
           path: .ci-tools
           persist-credentials: false
       - name: Validate Extended composition on physical SM61
