@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 from hdb2a_conformer_patch import patch_conformer
+from hdb2a_rnnt_patch import patch_rnnt
 
 PIN_PARAKEET = '53c0d3065f9dd8de0356b25391e60ed3a471192b'
 PIN_CANDLE = 'f5ce7f6f8b7a68d14a55419f9f221e1ae3537fd3'
@@ -66,8 +67,9 @@ def patch_main(source: str) -> str:
 def repair_runtime(out: Path) -> None:
     """Upgrade a pinned, already bootstrapped v0.2.0 runtime in place."""
     out = out.resolve()
-    cargo, main_file, conformer = out / 'Cargo.toml', out / 'src/main.rs', out / 'src/parakeet/conformer.rs'
-    if not all(p.is_file() for p in (cargo, main_file, conformer)):
+    cargo, main_file, conformer, rnnt = (out / 'Cargo.toml', out / 'src/main.rs',
+                                         out / 'src/parakeet/conformer.rs', out / 'src/parakeet/rnnt.rs')
+    if not all(p.is_file() for p in (cargo, main_file, conformer, rnnt)):
         raise ValueError(f'Existing Candle runtime is incomplete: {out}')
     head = subprocess.check_output(['git', '-C', str(out), 'rev-parse', 'HEAD'], text=True).strip()
     if head != PIN_PARAKEET:
@@ -78,9 +80,14 @@ def repair_runtime(out: Path) -> None:
         raise ValueError('Runtime Candle dependency is not adapted to 0.11')
     old = conformer.read_text()
     patched = patch_conformer(old)
+    old_rnnt = rnnt.read_text()
+    patched_rnnt = patch_rnnt(old_rnnt)
     if patched != old:
         conformer.write_text(patched)
-        print('HDB2A_RUNTIME_REPAIR=PATCHED_LAYER_NORM_UNBUILT')
+    if patched_rnnt != old_rnnt:
+        rnnt.write_text(patched_rnnt)
+    if patched != old or patched_rnnt != old_rnnt:
+        print('HDB2A_RUNTIME_REPAIR=PATCHED_CONFORMER_QVAC_LSTM_UNBUILT')
     else:
         print('HDB2A_RUNTIME_REPAIR=ALREADY_PATCHED')
     print(f'HDB2A_RUNTIME_DIR={out}')
@@ -117,9 +124,12 @@ def main():
     patched_main=patch_main(main_file.read_text())
     conformer_file=out/'src/parakeet/conformer.rs'
     patched_conformer=patch_conformer(conformer_file.read_text())
+    rnnt_file=out/'src/parakeet/rnnt.rs'
+    patched_rnnt=patch_rnnt(rnnt_file.read_text())
     cargo.write_text(patched_cargo)
     main_file.write_text(patched_main)
     conformer_file.write_text(patched_conformer)
+    rnnt_file.write_text(patched_rnnt)
     print('HDB2A_RUNTIME_PATCH=APPLIED_PINNED_SOURCE_UNBUILT')
     print(f'HDB2A_RUNTIME_DIR={out}')
     print('Next step: ./run-hdb2a.sh build cpu')

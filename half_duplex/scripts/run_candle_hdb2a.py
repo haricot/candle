@@ -16,6 +16,24 @@ import wave
 MODEL_ID = 'qvac/TranscribePsy-250M-EU-sub'
 PARAKEET_PIN = '53c0d3065f9dd8de0356b25391e60ed3a471192b'
 CANDLE_PIN = 'f5ce7f6f8b7a68d14a55419f9f221e1ae3537fd3'
+QVAC_SAFETENSORS_SHA256 = '481fec004f2074909a5d253cb674fe676a49ce856bca2ce0156136ea920c3168'
+
+
+def checkpoint_identity(provenance:dict) -> tuple[str,str]:
+    if provenance.get('model') != MODEL_ID:
+        raise ValueError('Model provenance does not identify QVAC EU-sub')
+    stage = provenance.get('stage')
+    if stage == 'HDB2A_CONVERSION_ONLY':
+        sha = provenance.get('source_nemo_sha256')
+        if not isinstance(sha,str) or len(sha)!=64:
+            raise ValueError('Converted model provenance lacks NeMo SHA256')
+        return 'converted-nemo', sha
+    if stage == 'HDB2A_OFFICIAL_SAFETENSORS':
+        sha = provenance.get('source_safetensors_sha256')
+        if sha != QVAC_SAFETENSORS_SHA256:
+            raise ValueError('Official QVAC SafeTensors provenance SHA256 mismatch')
+        return 'official-qvac-safetensors', sha
+    raise ValueError(f'Unrecognized HDB2-A model provenance stage: {stage!r}')
 
 
 def wav_info(wav:Path):
@@ -48,8 +66,8 @@ def main():
     parser.add_argument('--device',choices=['cpu','cuda'],default='cpu')
     args=parser.parse_args()
     if not args.input.is_file(): parser.error(f'Missing input audio file {args.input}')
-    if not (args.model_dir/'model.safetensors').is_file():parser.error('No converted model.safetensors; execute prepare-model first')
-    if not (args.model_dir/'config.json').is_file():parser.error('No converted config.json; execute prepare-model first')
+    if not (args.model_dir/'model.safetensors').is_file():parser.error('No model.safetensors; execute prepare-model or prepare-official-model')
+    if not (args.model_dir/'config.json').is_file():parser.error('No model config.json; execute prepare-model or prepare-official-model')
     runtime_bin=args.runtime_dir/'target/release/parakeet-candle'
     if not runtime_bin.is_file(): parser.error(f'Candle binary missing: {runtime_bin}; execute build {args.device}')
     if git_head(args.runtime_dir)!=PARAKEET_PIN:parser.error('Runtime pinned commit mismatch')
@@ -65,9 +83,9 @@ def main():
         from hdb2a_model_config import validate_config
         validate_config(json.loads((args.model_dir/'config.json').read_text(encoding='utf-8')))
         conversion_info=json.loads((args.model_dir/'conversion.json').read_text())
-        if conversion_info.get('model')!=MODEL_ID:
-            raise ValueError('Conversion provenance does not identify QVAC EU-sub')
-        report['checkpoint_sha256']=conversion_info['source_nemo_sha256']
+        source_kind, sha = checkpoint_identity(conversion_info)
+        report['checkpoint_source'] = source_kind
+        report['checkpoint_sha256'] = sha
         info=convert_audio(args.input,report_dir/'input-16k.wav',report_dir/'ffmpeg.log')
         report['normalized_audio']=info
         cmd=[str(runtime_bin),'--model-id',MODEL_ID,'--model-dir',str(args.model_dir.resolve()),

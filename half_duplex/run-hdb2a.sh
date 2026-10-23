@@ -13,6 +13,7 @@ Usage:
   ./run-hdb2a.sh bootstrap [--candle-root /path/to/haricot/candle]
   ./run-hdb2a.sh repair-runtime
   ./run-hdb2a.sh prepare-model /path/to/TranscribePsy-250M-EU-sub.nemo
+  ./run-hdb2a.sh prepare-official-model /path/to/QVAC/model.safetensors /path/to/old/converted-model
   ./run-hdb2a.sh repair-model-config
   ./run-hdb2a.sh check-model-config
   ./run-hdb2a.sh build cpu|cuda
@@ -21,7 +22,8 @@ Usage:
 
 Uses pinned Candle 0.11 and a patched LOCAL checkout of pinned parakeet-candle.
 Never invokes a C++ ASR or substitutes the NVIDIA teacher checkpoint.
-Requires: Python 3, torch, safetensors, PyYAML, sentencepiece for conversion;
+Requires: Python 3; torch, safetensors, PyYAML, sentencepiece ONLY for NeMo conversion.
+Official SafeTensors preparation uses the standard library and an existing HDB2-A config;
           Git, Rust/Cargo and ffmpeg; network access on the LOCAL machine.
 EOF
 }
@@ -45,6 +47,11 @@ case "${1:-help}" in
   prepare-model)
     if [[ $# -ne 2 ]];then usage;exit 2;fi
     python3 scripts/convert_nemo_hdb2a.py --nemo "$2" --output-dir "$MODEL_DIR"
+    ;;
+  prepare-official-model)
+    if [[ $# -ne 3 ]];then usage;exit 2;fi
+    python3 scripts/prepare_qvac_official.py --weights "$2" \
+      --converted-model-dir "$3" --output-dir "$MODEL_DIR"
     ;;
   repair-model-config)
     python3 scripts/hdb2a_model_config.py repair --model-dir "$MODEL_DIR"

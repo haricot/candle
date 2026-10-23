@@ -1,0 +1,31 @@
+name: HDB2-A QVAC official SafeTensors contract
+
+on:
+  push:
+    branches: [half_duplex_standalone]
+    paths:
+      - 'half_duplex/scripts/hdb2a_rnnt_patch.py'
+      - 'half_duplex/scripts/prepare_qvac_official.py'
+      - 'half_duplex/scripts/prepare_candle_runtime.py'
+      - 'half_duplex/scripts/run_candle_hdb2a.py'
+      - 'half_duplex/tests/hdb2a/test_qvac_official.py'
+      - '.github/workflows/hdb2a-qvac-official.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stdlib-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Test native key mapping, SafeTensors header, provenance
+        working-directory: half_duplex
+        run: python3 -m unittest discover -s tests/hdb2a -p 'test_qvac_official.py' -v
+      - name: Check HDB2-A command syntax and avoid real model download
+        run: bash -n half_duplex/run-hdb2a.sh
