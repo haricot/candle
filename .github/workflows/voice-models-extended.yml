@@ -1,7 +1,7 @@
 name: Extended voice models CPU qualification
 on:
   push:
-    branches: [voice_models_extended_candidate, extended]
+    branches: [voice_models_extended_candidate, nemotron_asr_extended_candidate, extended]
     paths:
       - 'Cargo.toml'
       - 'candle-transformers/Cargo.toml'
@@ -10,6 +10,9 @@ on:
       - 'candle-transformers/src/models/smart_turn.rs'
       - 'candle-transformers/src/models/smart_turn/**'
       - 'candle-transformers/src/models/transcribepsy/**'
+      - 'candle-transformers/src/models/nemotron3_5_asr/**'
+      - 'candle-examples/examples/nemotron_asr.rs'
+      - '.github/workflows/nemotron-asr-streaming.yml'
       - 'candle-transformers/src/models/mod.rs'
       - '.github/workflows/voice-models-extended.yml'
   workflow_dispatch:
@@ -32,3 +35,7 @@ jobs:
         run: cargo test -p candle-transformers --lib models::transcribepsy
       - name: TP3 driver contract
         run: cargo test -p candle-examples --example transcribepsy_tp3
+      - name: Nemotron 3.5 ASR CPU contracts
+        run: cargo test -p candle-transformers --lib nemotron3_5_asr
+      - name: Nemotron 3.5 ASR native CLI
+        run: cargo build -p candle-examples --example nemotron_asr
