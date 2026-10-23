@@ -32,7 +32,33 @@ ancien runtime. Il demande les outils déjà utilisés : Rust 1.99, CUDA 12.9,
 cuDNN, `/usr/bin/g++-14`, Python 3 pour la préparation et un accès réseau
 pour les dépendances et poids. Pas de Podman.
 
-Depuis la racine du checkout `voice_endpointing_standalone` :
+Pour créer le checkout depuis le clone de qualification, utiliser un refspec
+explicite. Il crée aussi la référence distante lorsque le clone ne suit
+qu'une autre branche :
+
+```bash
+bash <<'BASH'
+set -euo pipefail
+cd "$HOME/tmp"
+
+git -C "$HOME/tmp/candle-stt-qualification" fetch origin \
+  refs/heads/voice_endpointing_standalone:refs/remotes/origin/voice_endpointing_standalone
+
+git -C "$HOME/tmp/candle-stt-qualification" worktree add --detach \
+  "$HOME/tmp/candle-voice-endpointing" \
+  refs/remotes/origin/voice_endpointing_standalone
+BASH
+```
+
+Un dossier de destination déjà présent et vide peut être réutilisé. La commande
+`fetch origin voice_endpointing_standalone` seule peut ne renseigner que
+`FETCH_HEAD`, sans créer `origin/voice_endpointing_standalone`.
+
+Depuis la racine du checkout créé :
+
+```bash
+cd "$HOME/tmp/candle-voice-endpointing"
+```
 
 ```bash
 HDB_PROMOTED_ROOT="$HOME/tmp/candle-hdb-extended-6b29b7f" \
