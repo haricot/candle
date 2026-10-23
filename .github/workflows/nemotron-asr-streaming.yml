@@ -44,7 +44,11 @@ jobs:
         run: for script in tools/nemotron_asr_streaming/*.sh; do bash -n "$script"; done
 
   full-reference:
-    if: github.event_name == 'workflow_dispatch' && inputs.full_reference
+    # Expensive real-model CPU qualification is opt-in: manual dispatch or one
+    # explicitly marked push. Ordinary pushes and all local GPU runners stay free.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.full_reference) ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[nemotron-full-reference]'))
     needs: native-model
     runs-on: ubuntu-24.04
     timeout-minutes: 45
