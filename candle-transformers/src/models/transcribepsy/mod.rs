@@ -203,10 +203,10 @@ impl Predictor {
         token: Option<usize>,
         previous: Option<&PredictorState>,
     ) -> Result<(Tensor, PredictorState)> {
-        if let Some(state) = previous
-            && state.layers.len() != self.layers.len()
-        {
-            candle::bail!("TranscribePsy predictor state layer count mismatch")
+        if let Some(state) = previous {
+            if state.layers.len() != self.layers.len() {
+                candle::bail!("TranscribePsy predictor state layer count mismatch")
+            }
         }
         let device = self.embedding.embeddings().device();
         let mut x = if let Some(token) = token {

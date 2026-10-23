@@ -88,8 +88,9 @@ impl Greedy {
                 .checked_add(duration)
                 .ok_or_else(|| candle::Error::Msg("TDT frame counter overflow".into()))?;
             next.symbols_at_frame = 0;
-        } else if let Some(limit) = self.max_symbols
-            && next.symbols_at_frame >= limit
+        } else if self
+            .max_symbols
+            .is_some_and(|limit| next.symbols_at_frame >= limit)
         {
             next.frame = next
                 .frame
