@@ -75,7 +75,7 @@ Le cache de conversion et les modèles restent dans `~/tmp/haricot-half-duplex/m
 Une installation interrompue peut être relancée après mise à jour du checkout.
 L'installateur réutilise les modèles convertis présents et prépare un nouveau
 dossier `integration/resident-*`. La copie du crate se limite à `src/`,
-`Cargo.toml`, `Cargo.lock` et `NOTICE` ; elle ne parcourt ni les anciens builds
+`Cargo.toml`, `Cargo.lock` et `NOTICE.md` ; elle ne parcourt ni les anciens builds
 dans `integration/` ni `.venv-convert/`.
 
 ## Essai microphone avec R9 CUDA résident

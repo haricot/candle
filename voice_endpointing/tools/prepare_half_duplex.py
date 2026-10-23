@@ -29,7 +29,7 @@ def copy_endpointing_crate(source, destination):
     destination.mkdir(parents=True,exist_ok=False)
     # Never traverse integration, virtualenvs, weights or other local artifacts:
     # the installer creates its output inside this checkout's integration/.
-    for name in ('Cargo.toml','Cargo.lock','NOTICE'):
+    for name in ('Cargo.toml','Cargo.lock','NOTICE.md'):
         shutil.copy2(source/name,destination/name)
     shutil.copytree(source/'src',destination/'src')
 

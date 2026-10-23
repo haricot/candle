@@ -12,6 +12,21 @@ SPEC.loader.exec_module(PREPARE)
 
 
 class CrateCopyTests(unittest.TestCase):
+    def test_real_checkout_copies_sources_and_attribution(self):
+        source = PREPARE.ROOT
+        integration = source / 'integration'
+        integration.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='copy-check-', dir=integration) as temp:
+            output = Path(temp) / 'native/voice_endpointing'
+            PREPARE.copy_endpointing_crate(source, output)
+            for name in ('Cargo.toml', 'Cargo.lock', 'NOTICE.md'):
+                self.assertEqual((output / name).read_bytes(),
+                                 (source / name).read_bytes())
+            self.assertEqual(PREPARE.digest_sources(output),
+                             PREPARE.digest_sources(source))
+            self.assertFalse((output / 'integration').exists())
+            self.assertFalse((output / '.venv-convert').exists())
+
     def test_nested_and_external_builds_exclude_local_artifacts(self):
         for nested in (True, False):
             with self.subTest(nested=nested), tempfile.TemporaryDirectory() as temp:
@@ -19,7 +34,7 @@ class CrateCopyTests(unittest.TestCase):
                 source = base / 'voice_endpointing'
                 (source / 'src').mkdir(parents=True)
                 (source / 'src' / 'lib.rs').write_text('pub fn native() {}\n')
-                for name in ('Cargo.toml', 'Cargo.lock', 'NOTICE'):
+                for name in ('Cargo.toml', 'Cargo.lock', 'NOTICE.md'):
                     (source / name).write_text(name + '\n')
                 # Include a failed older build and the conversion virtualenv,
                 # both present on a laptop but absent from the old CI layout.

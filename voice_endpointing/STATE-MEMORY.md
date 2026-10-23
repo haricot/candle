@@ -93,7 +93,7 @@ La CI ne reproduisait pas ce problème : sa sortie était hors du checkout.
 La copie globale embarquait également `.venv-convert/` sur le laptop.
 
 La préparation copie désormais seulement les entrées du crate : `src/`,
-`Cargo.toml`, `Cargo.lock` et `NOTICE`. Elle accepte les sorties sous
+`Cargo.toml`, `Cargo.lock` et `NOTICE.md`. Elle accepte les sorties sous
 `integration/` sans parcourir les builds existants et refuse une destination
 dans les sources Rust. Les anciens fichiers Rust R9 restent vérifiés inchangés.
 Les modèles déjà convertis et les anciens dossiers de travail sont conservés.
@@ -104,3 +104,11 @@ dans `src/`. Le même cas reproduit l'erreur avec l'ancienne copie globale.
 Ces tests sont exécutés avant les builds dans `ci/check.sh`. La CI prépare
 maintenant réellement le binaire résident sous `voice_endpointing/integration/`
 avant sa compilation, comme l'installateur. Aucun calcul Rust n'est modifié.
+
+La première correction de copie (`08134113`) a ensuite échoué en CI et sur
+le laptop parce qu'elle demandait `NOTICE` au lieu du vrai `NOTICE.md`.
+Le test sur données synthétiques reproduisait ce mauvais nom. Le nom est
+corrigé et un troisième test copie le vrai checkout dans un sous-dossier
+`integration/`, puis compare les manifestes, la notice et les empreintes de
+tous les fichiers Rust. Ce test reproduit l'erreur avant correction et passe
+après, en complément des deux contrôles de disposition des fichiers.
