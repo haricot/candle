@@ -55,6 +55,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tp3-model" "$RUNNER_TEMP/tp3-dataset"
           hf download qvac/TranscribePsy-250M-EU-sub model.safetensors TranscribePsy-250M-EU-sub.nemo --revision ccf70de9ff9848f5cd5975adda1370ce4addf6f1 --local-dir "$RUNNER_TEMP/tp3-model"
           hf download amu-cai/CAMEO data/cafe-00000-of-00001.parquet --repo-type dataset --revision c7f2fc9f0538ca871d38e183ba8ad6c329120ecc --local-dir "$RUNNER_TEMP/tp3-dataset"
+      - name: Install deterministic public audio decoder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       - name: Select one pinned licensed French public sample
         run: |
           python tools/transcribepsy_tp3/fixture.py \
