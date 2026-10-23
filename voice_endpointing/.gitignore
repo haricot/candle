@@ -1,6 +1,7 @@
 /target/
 /models/
 /reports/
+/results/
 /reference-data/
 /.venv-reference/
 /.venv-convert/
