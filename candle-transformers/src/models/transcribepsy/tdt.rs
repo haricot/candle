@@ -73,6 +73,9 @@ impl Greedy {
         let duration_index = first_argmax(&logits[split..])?;
         let duration = self.durations[duration_index];
         let token = (token_id != self.blank_id).then_some(token_id);
+        // NeMo batched TDT: blank with duration zero still advances one
+        // encoder frame. Never revisit that frame indefinitely.
+        let effective_duration = if token.is_none() { duration.max(1) } else { duration };
         let frame_before = state.frame;
         let mut next = state.clone();
         if let Some(token) = token {
@@ -82,10 +85,10 @@ impl Greedy {
                 .ok_or_else(|| candle::Error::Msg("TDT symbol counter overflow".into()))?;
         }
         let mut forced_advance = false;
-        if duration != 0 {
+        if effective_duration != 0 {
             next.frame = next
                 .frame
-                .checked_add(duration)
+                .checked_add(effective_duration)
                 .ok_or_else(|| candle::Error::Msg("TDT frame counter overflow".into()))?;
             next.symbols_at_frame = 0;
         } else if self
@@ -178,6 +181,19 @@ mod tests {
         assert_eq!(event.duration, 2);
         assert_eq!(event.frame_after, 2);
         assert!(!event.forced_advance);
+        Ok(())
+    }
+
+    #[test]
+    fn blank_zero_duration_advances_one_frame() -> Result<()> {
+        let decoder = Greedy::from_config(&config(None))?;
+        let mut state = GreedyState::default();
+        let e = decoder.advance(&mut state, &[0., 0., 8., 9., 0., 0.])?;
+        assert_eq!(e.token, None);
+        assert_eq!(e.duration, 0);
+        assert_eq!(e.frame_before, 0);
+        assert_eq!(e.frame_after, 1);
+        assert_eq!(state.last_token(), None);
         Ok(())
     }
 

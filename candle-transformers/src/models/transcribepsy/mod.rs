@@ -2,14 +2,17 @@
 //!
 //! This is a deliberately small, reusable Candle model module. It loads the
 //! official native NeMo predictor and joint weights without conversion aliases.
-//! The log-Mel frontend and FastConformer encoder are NOT implemented here yet;
-//! callers must not treat these components as a qualified end-to-end ASR model.
+//! Native log-Mel, FastConformer, predictor, joint and TDT wiring is present.
+//! Numerical parity with reference NeMo and spoken-text transcription are
+//! not yet qualified; keep production usage gated on real-model parity.
 
 use candle::{D, Result, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
 use serde::Deserialize;
 
 pub mod encoder;
+pub mod frontend;
+pub mod pipeline;
 pub mod tdt;
 
 #[derive(Debug, Clone, Deserialize)]
