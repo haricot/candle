@@ -1,0 +1,26 @@
+name: TranscribePsy standalone model contracts
+
+on:
+  push:
+    branches: [TranscribePsy]
+    paths:
+      - 'candle-transformers/src/models/transcribepsy/**'
+      - 'candle-transformers/src/models/mod.rs'
+      - '.github/workflows/transcribepsy-standalone.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-model-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - uses: Swatinem/rust-cache@v2
+      - name: Compile and test only the standalone TranscribePsy components
+        run: cargo test -p candle-transformers transcribepsy:: --lib
