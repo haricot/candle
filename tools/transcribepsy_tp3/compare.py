@@ -68,6 +68,8 @@ def run(args):
     a = json.loads((args.reference / "trace.json").read_text())
     b = json.loads((args.candidate / "trace.json").read_text())
     fixture = json.loads((args.fixture / "fixture.json").read_text())
+    if a.get("wav_sha256") != fixture["wav_sha256"]:
+        raise ValueError("NeMo reference does not match the selected TP3 WAV")
     if a["schema"] != "TP3-NEMO-QVAC-F32-V1" or b["schema"] != "TP3-CANDLE-QVAC-F32-V1":
         raise ValueError("TP3 incompatible trace schema")
     sp = SentencePieceProcessor(model_file=str(args.reference / "tokenizer.model"))
@@ -81,8 +83,28 @@ def run(args):
     token_exact = a["tokens"] == b["tokens"]
     text_exact = decoded == a["text"]
     weights_ok = a["identical_float_tensors"] >= 900
+    isolation = {}
+    if args.require_isolation:
+        if b.get("input_source") != "independent_pcm":
+            raise ValueError("The primary TP3 gate must use independent PCM inference")
+        for folder, source in (("encoder-from-nemo-mel", "nemo_mel"),
+                               ("tdt-from-nemo-encoder", "nemo_encoder")):
+            directory = args.candidate / folder
+            c = json.loads((directory / "trace.json").read_text())
+            if c.get("input_source") != source or c["schema"] != b["schema"]:
+                raise ValueError("Missing or mislabeled TP3-R1 handoff")
+            discrete = decisions(a, c["decisions"])
+            ids_equal = a["tokens"] == c["tokens"]
+            text_equal = sp.decode([int(t) for t in c["tokens"]]).strip() == a["text"]
+            entry = dict(tdt=discrete, tokens_exact=ids_equal, text_exact=text_equal)
+            if source == "nemo_mel":
+                entry["encoder"] = numbers(args.reference, directory, "encoder", a, c)
+            entry["pass"] = (discrete["exact"] and ids_equal and text_equal
+                             and entry.get("encoder", {"numeric_pass": True})["numeric_pass"])
+            isolation[source] = entry
     passing = (weights_ok and mel["numeric_pass"] and encoder["numeric_pass"]
-               and decision["exact"] and token_exact and text_exact)
+               and decision["exact"] and token_exact and text_exact
+               and all(v["pass"] for v in isolation.values()))
     result = {"schema": "TP3-ONE-CLIP-PARITY-V1",
               "status": "PASS_REAL_MODEL_PARITY" if passing else "REJECT_OR_NOT_QUALIFIED",
               "model": "qvac/TranscribePsy-250M-EU-sub",
@@ -95,6 +117,7 @@ def run(args):
               "tdt": decision, "tokens_exact": token_exact,
               "text_exact": text_exact,
               "text_nemo": a["text"], "text_candle": decoded,
+              "isolation": isolation,
               "scope": "ONE_PUBLIC_FRENCH_UTTERANCE_CPU_F32_NO_STREAMING_QUALIFICATION"}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2,
@@ -104,6 +127,8 @@ def run(args):
     print("TP3_ENCODER=" + json.dumps(encoder))
     print("TP3_TDT=" + json.dumps(decision))
     print("TP3_TEXT_EXACT=" + str(text_exact))
+    for source, entry in isolation.items():
+        print("TP3_R1_" + source.upper() + "=" + json.dumps(entry))
     return passing
 
 
@@ -113,6 +138,7 @@ def main():
     ap.add_argument("--candidate", type=Path, required=True)
     ap.add_argument("--fixture", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--require-isolation", action="store_true")
     a = ap.parse_args()
     if not run(a):
         raise SystemExit(2)

@@ -2,8 +2,9 @@
 //!
 //! The official checkpoint provides the analysis window and mel filterbank:
 //! no regenerated mel bins, rounding aliases, or per-machine probes. This
-//! first implementation computes FFT on the host and returns a Candle tensor.
-//! Numeric parity with NeMo's FFT has NOT been established.
+//! implementation computes FFT on the host and returns a Candle tensor.
+//! TP3-R1 checks CPU F32 parity on one pinned public French utterance;
+//! other devices and preprocessing configurations need separate qualification.
 
 use candle::{DType, Device, Result, Tensor};
 use candle_nn::VarBuilder;
@@ -11,11 +12,24 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::f32::consts::PI;
 
-fn default_normalize() -> String { "NA".into() }
-fn default_window() -> String { "hann".into() }
-fn default_mag_power() -> f64 { 2.0 }
-fn default_true() -> bool { true }
-fn default_pad_to() -> usize { 0 }
+fn default_normalize() -> String {
+    "per_feature".into()
+}
+fn default_window() -> String {
+    "hann".into()
+}
+fn default_mag_power() -> f64 {
+    2.0
+}
+fn default_true() -> bool {
+    true
+}
+fn default_pad_to() -> usize {
+    16
+}
+fn default_preemph() -> Option<f64> {
+    Some(0.97)
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -30,7 +44,7 @@ pub struct Config {
     pub window: String,
     #[serde(default)]
     pub dither: f64,
-    #[serde(default)]
+    #[serde(default = "default_preemph")]
     pub preemph: Option<f64>,
     #[serde(default = "default_mag_power")]
     pub mag_power: f64,
@@ -61,22 +75,39 @@ impl Config {
         let n = self.n_fft;
         let w = self.win_length();
         let hop = self.hop_length();
-        if self.sample_rate == 0 || n < 2 || !n.is_power_of_two() || w < 2
-            || w > n || hop == 0 || hop > n || self.features == 0
-            || !self.window_size.is_finite() || !self.window_stride.is_finite()
-            || self.window_size <= 0.0 || self.window_stride <= 0.0
-            || self.dither != 0.0 || !self.mag_power.is_finite()
-            || self.mag_power <= 0.0 || !self.pad_value.is_finite()
+        if self.sample_rate == 0
+            || n < 2
+            || !n.is_power_of_two()
+            || w < 2
+            || w > n
+            || hop == 0
+            || hop > n
+            || self.features == 0
+            || !self.window_size.is_finite()
+            || !self.window_stride.is_finite()
+            || self.window_size <= 0.0
+            || self.window_stride <= 0.0
+            || !self.dither.is_finite()
+            || self.dither < 0.0
+            || !self.mag_power.is_finite()
+            || self.mag_power <= 0.0
+            || !self.pad_value.is_finite()
             || self.preemph.is_some_and(|v| !v.is_finite())
             || self.frame_splicing.unwrap_or(1) != 1
-            || !matches!(self.normalize.as_str(), "NA" | "none" | "" | "per_feature" | "all_features")
+            || !matches!(
+                self.normalize.as_str(),
+                "NA" | "none" | "" | "per_feature" | "all_features"
+            )
         {
             candle::bail!("unsupported or nondeterministic TranscribePsy preprocessing")
         }
         if self.exact_pad && (n - hop) % 2 != 0 {
             candle::bail!("exact_pad requires even n_fft-hop")
         }
-        if !matches!(self.log_zero_guard_type.as_deref().unwrap_or("add"), "add" | "clamp") {
+        if !matches!(
+            self.log_zero_guard_type.as_deref().unwrap_or("add"),
+            "add" | "clamp"
+        ) {
             candle::bail!("invalid TranscribePsy log guard type")
         }
         self.log_guard()?;
@@ -90,21 +121,31 @@ impl Config {
             Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN) as f32,
             _ => candle::bail!("unsupported TranscribePsy log guard"),
         };
-        if !v.is_finite() || v <= 0.0 { candle::bail!("invalid log guard") }
+        if !v.is_finite() || v <= 0.0 {
+            candle::bail!("invalid log guard")
+        }
         Ok(v)
     }
     fn padding(&self) -> usize {
-        if self.exact_pad { (self.n_fft - self.hop_length()) / 2 }
-        else { self.n_fft / 2 }
+        if self.exact_pad {
+            (self.n_fft - self.hop_length()) / 2
+        } else {
+            self.n_fft / 2
+        }
     }
     pub fn valid_frames(&self, count: usize) -> Result<usize> {
         let pad = self.padding();
-        let total = count.checked_add(2 * pad)
+        let total = count
+            .checked_add(2 * pad)
             .ok_or_else(|| candle::Error::Msg("audio frame count overflow".into()))?;
-        if total < self.n_fft { candle::bail!("utterance too short for NeMo frontend") }
+        if total < self.n_fft {
+            candle::bail!("utterance too short for NeMo frontend")
+        }
         // NeMo's length mask excludes the final raw STFT frame.
         let valid = (total - self.n_fft) / self.hop_length();
-        if valid == 0 { candle::bail!("NeMo log-Mel requires nonzero valid frames") }
+        if valid == 0 {
+            candle::bail!("NeMo log-Mel requires nonzero valid frames")
+        }
         Ok(valid)
     }
 }
@@ -129,23 +170,37 @@ impl LogMel {
         cfg.validate()?;
         let n = cfg.n_fft / 2 + 1;
         let featurizer = vb.pp("featurizer");
-        let window = featurizer.get((cfg.win_length(),), "window")?
-            .to_dtype(DType::F32)?.to_device(&Device::Cpu)?.to_vec1::<f32>()?;
-        let bank = featurizer.get((1, cfg.features, n), "fb")?
-            .to_dtype(DType::F32)?.to_device(&Device::Cpu)?.flatten_all()?.to_vec1::<f32>()?;
+        let window = featurizer
+            .get((cfg.win_length(),), "window")?
+            .to_dtype(DType::F32)?
+            .to_device(&Device::Cpu)?
+            .to_vec1::<f32>()?;
+        let bank = featurizer
+            .get((1, cfg.features, n), "fb")?
+            .to_dtype(DType::F32)?
+            .to_device(&Device::Cpu)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
         if window.iter().chain(bank.iter()).any(|v| !v.is_finite()) {
             candle::bail!("nonfinite native QVAC frontend coefficients")
         }
-        Ok(Self { cfg, window, bank, device: vb.device().clone() })
+        Ok(Self {
+            cfg,
+            window,
+            bank,
+            device: vb.device().clone(),
+        })
     }
 
-    pub fn config(&self) -> &Config { &self.cfg }
+    pub fn config(&self) -> &Config {
+        &self.cfg
+    }
 
+    /// Evaluation only: NeMo's training dither is intentionally inactive.
     /// No implicit resampling, VAD, microphone acquisition or file I/O.
     pub fn process_mono(&self, pcm: &[f32], sample_rate: usize) -> Result<Features> {
         let cfg = &self.cfg;
-        if sample_rate != cfg.sample_rate || pcm.is_empty()
-            || pcm.iter().any(|v| !v.is_finite()) {
+        if sample_rate != cfg.sample_rate || pcm.is_empty() || pcm.iter().any(|v| !v.is_finite()) {
             candle::bail!("invalid mono PCM or sample-rate mismatch")
         }
         let valid = cfg.valid_frames(pcm.len())?;
@@ -171,8 +226,7 @@ impl LogMel {
         for time in 0..raw_frames {
             frame.fill(0.0);
             for i in 0..win_len {
-                frame[window_left + i] =
-                    padded[time * hop + window_left + i] * self.window[i];
+                frame[window_left + i] = padded[time * hop + window_left + i] * self.window[i];
             }
             let spectrum = real_fft(&frame)?;
             let mut powers = vec![0f32; bins];
@@ -192,12 +246,17 @@ impl LogMel {
                         "clamp" => value.max(guard).ln(),
                         _ => unreachable!("guard checked in config"),
                     }
-                } else { value };
+                } else {
+                    value
+                };
             }
         }
         normalise(&mut matrix, cfg.features, raw_frames, valid, &cfg.normalize)?;
-        let target = if cfg.pad_to == 0 { raw_frames }
-            else { raw_frames.max(valid).div_ceil(cfg.pad_to) * cfg.pad_to };
+        let target = if cfg.pad_to == 0 {
+            raw_frames
+        } else {
+            raw_frames.max(valid).div_ceil(cfg.pad_to) * cfg.pad_to
+        };
         let mut output = vec![cfg.pad_value as f32; target * cfg.features];
         for t in 0..valid {
             for channel in 0..cfg.features {
@@ -207,14 +266,22 @@ impl LogMel {
         if output.iter().any(|v| !v.is_finite()) {
             candle::bail!("nonfinite TranscribePsy log-Mel output")
         }
-        let values = Tensor::from_vec(
-            output, (1, target, cfg.features), &Device::Cpu
-        )?.to_device(&self.device)?;
-        Ok(Features { values, valid_frames: valid })
+        let values = Tensor::from_vec(output, (1, target, cfg.features), &Device::Cpu)?
+            .to_device(&self.device)?;
+        Ok(Features {
+            values,
+            valid_frames: valid,
+        })
     }
 }
 
-fn normalise(data: &mut [f32], channels: usize, frames: usize, valid: usize, mode: &str) -> Result<()> {
+fn normalise(
+    data: &mut [f32],
+    channels: usize,
+    frames: usize,
+    valid: usize,
+    mode: &str,
+) -> Result<()> {
     match mode {
         "NA" | "none" | "" => return Ok(()),
         "per_feature" | "all_features" if valid < 2 => {
@@ -225,19 +292,30 @@ fn normalise(data: &mut [f32], channels: usize, frames: usize, valid: usize, mod
     if mode == "per_feature" {
         for c in 0..channels {
             let mean = (0..valid).map(|t| data[c * frames + t] as f64).sum::<f64>() / valid as f64;
-            let std = ((0..valid).map(|t| {
-                let delta = data[c * frames + t] as f64 - mean;
-                delta * delta
-            }).sum::<f64>() / (valid - 1) as f64).sqrt() + 1e-5;
+            let std = ((0..valid)
+                .map(|t| {
+                    let delta = data[c * frames + t] as f64 - mean;
+                    delta * delta
+                })
+                .sum::<f64>()
+                / (valid - 1) as f64)
+                .sqrt()
+                + 1e-5;
             for t in 0..valid {
                 data[c * frames + t] = ((data[c * frames + t] as f64 - mean) / std) as f32;
             }
         }
     } else if mode == "all_features" {
         let count = channels * valid;
-        if count < 2 { candle::bail!("insufficient mel values") }
+        if count < 2 {
+            candle::bail!("insufficient mel values")
+        }
         let mut sum = 0f64;
-        for c in 0..channels { for t in 0..valid { sum += data[c * frames + t] as f64; } }
+        for c in 0..channels {
+            for t in 0..valid {
+                sum += data[c * frames + t] as f64;
+            }
+        }
         let mean = sum / count as f64;
         let mut var = 0f64;
         for c in 0..channels {
@@ -260,7 +338,9 @@ fn normalise(data: &mut [f32], channels: usize, frames: usize, valid: usize, mod
 /// frontend can replace this implementation without changing the API.
 fn real_fft(input: &[f32]) -> Result<Vec<(f32, f32)>> {
     let n = input.len();
-    if n == 0 || !n.is_power_of_two() { candle::bail!("FFT requires a power-of-two length") }
+    if n == 0 || !n.is_power_of_two() {
+        candle::bail!("FFT requires a power-of-two length")
+    }
     let mut re = input.to_vec();
     let mut im = vec![0f32; n];
     let mut j = 0usize;
@@ -271,7 +351,10 @@ fn real_fft(input: &[f32]) -> Result<Vec<(f32, f32)>> {
             bit >>= 1;
         }
         j ^= bit;
-        if i < j { re.swap(i, j); im.swap(i, j); }
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
     }
     let mut span = 2usize;
     while span <= n {
@@ -303,22 +386,37 @@ mod tests {
 
     fn config() -> Config {
         Config {
-            sample_rate: 16, window_size: 0.25, window_stride: 0.25,
-            n_fft: 8, features: 2, normalize: "NA".into(),
-            window: "hann".into(), dither: 0.0, preemph: Some(0.5),
-            mag_power: 2.0, log: true, log_zero_guard_type: Some("add".into()),
-            log_zero_guard_value: Some(Value::from(1e-6)), pad_to: 4,
-            pad_value: 0.0, exact_pad: false, frame_splicing: None,
+            sample_rate: 16,
+            window_size: 0.25,
+            window_stride: 0.25,
+            n_fft: 8,
+            features: 2,
+            normalize: "NA".into(),
+            window: "hann".into(),
+            dither: 0.0,
+            preemph: Some(0.5),
+            mag_power: 2.0,
+            log: true,
+            log_zero_guard_type: Some("add".into()),
+            log_zero_guard_value: Some(Value::from(1e-6)),
+            pad_to: 4,
+            pad_value: 0.0,
+            exact_pad: false,
+            frame_splicing: None,
         }
     }
     #[test]
     fn native_qvac_filterbank_and_valid_frame_mask() -> Result<()> {
         let cfg = config();
         let mut map = HashMap::new();
-        map.insert("preprocessor.featurizer.window".to_owned(),
-            Tensor::ones((4,), DType::F32, &Device::Cpu)?);
-        map.insert("preprocessor.featurizer.fb".to_owned(),
-            Tensor::ones((1, 2, 5), DType::F32, &Device::Cpu)?);
+        map.insert(
+            "preprocessor.featurizer.window".to_owned(),
+            Tensor::ones((4,), DType::F32, &Device::Cpu)?,
+        );
+        map.insert(
+            "preprocessor.featurizer.fb".to_owned(),
+            Tensor::ones((1, 2, 5), DType::F32, &Device::Cpu)?,
+        );
         let vb = VarBuilder::from_tensors(map.clone(), DType::F32, &Device::Cpu);
         let mel = LogMel::load(cfg, vb.pp("preprocessor"))?;
         let samples = vec![0.25f32; 16];
@@ -330,8 +428,10 @@ mod tests {
         assert!(data[4 * 2..].iter().all(|v| *v == 0.0));
         assert!(mel.process_mono(&samples, 48).is_err());
         map.remove("preprocessor.featurizer.fb");
-        let invalid = LogMel::load(config(),
-            VarBuilder::from_tensors(map, DType::F32, &Device::Cpu).pp("preprocessor"));
+        let invalid = LogMel::load(
+            config(),
+            VarBuilder::from_tensors(map, DType::F32, &Device::Cpu).pp("preprocessor"),
+        );
         assert!(invalid.is_err(), "native QVAC filterbank is mandatory");
         Ok(())
     }
@@ -340,16 +440,25 @@ mod tests {
     fn fft_impulse_has_flat_one_sided_magnitude() -> Result<()> {
         let mut impulse = vec![0f32; 8];
         impulse[0] = 1.0;
-        assert!(real_fft(&impulse)?.iter().all(|&(a, b)| (a - 1.0).abs() < 1e-6 && b.abs() < 1e-6));
+        assert!(real_fft(&impulse)?
+            .iter()
+            .all(|&(a, b)| (a - 1.0).abs() < 1e-6 && b.abs() < 1e-6));
         Ok(())
     }
 
     #[test]
-    fn fail_closed_on_dither_and_nonfinite_pcm() -> Result<()> {
+    fn eval_config_uses_nemo_defaults_and_rejects_invalid_dither() -> Result<()> {
+        let defaults: Config = serde_json::from_value(serde_json::json!({
+            "sample_rate":16000, "window_size":0.025, "window_stride":0.01,
+            "n_fft":512, "features":128, "normalize":"NA"
+        }))
+        .map_err(|e| candle::Error::Msg(e.to_string()))?;
+        assert_eq!(defaults.preemph, Some(0.97));
+        assert_eq!(defaults.pad_to, 16);
         let mut cfg = config();
-        cfg.dither = 0.01;
+        cfg.dither = -0.01;
         assert!(cfg.validate().is_err());
-        cfg.dither = 0.0;
+        cfg.dither = 1e-5; // ignored during eval, as in NeMo
         assert!(cfg.validate().is_ok());
         let _ = cfg.valid_frames(16)?;
         assert!(cfg.valid_frames(0).is_err());

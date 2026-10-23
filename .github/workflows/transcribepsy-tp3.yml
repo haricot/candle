@@ -4,6 +4,7 @@ on:
   push:
     branches: [TranscribePsy]
     paths:
+      - 'candle-transformers/src/models/transcribepsy/**'
       - 'candle-examples/examples/transcribepsy_tp3.rs'
       - 'tools/transcribepsy_tp3/**'
       - '.github/workflows/transcribepsy-tp3.yml'
@@ -36,7 +37,11 @@ jobs:
     env:
       OMP_NUM_THREADS: '2'
       OPENBLAS_NUM_THREADS: '2'
+      RAYON_NUM_THREADS: '2'
       HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_DATASETS_DISABLE_TELEMETRY: '1'
+      WANDB_MODE: disabled
+      OTEL_SDK_DISABLED: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -77,14 +82,16 @@ jobs:
             --weights "$RUNNER_TEMP/tp3-model/model.safetensors" \
             --config "$RUNNER_TEMP/tp3-reference/config.json" \
             --wav "$RUNNER_TEMP/tp3-clip/public-fr-16k.wav" \
-            --output "$RUNNER_TEMP/tp3-candle"
+            --output "$RUNNER_TEMP/tp3-candle" \
+            --reference "$RUNNER_TEMP/tp3-reference"
       - name: Strict Mel, FastConformer, TDT and tokenizer gate
         run: |
           python tools/transcribepsy_tp3/compare.py \
             --reference "$RUNNER_TEMP/tp3-reference" \
             --candidate "$RUNNER_TEMP/tp3-candle" \
             --fixture "$RUNNER_TEMP/tp3-clip" \
-            --output "$RUNNER_TEMP/tp3-public-report.json"
+            --output "$RUNNER_TEMP/tp3-public-report.json" \
+            --require-isolation
       - uses: actions/upload-artifact@v4
         if: always()
         with:

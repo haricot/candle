@@ -64,6 +64,16 @@ def native_config(model, durations):
     from omegaconf import OmegaConf
     original = OmegaConf.to_container(model.cfg, resolve=True)
     cfg = {k: original[k] for k in ("preprocessor", "encoder", "decoder", "joint", "decoding")}
+    # The saved YAML is sparse: e.g. preemph=0.97 and pad_to=16 are
+    # constructor defaults, not YAML keys. Export the effective eval settings
+    # so an independent implementation never silently chooses other defaults.
+    f = model.preprocessor.featurizer
+    for name in ("normalize", "preemph", "dither", "pad_to", "pad_value",
+                 "exact_pad", "mag_power", "log", "log_zero_guard_type",
+                 "log_zero_guard_value", "frame_splicing"):
+        cfg["preprocessor"][name] = getattr(f, name)
+    if f.use_grads:
+        raise RuntimeError("TP3 expects evaluation STFT without the training sqrt guard")
     cfg["decoding"]["durations"] = list(durations)
     cfg["decoding"]["model_type"] = "tdt"
     # This value is implicit in some NeMo configs, explicit in native QVAC joint.
@@ -216,6 +226,7 @@ def main():
                     nemo_sha256=QVAC_NEMO_SHA256,
                     identical_float_tensors=weights,
                     tokenizer_sha256=tokenizer_sha,
+                    wav_sha256=digest(a.wav),
                     mel={"shape": mel_shape, "valid": int(mel_lengths[0])},
                     encoder={"shape": encoder_shape, "valid": int(encoder_lengths[0])},
                     **reference)

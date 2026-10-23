@@ -9,7 +9,7 @@ per-machine optimizations, or experiment results are bundled in this branch.
 - `transcribepsy::frontend::LogMel`: deterministic mono PCM to log-Mel,
   loading the original `preprocessor.featurizer.window` and `fb` tensors
   from QVAC Safetensors; no implicit resampling. The radix-2 CPU FFT is an
-  unqualified baseline, not yet numerically identical to NeMo.
+  CPU implementation qualified within TP3 tolerances on one pinned utterance.
 - `transcribepsy::encoder::FastConformer`: typed native encoder including
   depthwise-striding subsampling, relative-position attention, Macaron FFN,
   GLU/depthwise convolution and masked attention.
@@ -37,15 +37,16 @@ mandatory native tensor names, mask/length shape semantics, FFT sanity,
 TDT blank/duration behavior and a synthetic assembled decoder. CI requires
 no model download, network credentials or private WAV files.
 
-**Not yet validated:** full native QVAC checkpoint loading in the assembled
-model, FFT/log-Mel numerical comparison against NeMo, full FastConformer
-numerical parity, identical real TDT/token decisions, official tokenizer,
-final French transcription, CUDA parity or streaming caches.
+**TP3-R1 locally validated:** official unmodified QVAC checkpoint loading;
+913 F32 tensors identical to NeMo; log-Mel and final FastConformer within the
+original TP3 tolerances; all 16 real TDT decisions, token IDs and original
+SentencePiece text exact on one licensed public French clip. Independent
+NeMo-Mel-to-Candle-encoder and NeMo-encoder-to-Candle-TDT handoffs also pass.
+See `tools/transcribepsy_tp3/README.md` for the measurements and workflow.
 
-The next gate is *one licensed public French clip* and the unchanged official
-Safetensors file: compare Mel and final encoder tensors within declared numeric
-tolerances, and require exact TDT decisions and decoded text before qualifying
-the integration. Keep full HDB2-A campaigns in `haricot/half_duplex`.
+**Not qualified:** CUDA, streaming caches, other utterances or general ASR
+quality. Bitwise tensor equality is not claimed. Keep full HDB2-A campaigns in
+`haricot/half_duplex`; none of that app or its generators is added to this model.
 
 QVAC checkpoint source:
 `qvac/TranscribePsy-250M-EU-sub/model.safetensors`,

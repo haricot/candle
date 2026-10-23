@@ -3,8 +3,8 @@
 //! This is a deliberately small, reusable Candle model module. It loads the
 //! official native NeMo predictor and joint weights without conversion aliases.
 //! Native log-Mel, FastConformer, predictor, joint and TDT wiring is present.
-//! Numerical parity with reference NeMo and spoken-text transcription are
-//! not yet qualified; keep production usage gated on real-model parity.
+//! TP3-R1 qualifies CPU F32 parity with NeMo on one pinned public utterance.
+//! General ASR quality, CUDA and streaming require separate qualification.
 
 use candle::{D, Result, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};

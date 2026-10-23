@@ -41,14 +41,17 @@ pub struct DecodeLimits {
 
 impl Default for DecodeLimits {
     fn default() -> Self {
-        Self { decisions_per_frame: 64, max_tokens: 16384 }
+        Self {
+            decisions_per_frame: 64,
+            max_tokens: 16384,
+        }
     }
 }
 
 impl DecodeLimits {
     fn validate(self) -> Result<()> {
-        if self.decisions_per_frame == 0 || self.max_tokens == 0
-            || self.decisions_per_frame > 4096 {
+        if self.decisions_per_frame == 0 || self.max_tokens == 0 || self.decisions_per_frame > 4096
+        {
             candle::bail!("invalid TranscribePsy TDT decode limits")
         }
         Ok(())
@@ -67,7 +70,9 @@ impl DecodeTrace {
     /// Tokenizer dependency stays outside the model layer. The supplied
     /// callback must use the original QVAC tokenizer, not string heuristics.
     pub fn decode_text<F>(&self, decoder: F) -> Result<String>
-    where F: Fn(&[usize]) -> Result<String> {
+    where
+        F: Fn(&[usize]) -> Result<String>,
+    {
         decoder(&self.tokens)
     }
 }
@@ -93,14 +98,19 @@ impl Transducer {
     }
 
     /// `encoded` is [1, frames, encoder_hidden] in batch-first order.
-    pub fn decode(&self, encoded: &Tensor, valid_frames: usize,
-                  limits: DecodeLimits) -> Result<DecodeTrace> {
+    pub fn decode(
+        &self,
+        encoded: &Tensor,
+        valid_frames: usize,
+        limits: DecodeLimits,
+    ) -> Result<DecodeTrace> {
         limits.validate()?;
         let (batch, total_frames, _) = encoded.dims3()?;
         if batch != 1 || valid_frames == 0 || valid_frames > total_frames {
             candle::bail!("TranscribePsy TDT expects one valid encoded utterance")
         }
-        let bound = valid_frames.checked_mul(limits.decisions_per_frame)
+        let bound = valid_frames
+            .checked_mul(limits.decisions_per_frame)
             .ok_or_else(|| candle::Error::Msg("TDT decision budget overflow".into()))?;
         let mut tokens = Vec::new();
         let mut decisions = Vec::new();
@@ -123,8 +133,13 @@ impl Transducer {
             }
             at_frame += 1;
             let frame = encoded.i((0, policy.frame()))?.unsqueeze(0)?;
-            let logits = self.joint.step(&frame, &prediction)?
-                .squeeze(0)?.to_dtype(DType::F32)?.to_device(&Device::Cpu)?.to_vec1::<f32>()?;
+            let logits = self
+                .joint
+                .step(&frame, &prediction)?
+                .squeeze(0)?
+                .to_dtype(DType::F32)?
+                .to_device(&Device::Cpu)?
+                .to_vec1::<f32>()?;
             let choice = self.greedy.advance(&mut policy, &logits)?;
             if choice.frame_after == choice.frame_before && choice.token.is_none() {
                 candle::bail!("TDT blank failed to advance the encoder frame")
@@ -142,7 +157,10 @@ impl Transducer {
             decisions.push(choice);
         }
         Ok(DecodeTrace {
-            input_mel_frames: None, encoder_frames: valid_frames, tokens, decisions,
+            input_mel_frames: None,
+            encoder_frames: valid_frames,
+            tokens,
+            decisions,
         })
     }
 }
@@ -160,10 +178,8 @@ impl Model {
     pub fn load(cfg: ModelConfig, vb: VarBuilder<'_>) -> Result<Self> {
         cfg.validate()?;
         Ok(Self {
-            preprocessor: frontend::LogMel::load(
-                cfg.preprocessor, vb.pp("preprocessor"))?,
-            encoder: encoder::FastConformer::load(
-                cfg.encoder, vb.pp("encoder"))?,
+            preprocessor: frontend::LogMel::load(cfg.preprocessor, vb.pp("preprocessor"))?,
+            encoder: encoder::FastConformer::load(cfg.encoder, vb.pp("encoder"))?,
             transducer: Transducer::load(&cfg.transducer, vb)?,
         })
     }
@@ -174,17 +190,34 @@ impl Model {
     }
 
     /// Encode log-Mel directly, e.g. a public WAV parity fixture.
-    pub fn encode_features(&self, features: &Tensor,
-                           lengths: &[usize]) -> Result<(Tensor, Vec<usize>)> {
+    pub fn encode_features(
+        &self,
+        features: &Tensor,
+        lengths: &[usize],
+    ) -> Result<(Tensor, Vec<usize>)> {
         self.encoder.forward(features, lengths)
     }
 
-    pub fn transcribe_mono(&self, pcm: &[f32], sample_rate: usize,
-                           limits: DecodeLimits) -> Result<DecodeTrace> {
+    /// Decode caller-provided encoder activations independently of the
+    /// frontend and encoder. The caller supplies the valid frame count.
+    pub fn decode_encoded(
+        &self,
+        encoded: &Tensor,
+        valid_frames: usize,
+        limits: DecodeLimits,
+    ) -> Result<DecodeTrace> {
+        self.transducer.decode(encoded, valid_frames, limits)
+    }
+
+    pub fn transcribe_mono(
+        &self,
+        pcm: &[f32],
+        sample_rate: usize,
+        limits: DecodeLimits,
+    ) -> Result<DecodeTrace> {
         let mel = self.mel(pcm, sample_rate)?;
-        let (encoded, lengths) =
-            self.encode_features(&mel.values, &[mel.valid_frames])?;
-        let mut trace = self.transducer.decode(&encoded, lengths[0], limits)?;
+        let (encoded, lengths) = self.encode_features(&mel.values, &[mel.valid_frames])?;
+        let mut trace = self.decode_encoded(&encoded, lengths[0], limits)?;
         trace.input_mel_frames = Some(mel.valid_frames);
         Ok(trace)
     }
@@ -203,19 +236,27 @@ mod tests {
                 blank_as_pad: true,
                 vocab_size: 2,
                 prednet: PredictionNetworkConfig {
-                    pred_hidden: 4, pred_rnn_layers: 1, rnn_hidden_size: None,
+                    pred_hidden: 4,
+                    pred_rnn_layers: 1,
+                    rnn_hidden_size: None,
                 },
             },
             joint: JointConfig {
-                num_classes: 2, num_extra_outputs: 2,
+                num_classes: 2,
+                num_extra_outputs: 2,
                 jointnet: JointNetworkConfig {
-                    joint_hidden: 4, activation: "relu".into(),
-                    encoder_hidden: 4, pred_hidden: 4,
+                    joint_hidden: 4,
+                    activation: "relu".into(),
+                    encoder_hidden: 4,
+                    pred_hidden: 4,
                 },
             },
             decoding: TdtDecodingConfig {
-                model_type: "tdt".into(), durations: vec![0, 2],
-                greedy: Some(GreedyConfig { max_symbols: Some(8) }),
+                model_type: "tdt".into(),
+                durations: vec![0, 2],
+                greedy: Some(GreedyConfig {
+                    max_symbols: Some(8),
+                }),
             },
         }
     }
@@ -231,7 +272,10 @@ mod tests {
         };
         zero("decoder.prediction.embed.weight", vec![3, 4])?;
         for key in ["weight_ih_l0", "weight_hh_l0"] {
-            zero(&format!("decoder.prediction.dec_rnn.lstm.{key}"), vec![16, 4])?;
+            zero(
+                &format!("decoder.prediction.dec_rnn.lstm.{key}"),
+                vec![16, 4],
+            )?;
         }
         for key in ["bias_ih_l0", "bias_hh_l0"] {
             zero(&format!("decoder.prediction.dec_rnn.lstm.{key}"), vec![16])?;
@@ -245,8 +289,7 @@ mod tests {
             "joint.joint_net.2.bias".into(),
             Tensor::from_vec(vec![0f32, 0., 10., 9., 0.], (5,), &d)?,
         );
-        let transducer = Transducer::load(&cfg,
-            VarBuilder::from_tensors(map, DType::F32, &d))?;
+        let transducer = Transducer::load(&cfg, VarBuilder::from_tensors(map, DType::F32, &d))?;
         let encoded = Tensor::zeros((1, 3, 4), DType::F32, &d)?;
         let trace = transducer.decode(&encoded, 3, DecodeLimits::default())?;
         assert!(trace.tokens.is_empty());
@@ -286,13 +329,13 @@ mod tests {
             },
             "decoding":{"model_type":"tdt","durations":[0,2]}
         });
-        let cfg: ModelConfig = serde_json::from_value(data.clone())
-            .map_err(|e| candle::Error::Msg(e.to_string()))?;
+        let cfg: ModelConfig =
+            serde_json::from_value(data.clone()).map_err(|e| candle::Error::Msg(e.to_string()))?;
         cfg.validate()?;
         let mut drift = data;
         drift["encoder"]["feat_in"] = serde_json::json!(5);
-        let invalid: ModelConfig = serde_json::from_value(drift)
-            .map_err(|e| candle::Error::Msg(e.to_string()))?;
+        let invalid: ModelConfig =
+            serde_json::from_value(drift).map_err(|e| candle::Error::Msg(e.to_string()))?;
         assert!(invalid.validate().is_err());
         Ok(())
     }
@@ -300,6 +343,11 @@ mod tests {
     #[test]
     fn decode_limits_are_explicit() {
         assert!(DecodeLimits::default().validate().is_ok());
-        assert!(DecodeLimits { decisions_per_frame: 0, max_tokens: 2 }.validate().is_err());
+        assert!(DecodeLimits {
+            decisions_per_frame: 0,
+            max_tokens: 2
+        }
+        .validate()
+        .is_err());
     }
 }
