@@ -207,6 +207,51 @@ PY
   }
 fi
 
+# The four independently exact voice deltas can introduce the same rustfft
+# dependency twice at different locations in a TOML table. Git merges these
+# non-overlapping lines without a textual conflict, but Cargo rejects the
+# duplicate key. Canonicalize ONLY the audited identical pair, on the
+# aggregate worktree (never on independent prepared/source commits).
+python3 - "$aggregate" "$report/logs/integration-rustfft-dedup.txt" <<'PY'
+import re
+import sys
+import tomllib
+from pathlib import Path
+
+root = Path(sys.argv[1])
+report_path = Path(sys.argv[2])
+rules = [
+    ("Cargo.toml", "[workspace.dependencies]", 'rustfft = "6.4"'),
+    ("candle-transformers/Cargo.toml", "[dependencies]", "rustfft = { workspace = true }"),
+]
+audit = []
+for relative, section_name, canonical in rules:
+    path = root / relative
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    section = None
+    matches = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if re.fullmatch(r"\[\[?[a-zA-Z0-9_.-]+\]\]?", stripped):
+            section = stripped
+        if section == section_name and re.match(r"^\s*rustfft\s*=", line):
+            if stripped != canonical:
+                raise SystemExit(f"EXTENDED_RUSTFFT_DEDUP=FAIL unexpected value in {relative}:{index+1}: {stripped}")
+            matches.append(index)
+    if not (1 <= len(matches) <= 2):
+        raise SystemExit(f"EXTENDED_RUSTFFT_DEDUP=FAIL unexpected count {relative}: {len(matches)}")
+    for index in reversed(matches[1:]):
+        del lines[index]
+    text = "".join(lines)
+    # Validate each edited manifest with Python's strict TOML parser
+    # before allowing any candidate publication.
+    tomllib.loads(text)
+    path.write_text(text, encoding="utf-8")
+    audit.append(f"{relative}: rustfft={canonical!r}, occurrences_before={len(matches)}, occurrences_after=1")
+report_path.write_text("\n".join(audit) + "\n", encoding="utf-8")
+print("EXTENDED_RUSTFFT_DEDUP=PASS " + "; ".join(audit))
+PY
+
 mkdir -p "$aggregate/candle-integration"
 jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",
@@ -226,7 +271,7 @@ jq -e --slurpfile cfg "$cfg" '
 ' "$report/extended.json" >/dev/null || {
   echo "::error::Extended manifest dropped or changed reviewed CUDA capabilities"; exit 3;
 }
-git -C "$aggregate" add candle-integration/extended.json
+git -C "$aggregate" add Cargo.toml candle-transformers/Cargo.toml candle-integration/extended.json
 git -C "$aggregate" diff --cached --check
 git -C "$aggregate" commit -m "integrate: lock ${#features[@]} Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
 
