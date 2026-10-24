@@ -19,7 +19,7 @@ create `origin/extended` with a plain `git fetch origin extended`):
 
 ```bash
 git -C "$HOME/tmp/candle-stt-qualification" fetch origin \
-  refs/heads/extended:refs/remotes/origin/extended
+  +refs/heads/extended:refs/remotes/origin/extended
 git -C "$HOME/tmp/candle-stt-qualification" worktree add --detach \
   "$HOME/tmp/candle-nemotron-promoted" refs/remotes/origin/extended
 cd "$HOME/tmp/candle-nemotron-promoted"
@@ -62,10 +62,16 @@ weights. The frontend runs as RustFFT on CPU; neural inference uses CUDA.
 
 ## Half Duplex and Myna
 
-At verification time, `haricot/half_duplex:main` contains only a README. It has
-no Nemotron connector or runnable application yet. Existing Half Duplex code on
-the Candle application branches targets the earlier ASR integration; it must be
-adapted explicitly to this model's PCM streaming API.
+The native ASR CLI is also a generic external adapter: it accepts `--input WAV
+--output DIRECTORY --model-dir DIRECTORY --device LABEL`, and writes a
+`result.json` object containing string `text`. A controller supporting this
+contract can invoke it unchanged with device `cuda-cudnn`; the defaults are
+French (`fr-FR`), streaming and F32. Controller source, model assets and its own
+pinned dependencies remain separate from the ASR binary's revision.
+
+An external process reloads Nemotron for each invocation. For repeated turns,
+use the Rust model API in a resident callback/service to retain loaded weights
+and create a fresh stream per utterance. No Python/ONNX runtime is required.
 
 Canonical Myna has Rust microphone capture, a dictation client and desktop text
 injection. Its server/backends are separate. Myna's own documentation marks its
