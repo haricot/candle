@@ -1,0 +1,51 @@
+name: Extended Full Voice — qualified promotion and cleanup
+on:
+  push:
+    branches: [ops/extended-finalize-40029177676]
+    paths:
+      - .github/extended-finalize-40029177676.json
+      - .github/scripts/extended-finalize-40029177676.sh
+      - .github/scripts/verify-extended-proof-40029177676.py
+      - .github/workflows/extended-finalize-40029177676.yml
+permissions:
+  contents: read
+concurrency:
+  group: extended-qualified-finalization
+  cancel-in-progress: false
+jobs:
+  finalize:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      actions: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact CPU/CUDA/GPU proof, archive, atomically promote and clean temporary refs
+        run: bash .github/scripts/extended-finalize-40029177676.sh
+      - name: Preserve promotion and cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-full-voice-promotion-cleanup-${{ github.run_id }}
+          path: ${{ runner.temp }}/extended-finalization/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Retire this one-shot branch and workflow
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="archive/cleanup/voice-full-40029177676/ops/extended-finalize-40029177676"
+          [[ "$(git ls-remote --tags origin "refs/tags/$tag" | cut -f1)" == "$GITHUB_SHA" ]]
+          workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .workflow_id)"
+          [[ "$workflow_id" =~ ^[0-9]+$ ]]
+          git push --force-with-lease="$GITHUB_REF:$GITHUB_SHA" origin ":$GITHUB_REF"
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/disable"
