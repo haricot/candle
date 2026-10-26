@@ -2,7 +2,7 @@ name: Lean4 standalone contracts (CPU)
 
 on:
   push:
-    branches: [lean4_standalone]
+    branches: [lean4_standalone, l4_r1_strided]
     paths:
       - "tools/lean4-standalone/**"
       - ".github/workflows/lean4-standalone-ci.yml"
@@ -22,6 +22,8 @@ jobs:
           toolchain: stable
       - name: Rust contract unit tests
         run: cargo test --manifest-path tools/lean4-standalone/Cargo.toml
+      - name: Rust Candle CPU adapter conformance
+        run: cargo test --manifest-path tools/lean4-standalone/Cargo.toml --features candle
       - name: Lean official kernel verification
         uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
         with:

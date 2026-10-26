@@ -1,1 +1,2 @@
 import HaricotLeanContracts.Index
+import HaricotLeanContracts.Strided
