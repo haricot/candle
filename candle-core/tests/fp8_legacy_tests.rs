@@ -97,3 +97,68 @@ fn legacy_fp8_reduces_after_widening_cuda() -> Result<()> {
     assert_eq!(got, expected);
     Ok(())
 }
+
+#[test]
+fn sm61_packed_fp8_bf16_beyond_fp16_range() -> Result<()> {
+    use candle_core::quantized::fp8_linear_sm61::{Fp8Sm61Linear, Fp8Sm61Mode};
+
+    let device = Device::new_cuda(0)?;
+    let Device::Cuda(cuda) = &device else {
+        unreachable!("CUDA test requires a CUDA device")
+    };
+    // E4M3FN code 0x38 encodes exactly 1.0. The input 1e8 is finite
+    // BF16 but cannot be converted to finite FP16. A silent F16
+    // intermediate would produce infinities.
+    let linear = Fp8Sm61Linear::from_bytes(
+        cuda,
+        128,
+        128,
+        &vec![0x38u8; 128 * 128],
+        &[1.0f32],
+        128,
+        128,
+        Fp8Sm61Mode::SimtW8A16,
+        128,
+    )?;
+    let input = Tensor::from_vec(vec![1e8f32; 2 * 128], (2, 128), &device)?
+        .to_dtype(DType::BF16)?;
+    let output = linear.forward(&input)?;
+    assert_eq!(output.dtype(), DType::F32);
+    let values = output.to_device(&Device::Cpu)?.to_vec2::<f32>()?;
+    let input_value = input.to_device(&Device::Cpu)?
+        .to_dtype(DType::F32)?.to_vec2::<f32>()?[0][0];
+    let expected = 128.0 * input_value;
+    for row in &values {
+        for &value in row {
+            assert!(value.is_finite(), "FP8 BF16 kernel generated a non-finite value");
+            assert!((value - expected).abs() <= expected.abs() * 0.001,
+                "FP8 BF16 {value} != {expected}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn sm61_packed_fp8_bf16_prefill_matches_gemv() -> Result<()> {
+    use candle_core::quantized::fp8_linear_sm61::{Fp8Sm61Linear, Fp8Sm61Mode};
+
+    let device = Device::new_cuda(0)?;
+    let Device::Cuda(cuda) = &device else {
+        unreachable!("CUDA test requires a CUDA device")
+    };
+    let linear = Fp8Sm61Linear::from_bytes(
+        cuda, 128, 128, &vec![0x38u8; 128 * 128], &[0.25],
+        128, 128, Fp8Sm61Mode::SimtW8A16, 128,
+    )?;
+    let values = (0..4 * 128).map(|i| (i % 17) as f32 * 0.25).collect::<Vec<_>>();
+    let input = Tensor::from_vec(values, (4, 128), &device)?.to_dtype(DType::BF16)?;
+    let prefill = linear.forward(&input)?.to_device(&Device::Cpu)?.to_vec2::<f32>()?;
+    for row in 0..4 {
+        let decode = linear.forward(&input.narrow(0, row, 1)?)?
+            .to_device(&Device::Cpu)?.to_vec2::<f32>()?;
+        for (a, b) in prefill[row].iter().zip(&decode[0]) {
+            assert!((a - b).abs() <= 0.01, "BF16 GEMV/prefill parity: {a} != {b}");
+        }
+    }
+    Ok(())
+}
