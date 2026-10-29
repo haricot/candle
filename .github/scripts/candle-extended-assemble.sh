@@ -26,7 +26,8 @@ jq -e '
       "fireredvad-native","smart-turn-native","transcribepsy-native",
       "nemotron-asr-native","pockettts-native"] | index($tests) != null) and
     (.cuda_features | type == "array" and all(.[]; type == "string" and test("^[a-z0-9_-]+$"))) and
-    ((.pin_source_sha // false) | type == "boolean"))
+    ((.pin_source_sha // false) | type == "boolean") and
+    ((.allow_promoted_equivalent_source // false) | type == "boolean"))
 ' "$cfg" >/dev/null
 jq -r '.features[] | .source_ref, .target_ref' "$cfg" |
 while IFS= read -r ref; do
@@ -67,9 +68,13 @@ for feature in "${features[@]}"; do
   # Sources opting into strict SHA pinning may never move without review.
   pinned_required="$(jq -r --arg f "$feature" '.features[]|select(.feature==$f)|.pin_source_sha // false' "$cfg")"
   if [[ "$feature" == embeddinggemma2 || "$pinned_required" == true ]]; then
-    if [[ "${pinned[$feature]}" != "${review[$feature]}" ]]; then
-      echo "::error::Pinned source $feature moved from reviewed SHA ${review[$feature]}"; exit 3
-    fi
+    equivalent_allowed="$(jq -r --arg f "$feature" '.features[]|select(.feature==$f)|.allow_promoted_equivalent_source // false' "$cfg")"
+    FEATURE="$feature" \
+      REVIEW_SOURCE_SHA="${review[$feature]}" \
+      OBSERVED_SOURCE_SHA="${pinned[$feature]}" \
+      CURRENT_MAIN_SHA="$base" \
+      ALLOW_PROMOTED_EQUIVALENT_SOURCE="$equivalent_allowed" \
+      bash .github/scripts/candle-extended-pin-equivalence.sh
   fi
 done
 
@@ -254,10 +259,11 @@ print("EXTENDED_RUSTFFT_DEDUP=PASS " + "; ".join(audit))
 PY
 
 mkdir -p "$aggregate/candle-integration"
-jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
+jq -s --argjson update_refs "$(jq -r '.publication.update_canonical_feature_refs' "$cfg")" --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
+    update_canonical_feature_refs:$update_refs,
     validation_state:"UNVALIDATED_CANDIDATE",features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/extended.json"
 cp "$aggregate/candle-integration/extended.json" "$report/extended.json"
 # Fail before publishing or starting expensive CUDA jobs if a reviewed capability

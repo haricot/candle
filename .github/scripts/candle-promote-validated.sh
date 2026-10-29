@@ -47,6 +47,16 @@ jq -e   --arg campaign "$CAMPAIGN"   --arg main "$BASE_SHA"   '.campaign == $cam
 
 # Keep the logical Legacy manifest identity required by runner v6 separate
 # from the reviewed stable Git ref. Extended retains its existing identity.
+# Extended preserves independently developed standalone branches. Only the
+# attested candidate is promoted to extended; Legacy retains its own policy.
+if [[ "$PROMOTION_KIND" == extended ]]; then
+  jq -e '.update_canonical_feature_refs == false' "$manifest" >/dev/null ||
+    fail "Extended candidate does not explicitly preserve standalone sources"
+  update_feature_refs=false
+else
+  update_feature_refs=true
+fi
+
 manifest_target="$(jq -r '.promotion_target // .integration_target' "$manifest")"
 [[ "$manifest_target" == "$TARGET_BRANCH" ]] ||
   fail "manifest promotion target=$manifest_target, expected $TARGET_BRANCH"
@@ -56,6 +66,7 @@ declare -a promote_specs=()
 declare -a lease_args=()
 declare -a verify_targets=()
 declare -a verify_prepared=()
+declare -a verify_exact=()
 
 ensure_archive() {
   local ref="$1" sha="$2" current
@@ -85,24 +96,32 @@ while IFS=$'\t' read -r feature target source prepared; do
 
   ensure_archive "archive/promotion/$CAMPAIGN/before/$target" "$current"
 
-  if [[ "$current" == "$prepared" ]]; then
-    echo "FEATURE_ALREADY_PROMOTED=$target@$current" >> "$summary"
-  elif [[ "$current" == "$source" ]]; then
-    promote_specs+=("$prepared:refs/heads/$target")
-    lease_args+=("--force-with-lease=refs/heads/$target:$source")
-    echo "FEATURE_PROMOTE=$target:$source->$prepared" >> "$summary"
+  if [[ "$update_feature_refs" == false ]]; then
+    [[ "$current" == "$source" ]] ||
+      fail "standalone ref $target moved during qualification: current=$current expected=$source"
+    echo "STANDALONE_PRESERVED=$target@$source" >> "$summary"
+    verify_prepared+=("$source")
+    verify_exact+=("true")
   else
-    current_tree="$(git rev-parse "$current^{tree}")"
-    prepared_tree="$(git rev-parse "$prepared^{tree}")"
-    if [[ "$current_tree" == "$prepared_tree" ]]; then
-      echo "FEATURE_EQUIVALENT_ALREADY_PROMOTED=$target@$current" >> "$summary"
+    if [[ "$current" == "$prepared" ]]; then
+      echo "FEATURE_ALREADY_PROMOTED=$target@$current" >> "$summary"
+    elif [[ "$current" == "$source" ]]; then
+      promote_specs+=("$prepared:refs/heads/$target")
+      lease_args+=("--force-with-lease=refs/heads/$target:$source")
+      echo "FEATURE_PROMOTE=$target:$source->$prepared" >> "$summary"
     else
-      fail "canonical feature ref $target moved unexpectedly: $current (expected $source)"
+      current_tree="$(git rev-parse "$current^{tree}")"
+      prepared_tree="$(git rev-parse "$prepared^{tree}")"
+      if [[ "$current_tree" == "$prepared_tree" ]]; then
+        echo "FEATURE_EQUIVALENT_ALREADY_PROMOTED=$target@$current" >> "$summary"
+      else
+        fail "canonical feature ref $target moved unexpectedly: $current (expected $source)"
+      fi
     fi
+    verify_prepared+=("$prepared")
+    verify_exact+=("false")
   fi
-
   verify_targets+=("$target")
-  verify_prepared+=("$prepared")
   idx=$((idx + 1))
 done < <(jq -r '.features[] | [.feature,.target_ref,.source_sha,.prepared_sha] | @tsv' "$manifest")
 
@@ -143,7 +162,10 @@ for i in "${!verify_targets[@]}"; do
   prepared="${verify_prepared[$i]}"
   current="$(remote_head "$target")"
   [[ -n "$current" ]] || fail "promoted feature ref $target disappeared"
-  if [[ "$current" != "$prepared" ]]; then
+  if [[ "${verify_exact[$i]}" == true ]]; then
+    [[ "$current" == "$prepared" ]] ||
+      fail "preserved standalone $target changed during promotion: current=$current expected=$prepared"
+  elif [[ "$current" != "$prepared" ]]; then
     git fetch --no-tags origin       "+refs/heads/$target:refs/remotes/origin/promotion-verify-$i"
     current_tree="$(git rev-parse "$current^{tree}")"
     prepared_tree="$(git rev-parse "$prepared^{tree}")"

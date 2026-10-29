@@ -8,6 +8,8 @@ on:
       - .github/workflows/candle-extended-composite.yml
       - .github/extended-sources.json
       - .github/scripts/candle-extended-assemble.sh
+      - .github/scripts/candle-extended-pin-equivalence.sh
+      - .github/scripts/extended-dynamic-selftest.sh
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh

@@ -75,7 +75,8 @@
       "cuda_features": [
         "cuda"
       ],
-      "pin_source_sha": true
+      "pin_source_sha": true,
+      "allow_promoted_equivalent_source": true
     },
     {
       "feature": "lean4_standalone",
@@ -84,7 +85,8 @@
       "review_source_sha": "d753baf07fcebef53712f63b6cb79c24b0aa2930",
       "pin_source_sha": true,
       "cpu_tests": "lean4-contracts",
-      "cuda_features": []
+      "cuda_features": [],
+      "allow_promoted_equivalent_source": true
     },
     {
       "feature": "fireredvad_standalone",
@@ -95,7 +97,8 @@
       "cpu_tests": "fireredvad-native",
       "cuda_features": [
         "cuda"
-      ]
+      ],
+      "allow_promoted_equivalent_source": true
     },
     {
       "feature": "smart_turn_standalone",
@@ -106,7 +109,8 @@
       "cpu_tests": "smart-turn-native",
       "cuda_features": [
         "cuda"
-      ]
+      ],
+      "allow_promoted_equivalent_source": true
     },
     {
       "feature": "transcribepsy_standalone",
@@ -117,7 +121,8 @@
       "cpu_tests": "transcribepsy-native",
       "cuda_features": [
         "cuda"
-      ]
+      ],
+      "allow_promoted_equivalent_source": true
     },
     {
       "feature": "nemotron_asr_streaming_standalone",
@@ -128,7 +133,8 @@
       "cpu_tests": "nemotron-asr-native",
       "cuda_features": [
         "cuda"
-      ]
+      ],
+      "allow_promoted_equivalent_source": true
     },
     {
       "feature": "pockettts_sm61_standalone",
@@ -155,10 +161,11 @@
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
     "never_push_to_main": true,
-    "update_canonical_feature_refs": true,
+    "update_canonical_feature_refs": false,
     "archive_before_promote": true,
     "force_with_lease": true,
-    "promotion_after_physical_sm61": true
+    "promotion_after_physical_sm61": true,
+    "standalone_source_policy": "preserve standalone refs; accept prior promoted snapshots only when their exact Git delta matches reviewed source"
   },
   "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed",
   "asd_invariant": "ASD-Core V3 remains runtime-data driven; legacy CUDA features must not reintroduce compiled ASD profile or architecture-specific ASD source ownership"
