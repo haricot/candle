@@ -13,7 +13,8 @@ fn expect_shape(tensor: &Tensor, expected: &[usize], label: &str) -> Result<()> 
         Ok(())
     } else {
         Err(Error::Msg(format!(
-            "{label}: expected {expected:?}, got {:?}", tensor.dims()
+            "{label}: expected {expected:?}, got {:?}",
+            tensor.dims()
         )))
     }
 }
@@ -24,7 +25,8 @@ fn expect_first(tensor: &Tensor, expected: f32, label: &str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::Msg(format!(
-            "{label}: expected first element {expected}, got {:?}", data.first()
+            "{label}: expected first element {expected}, got {:?}",
+            data.first()
         )))
     }
 }
@@ -43,8 +45,7 @@ fn preflight(device: &Device) -> Result<f32> {
 
     let latent = Tensor::ones((1, LATENT_DIM, 1), dtype, device)?;
     let quant_weight = Tensor::ones((CODEC_DIM, LATENT_DIM, 1), dtype, device)?;
-    let projected = Conv1d::new(quant_weight, None, Conv1dConfig::default())
-        .forward(&latent)?;
+    let projected = Conv1d::new(quant_weight, None, Conv1dConfig::default()).forward(&latent)?;
     expect_shape(&projected, &[1, CODEC_DIM, 1], "Mimi pointwise projection")?;
     expect_first(&projected, LATENT_DIM as f32, "Mimi pointwise projection")?;
 
@@ -63,7 +64,9 @@ fn preflight(device: &Device) -> Result<f32> {
 
     // Streaming state remains device-resident across arbitrarily sized chunks.
     let mut stream = candle_transformers::models::pockettts::StreamingConvTranspose1d::new(
-        deconv, UPSAMPLE_STRIDE, UPSAMPLE_KERNEL,
+        deconv,
+        UPSAMPLE_STRIDE,
+        UPSAMPLE_KERNEL,
     )?;
     let first = stream.push(&input.narrow(2, 0, 1)?)?;
     let second = stream.push(&input.narrow(2, 1, 1)?)?;
@@ -79,8 +82,14 @@ fn preflight(device: &Device) -> Result<f32> {
     }
 
     let first_channel = full.narrow(1, 0, 1)?.flatten_all()?.to_vec1::<f32>()?;
-    for (sample_index, expected) in [(0, 1.0), (15, 1.0), (16, 2.0),
-                                      (31, 2.0), (32, 1.0), (47, 1.0)] {
+    for (sample_index, expected) in [
+        (0, 1.0),
+        (15, 1.0),
+        (16, 2.0),
+        (31, 2.0),
+        (32, 1.0),
+        (47, 1.0),
+    ] {
         if first_channel[sample_index] != expected {
             return Err(Error::Msg(format!(
                 "Mimi overlap sample {sample_index}: expected {expected}, got {}",
@@ -96,7 +105,11 @@ fn main() -> Result<()> {
     let backend = match args.as_slice() {
         [] => "cpu",
         [flag, value] if flag == "--device" => value.as_str(),
-        _ => return Err(Error::Msg("usage: pockettts-sm61 [--device cpu|cuda]".into())),
+        _ => {
+            return Err(Error::Msg(
+                "usage: pockettts-sm61 [--device cpu|cuda]".into(),
+            ))
+        }
     };
     let device = match backend {
         "cpu" => Device::Cpu,

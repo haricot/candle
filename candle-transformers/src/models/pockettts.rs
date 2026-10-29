@@ -30,7 +30,11 @@ impl MimiContinuousProjection {
     pub fn load(latent_dim: usize, decoder_dim: usize, vb: VarBuilder<'_>) -> Result<Self> {
         Ok(Self {
             layer: conv1d_no_bias(
-                latent_dim, decoder_dim, 1, Conv1dConfig::default(), vb.pp("output_proj"),
+                latent_dim,
+                decoder_dim,
+                1,
+                Conv1dConfig::default(),
+                vb.pp("output_proj"),
             )?,
         })
     }
@@ -60,8 +64,12 @@ impl StreamingConvTranspose1d {
             )));
         }
         Ok(Self {
-            layer, stride, overlap: kernel - stride,
-            pending_unbiased: None, output_shape: None, finished: false,
+            layer,
+            stride,
+            overlap: kernel - stride,
+            pending_unbiased: None,
+            output_shape: None,
+            finished: false,
         })
     }
 
@@ -115,9 +123,10 @@ impl StreamingConvTranspose1d {
         if self.finished {
             return Err(Error::Msg("stream already finalized".into()));
         }
-        let pending = self.pending_unbiased.take().ok_or_else(|| {
-            Error::Msg("cannot finalize a stream without input".into())
-        })?;
+        let pending = self
+            .pending_unbiased
+            .take()
+            .ok_or_else(|| Error::Msg("cannot finalize a stream without input".into()))?;
         let (_, channels, _) = pending.dims3()?;
         let tail = match self.layer.bias() {
             Some(bias) => pending.broadcast_add(&bias.reshape((1, channels, 1))?)?,
@@ -142,7 +151,11 @@ mod tests {
             None
         };
         let config = ConvTranspose1dConfig {
-            stride: 2, padding: 0, output_padding: 0, dilation: 1, groups: 1,
+            stride: 2,
+            padding: 0,
+            output_padding: 0,
+            dilation: 1,
+            groups: 1,
         };
         Ok(ConvTranspose1d::new(weight, bias, config))
     }
@@ -153,9 +166,7 @@ mod tests {
         let x = Tensor::from_vec(vec![1_f32, 2., 3., 4.], (1, 1, 4), &device)?;
         for biased in [false, true] {
             let offline = make_layer(&device, biased)?.forward(&x)?;
-            let mut stream = StreamingConvTranspose1d::new(
-                make_layer(&device, biased)?, 2, 4,
-            )?;
+            let mut stream = StreamingConvTranspose1d::new(make_layer(&device, biased)?, 2, 4)?;
             let mut outputs = Vec::new();
             let mut offset = 0;
             for frames in [1, 2, 1] {
