@@ -12,6 +12,9 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 
+mod asd_modules;
+pub(crate) use asd_modules::AsdCudaImplementation;
+
 /// Unique identifier for cuda devices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DeviceId(usize);
@@ -61,6 +64,7 @@ pub struct CudaDevice {
     context: Arc<cudarc::driver::CudaContext>,
     modules: Arc<std::sync::RwLock<ModuleStore>>,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
+    asd_runtime: Arc<asd_modules::AsdRuntimeCache>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
     curand: Arc<Mutex<CudaRng>>,
@@ -289,6 +293,76 @@ impl CudaDevice {
         self.stream.clone()
     }
 
+    pub(crate) fn asd_modules(&self) -> asd_modules::AsdModuleRegistry<'_> {
+        asd_modules::AsdModuleRegistry::new(self)
+    }
+
+    pub(crate) fn asd_runtime_generation(&self) -> u64 {
+        self.asd_runtime.generation()
+    }
+
+    /// Invalidates all resolved ASD runtime implementations for this CUDA device.
+    ///
+    /// Filesystem discovery, SHA-256 verification and manifest validation are
+    /// intentionally control-plane work and only happen again after this
+    /// explicit refresh (or on the first resolution).
+    pub fn refresh_asd_modules(&self) {
+        self.asd_runtime.clear_all();
+    }
+
+    /// Invalidates one resolved ASD implementation for this CUDA device.
+    pub fn refresh_asd_module(&self, implementation_id: &str) -> Result<()> {
+        self.asd_runtime.clear(implementation_id)
+    }
+
+    /// Invalidates the process-cached ASD qualified fallback store.
+    ///
+    /// The next fallback lookup reloads and revalidates
+    /// `$CANDLE_ASD_HOME/fallbacks/current.json`.
+    pub fn refresh_asd_fallbacks(&self) {
+        crate::asd_fallback_store::refresh();
+    }
+
+    /// Invalidates the authoritative runtime Exact Profile cache.
+    ///
+    /// The next exact lookup reloads `$CANDLE_ASD_HOME/profiles/current.asd`
+    /// (or the explicit `CANDLE_ASD_RUNTIME_PROFILE` override).
+    pub fn refresh_asd_profile_extensions(&self) {
+        self.asd_runtime.invalidate_plans();
+        crate::asd_runtime_extensions::refresh();
+    }
+
+    /// Reloads ASD runtime policy switches from the process environment.
+    ///
+    /// This invalidates resolved execution plans only. Loaded CUDA modules,
+    /// verified manifests and runtime profile data remain cached.
+    pub fn refresh_asd_runtime_policy(&self) {
+        crate::conv::asd_exact_cuda::refresh_control_plane_flags();
+        self.asd_runtime.invalidate_plans();
+    }
+
+    /// Atomically invalidates all ASD control-plane caches for this device/process.
+    ///
+    /// No filesystem work happens here; files are reloaded lazily on the next
+    /// cold resolution.
+    pub fn refresh_asd(&self) {
+        self.refresh_asd_modules();
+        self.refresh_asd_fallbacks();
+        self.refresh_asd_profile_extensions();
+        self.refresh_asd_runtime_policy();
+    }
+
+    /// Returns the resolved ASD raw source for an implementation on this device.
+    ///
+    /// This is a diagnostic/control-plane query. It never resolves an
+    /// unresolved implementation and therefore performs no filesystem I/O.
+    pub fn asd_resolved_module_source(
+        &self,
+        implementation_id: &str,
+    ) -> Result<Option<&'static str>> {
+        self.asd_runtime.resolved_source(implementation_id)
+    }
+
     /// When turned on, all cuda tensors **created after calling this function** will
     /// not track uses via cuda events.
     ///
@@ -385,6 +459,7 @@ impl CudaDevice {
             curand: Arc::new(Mutex::new(CudaRng(curand))),
             modules: Arc::new(std::sync::RwLock::new(module_store)),
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            asd_runtime: Arc::new(asd_modules::AsdRuntimeCache::new()),
             seed_value: Arc::new(RwLock::new(299792458)),
         })
     }
