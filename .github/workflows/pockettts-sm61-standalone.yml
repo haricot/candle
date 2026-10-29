@@ -29,6 +29,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: CPU operator unit gate
-        run: cargo test --locked -p candle-examples --example pockettts-sm61 -- --nocapture
+        run: cargo test -p candle-examples --example pockettts-sm61 -- --nocapture
       - name: CPU operator CLI gate
-        run: cargo run --locked -p candle-examples --example pockettts-sm61 -- --device cpu
+        run: cargo run -p candle-examples --example pockettts-sm61 -- --device cpu

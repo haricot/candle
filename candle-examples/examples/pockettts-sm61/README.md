@@ -22,8 +22,8 @@ references.
 From the Candle repository root:
 
 ```sh
-cargo test --locked -p candle-examples --example pockettts-sm61 -- --nocapture
-cargo run --locked -p candle-examples --example pockettts-sm61 -- --device cpu
+cargo test -p candle-examples --example pockettts-sm61 -- --nocapture
+cargo run -p candle-examples --example pockettts-sm61 -- --device cpu
 ```
 
 Expected final marker:
@@ -38,7 +38,7 @@ On a machine with a compatible CUDA toolkit and a Pascal SM61 GPU:
 
 ```sh
 CUDA_COMPUTE_CAP=61 NVCC_CCBIN=gcc-14 \
-  cargo run --locked --release -p candle-examples --example pockettts-sm61 \
+  cargo run --release -p candle-examples --example pockettts-sm61 \
   --features cuda -- --device cuda
 ```
 
