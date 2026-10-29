@@ -30,6 +30,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Rust formatting gate
+        run: cargo fmt --all -- --check
       - name: CPU streaming library gate
         run: cargo test -p candle-transformers --lib pockettts::tests -- --nocapture
       - name: CPU operator unit gate
