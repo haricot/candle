@@ -64,11 +64,27 @@ export CANDLE_ASD_MODULE_DIR
 CORE_FEATURES="$(jq -r '[.features[].cuda_features[]] | unique | join(",")' "$manifest")"
 [[ -n "$CORE_FEATURES" ]] || fail "no CUDA features in this physical SM61 campaign"
 
+# The immutable hosted archive has already linked the CUDA test binaries.
+# Validate *all* of its hashes and toolchain/source identities before running
+# any downloaded executable. No Cargo build/check/test/run is used in this mode.
+if [[ -n "${CANDLE_EXTENDED_BUILD_ONCE_DIR:-}" ]]; then
+  archive_driver="$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py"
+  [[ -f "$archive_driver" ]] || fail "missing Build Once archive verifier"
+  python3 "$archive_driver" verify --bundle "$CANDLE_EXTENDED_BUILD_ONCE_DIR" ||
+    fail "Build Once archive verification failed"
+fi
+
 run_gate() {
   local name="$1"
   shift
   echo "=== GATE $name ===" | tee -a "$REPORT_DIR/summary.txt"
-  "$@" 2>&1 | tee "$REPORT_DIR/$name.log"
+  if [[ -n "${CANDLE_EXTENDED_BUILD_ONCE_DIR:-}" ]]; then
+    python3 "$archive_driver" run-gate \
+      --bundle "$CANDLE_EXTENDED_BUILD_ONCE_DIR" \
+      --report "$REPORT_DIR" --name "$name" 2>&1 | tee "$REPORT_DIR/$name.log"
+  else
+    "$@" 2>&1 | tee "$REPORT_DIR/$name.log"
+  fi
   echo "GATE_$name=PASS" | tee -a "$REPORT_DIR/summary.txt"
 }
 

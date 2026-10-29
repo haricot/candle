@@ -12,6 +12,8 @@ on:
       - .github/scripts/extended-dynamic-selftest.sh
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
+      - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/extended-build-once-selftest.py
       - .github/scripts/candle-candidate-cuda-compile.sh
       - .github/container/Containerfile.cuda1292-ubuntu2604
       - .github/scripts/candle-promote-validated.sh
@@ -74,6 +76,8 @@ jobs:
           persist-credentials: false
       - name: Validate dynamic source contract before assembly
         run: bash .github/scripts/extended-dynamic-selftest.sh
+      - name: Validate hosted executable archive and replay contracts
+        run: python3 .github/scripts/extended-build-once-selftest.py
       - name: Prepare manifest-defined Extended candidate
         id: assemble
         shell: bash
@@ -219,7 +223,9 @@ jobs:
     needs: [prepare, integrated_cpu]
     if: needs.integrated_cpu.result == 'success'
     runs-on: ubuntu-26.04
-    timeout-minutes: 150
+    timeout-minutes: 240
+    outputs:
+      hosted_manifest_sha256: ${{ steps.build_once.outputs.manifest_sha256 }}
     env:
       CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
       CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
@@ -247,6 +253,7 @@ jobs:
             --tag candle-cuda1292-u2604:extended .ci-tools/.github/container
           docker image inspect candle-cuda1292-u2604:extended --format '{{.Id}}'
       - shell: bash
+        id: build_once
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/cuda-cargo"
@@ -259,16 +266,31 @@ jobs:
             --env RUSTUP_HOME=/opt/rustup \
             --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
+            --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
             --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
             --env CHECK_CAMPAIGN --env LOCK_SHA256 \
             candle-cuda1292-u2604:extended \
-            bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+            bash -c '
+              set -euo pipefail
+              bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+              python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
+                build --out "$RUNNER_TEMP/extended-sm61-build-once"
+            '
+          echo "manifest_sha256=$(sha256sum "$RUNNER_TEMP/extended-sm61-build-once/manifest.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: extended-${{ needs.prepare.outputs.campaign }}-cuda-compile
           path: ${{ runner.temp }}/candle-candidate-cuda/
           if-no-files-found: warn
+          retention-days: 30
+      - if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-build-once
+          path: ${{ runner.temp }}/extended-sm61-build-once/
+          if-no-files-found: error
+          compression-level: 1
           retention-days: 30
 
   physical_sm61:
@@ -292,6 +314,8 @@ jobs:
       CARGO_INCREMENTAL: '0'
       CANDLE_ASD_HOME: /run/haricot/asd
       CANDLE_ASD_MODULE_DIR: /run/haricot/asd/artifacts/sm61
+      CANDLE_EXTENDED_BUILD_ONCE_DIR: ${{ runner.temp }}/extended-sm61-build-once
+      EXTENDED_BUILD_ONCE_MANIFEST_SHA256: ${{ needs.integrated_cuda_compile.outputs.hosted_manifest_sha256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -303,6 +327,10 @@ jobs:
           ref: ${{ github.sha }}
           path: .ci-tools
           persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-build-once
+          path: ${{ runner.temp }}/extended-sm61-build-once
       - name: Validate Extended composition on physical SM61
         shell: bash
         run: bash .ci-tools/.github/scripts/candle-extended-sm61.sh
