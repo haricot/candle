@@ -29,6 +29,11 @@ pub mod cuda;
 pub mod fast_mmq;
 #[cfg(feature = "cuda")]
 pub mod fast_mmvq;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+pub mod fp8_linear_sm61;
+pub mod fp8_sm61_dispatch;
+pub mod fp8_sm61_format;
+pub mod fp8_sm61_loader;
 #[cfg(not(feature = "cuda"))]
 mod cuda {
     pub use super::dummy_cuda::*;
