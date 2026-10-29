@@ -1,0 +1,40 @@
+name: PocketTTS SM61 standalone CPU streaming gate
+
+on:
+  push:
+    branches:
+      - pockettts_sm61_standalone
+    paths:
+      - "candle-examples/examples/pockettts-sm61/**"
+      - ".github/workflows/pockettts-sm61-standalone.yml"
+      - "candle-transformers/src/models/pockettts.rs"
+      - "candle-transformers/src/models/mod.rs"
+      - "candle-examples/Cargo.toml"
+      - "candle-core/**"
+      - "candle-nn/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pockettts-sm61-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-a0:
+    name: A1 CPU streaming and operator contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust formatting gate
+        run: cargo fmt --all -- --check
+      - name: CPU streaming library gate
+        run: cargo test -p candle-transformers --lib pockettts::tests -- --nocapture
+      - name: CPU operator unit gate
+        run: cargo test -p candle-examples --example pockettts-sm61 -- --nocapture
+      - name: CPU operator CLI gate
+        run: cargo run -p candle-examples --example pockettts-sm61 -- --device cpu
