@@ -39,20 +39,25 @@ def output(argv, cwd=None):
 
 
 def load_source(repo):
-    source = repo / "candle-integration/extended.json"
+    legacy = os.environ.get("CANDLE_BUILD_SOURCE", "extended") == "legacy"
+    source = repo / ("candle-integration/legacy-cuda.json" if legacy else "candle-integration/extended.json")
     info = json.loads(source.read_text())
     features = info.get("features")
     if (
         info.get("schema_version") != 1
-        or info.get("kind") != "extended-multi"
-        or info.get("feature_count") != len(features or [])
+        or info.get("kind") != ("legacy-cuda-five" if legacy else "extended-multi")
+        or info.get("feature_count", len(features or []) if legacy else None) != len(features or [])
         or not features
     ):
         fail("invalid Extended source manifest")
     ids = [item["feature"] for item in features]
     if len(set(ids)) != len(ids):
         fail("duplicate source")
-    cuda = sorted({f for item in features for f in item["cuda_features"]})
+    if legacy and set(ids) != {"bf16_candle", "fp8_candle", "fp4_candle",
+                               "cudnn_fallback_candle", "moe_simt_f16_candle"}:
+        fail("invalid Legacy source set")
+    cuda = (["cuda", "cudnn", "cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"]
+            if legacy else sorted({f for item in features for f in item["cuda_features"]}))
     if not cuda or any(not FEATURE_RE.fullmatch(f) for f in cuda):
         fail("invalid CUDA feature list")
     return source, info, set(ids), ",".join(cuda)
@@ -74,6 +79,7 @@ def environment(repo):
         "container_recipe_sha256": sha256(
             repo / ".ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604"
         ),
+        "compiler_image": os.environ.get("CANDLE_CUDA_IMAGE", ""),
     }
 
 
@@ -193,12 +199,14 @@ def build(args):
 
     check("combined_compile", ["check", "-p", "candle-core", "-p", "candle-nn",
                                "--release", "--locked", "--features", core])
-    check("downstream_transformers_compile",
+    if os.environ.get("CANDLE_BUILD_SOURCE", "extended") != "legacy":
+        check("downstream_transformers_compile",
           ["check", "-p", "candle-transformers", "--lib", "--release", "--locked"])
     qwen = "cuda"
     if {"bf16_candle", "fp8_candle", "fp4_candle"} <= features:
         qwen = "cuda,cuda-legacy-bf16,cuda-legacy-fp8,cuda-legacy-fp4"
-    check("downstream_qwen3_cuda_compile",
+    if os.environ.get("CANDLE_BUILD_SOURCE", "extended") != "legacy":
+        check("downstream_qwen3_cuda_compile",
           ["check", "-p", "candle-examples", "--example", "quantized-qwen3",
            "--features", qwen, "--release", "--locked"])
     if "embeddinggemma2" in features:
@@ -334,7 +342,17 @@ def load_bundle(repo, root):
         fail("CUDA feature set mismatch")
     if "target-cpu=x86-64" not in manifest.get("rustflags", ""):
         fail("archive is not explicitly portable")
-    if environment(repo) != manifest.get("environment"):
+    if os.environ.get("CANDLE_BUILD_ONCE_EXECUTOR") == "physical-sm61":
+        built = manifest.get("environment", {})
+        image = os.environ.get("CANDLE_CUDA_IMAGE", "")
+        if (not re.fullmatch(r"ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}", image)
+                or built.get("compiler_image") != image):
+            fail("trusted compiler image identity mismatch")
+        if output(["dpkg-query", "-W", "-f=${Version}", "libcudnn9-cuda-12"]) != built.get("cudnn_package"):
+            fail("physical cuDNN runtime ABI mismatch")
+        if sha256(repo / ".ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604") != built.get("container_recipe_sha256"):
+            fail("compiler recipe mismatch")
+    elif environment(repo) != manifest.get("environment"):
         fail("CUDA/cuDNN/Rust/toolchain or recipe mismatch")
     gates = manifest.get("gates")
     if not isinstance(gates, dict) or not gates:

@@ -18,6 +18,9 @@ on:
       - .github/scripts/candle-cpu-cuda-link-stub-selftest.py
       - .github/scripts/candle-candidate-cuda-compile.sh
       - .github/container/Containerfile.cuda1292-ubuntu2604
+      - .github/container/cuda-image.json
+      - .github/workflows/candle-cuda-ci-image.yml
+      - .github/scripts/ci-cuda-image.py
       - .github/scripts/candle-promote-validated.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
@@ -49,12 +52,19 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: candle-extended-${{ github.event_name == 'push' && github.sha || inputs.campaign }}
   cancel-in-progress: false
 
 jobs:
+  cuda_image:
+    uses: ./.github/workflows/candle-cuda-ci-image.yml
+    permissions:
+      contents: read
+      packages: write
+
   prepare:
     runs-on: ubuntu-26.04
     timeout-minutes: 90
@@ -102,7 +112,7 @@ jobs:
           retention-days: 30
 
   cpu_cuda_compile:
-    needs: prepare
+    needs: [prepare, cuda_image]
     if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 240
@@ -115,6 +125,7 @@ jobs:
       CHECK_CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
+      CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -125,10 +136,22 @@ jobs:
           ref: ${{ github.sha }}
           path: .ci-tools
           persist-credentials: false
-      - run: |
-          docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
-            --tag candle-cuda1292-u2604:extended .ci-tools/.github/container
-          docker image inspect candle-cuda1292-u2604:extended --format '{{.Id}}'
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: cuda_cache
+        with:
+          path: |
+            ${{ runner.temp }}/cuda-cargo
+            target
+          key: candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ needs.prepare.outputs.base_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ needs.prepare.outputs.base_sha }}-
+            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-
+      - name: Pull the verified immutable CUDA environment
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$CANDLE_CUDA_IMAGE"
       - shell: bash
         id: build_once
         run: |
@@ -141,12 +164,12 @@ jobs:
             --env "HOME=$RUNNER_TEMP/cuda-home" \
             --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
             --env RUSTUP_HOME=/opt/rustup \
-            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
+            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL --env CANDLE_CUDA_IMAGE \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
             --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
             --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
             --env CHECK_CAMPAIGN --env LOCK_SHA256 \
-            candle-cuda1292-u2604:extended \
+            "$CANDLE_CUDA_IMAGE" \
             bash -c '
               set -euo pipefail
               # The composed candidate intentionally has no tracked Cargo.lock.
@@ -161,6 +184,14 @@ jobs:
                 build --out "$RUNNER_TEMP/extended-sm61-build-once"
             '
           echo "manifest_sha256=$(sha256sum "$RUNNER_TEMP/extended-sm61-build-once/manifest.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: always() && steps.cuda_cache.outputs.cache-primary-key != ''
+        continue-on-error: true
+        with:
+          path: |
+            ${{ runner.temp }}/cuda-cargo
+            target
+          key: ${{ steps.cuda_cache.outputs.cache-primary-key }}
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -179,7 +210,7 @@ jobs:
 
   cpu_execute:
     name: CPU Execute — CUDA-built artifacts
-    needs: [prepare, cpu_cuda_compile]
+    needs: [prepare, cpu_cuda_compile, cuda_image]
     if: needs.cpu_cuda_compile.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 90
@@ -188,6 +219,7 @@ jobs:
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
       EXTENDED_BUILD_ONCE_MANIFEST_SHA256: ${{ needs.cpu_cuda_compile.outputs.hosted_manifest_sha256 }}
+      CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -202,10 +234,12 @@ jobs:
         with:
           name: extended-${{ needs.prepare.outputs.campaign }}-build-once
           path: ${{ runner.temp }}/extended-sm61-build-once
-      - name: Recreate the pinned CUDA userspace without a GPU
+      - name: Pull the verified immutable CUDA environment
+        env:
+          GHCR_TOKEN: ${{ github.token }}
         run: |
-          docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
-            --tag candle-cuda1292-u2604:extended .ci-tools/.github/container
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$CANDLE_CUDA_IMAGE"
       - name: Execute CPU model contracts from the verified CUDA archive
         shell: bash
         run: |
@@ -217,11 +251,11 @@ jobs:
             --workdir "$GITHUB_WORKSPACE" \
             --env "HOME=$RUNNER_TEMP/cuda-home" \
             --env RUSTUP_HOME=/opt/rustup \
-            --env CUDA_COMPUTE_CAP --env CANDIDATE_SHA \
+            --env CUDA_COMPUTE_CAP --env CANDIDATE_SHA --env CANDLE_CUDA_IMAGE \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP \
             --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
             --env EXTENDED_BUILD_ONCE_MANIFEST_SHA256 \
-            candle-cuda1292-u2604:extended \
+            "$CANDLE_CUDA_IMAGE" \
             bash -c '
               set -euo pipefail
               git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -240,7 +274,7 @@ jobs:
 
   physical_sm61:
     name: SM61 Extended runtime
-    needs: [prepare, cpu_cuda_compile, cpu_execute]
+    needs: [prepare, cpu_cuda_compile, cpu_execute, cuda_image]
     if: needs.cpu_execute.result == 'success'
     runs-on:
       - self-hosted
@@ -257,6 +291,8 @@ jobs:
       NVCC: /opt/cuda/bin/nvcc
       NVCC_CCBIN: gcc-14
       CARGO_INCREMENTAL: '0'
+      CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
+      CANDLE_BUILD_ONCE_EXECUTOR: physical-sm61
       CANDLE_ASD_HOME: /run/haricot/asd
       CANDLE_ASD_MODULE_DIR: /run/haricot/asd/artifacts/sm61
     steps:

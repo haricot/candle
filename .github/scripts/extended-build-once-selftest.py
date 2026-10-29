@@ -189,6 +189,43 @@ class BuildOnceTests(unittest.TestCase):
         self.assertEqual(built["environment"], ENVIRONMENT)
         self.assertEqual(built["rustflags"], "-C target-cpu=x86-64")
 
+    def test_legacy_archive_preserves_all_original_gpu_gates(self):
+        os.environ["CANDLE_BUILD_SOURCE"] = "legacy"
+        source = self.repo / "candle-integration/legacy-cuda.json"
+        source.write_text(json.dumps({"schema_version": 1, "kind": "legacy-cuda-five",
+            "campaign": "selftest-1", "features": [{"feature": feature} for feature in FEATURES[:5]]}))
+        def fake_compile(_repo, _out, _name, _argv, _env, wanted=()):
+            return {name: "/bin/true" for name in wanted}
+        with mock.patch.object(module, "log_cargo", side_effect=fake_compile):
+            module.build(type("Args", (), {"out": str(self.repo / "built")})())
+        manifest = json.loads((self.repo / "built/manifest.json").read_text())
+        self.assertEqual(set(manifest["gates"]), {"combined_compile", "bf16", "fp8", "fp4_mxfp4",
+                                                 "cudnn_fallback", "moe_simt_f16"})
+
+    def test_physical_replay_does_not_require_the_build_compiler(self):
+        root, manifest = self.make_bundle()
+        recipe = self.repo / ".ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604"
+        recipe.parent.mkdir(parents=True)
+        recipe.write_text("test recipe")
+        image = "ghcr.io/test/ci@sha256:" + "d" * 64
+        manifest["environment"] = {**ENVIRONMENT, "compiler_image": image,
+                                    "container_recipe_sha256": module.sha256(recipe)}
+        self.write_manifest(root, manifest)
+        os.environ.update(CANDLE_BUILD_ONCE_EXECUTOR="physical-sm61", CANDLE_CUDA_IMAGE=image,
+                          EXTENDED_BUILD_ONCE_MANIFEST_SHA256=module.sha256(root / "manifest.json"))
+        def command(args, cwd=None):
+            if args[0] == "git":
+                return SHA
+            if args[0] == "dpkg-query":
+                return ENVIRONMENT["cudnn_package"]
+            raise AssertionError("unexpected compiler invocation: " + str(args))
+        with mock.patch.object(module, "output", side_effect=command), \
+             mock.patch.object(module, "environment", side_effect=AssertionError("compiler inspection")):
+            module.load_bundle(self.repo, root)
+            os.environ["CANDLE_CUDA_IMAGE"] = "ghcr.io/test/ci@sha256:" + "e" * 64
+            with self.assertRaisesRegex(RuntimeError, "trusted compiler image"):
+                module.load_bundle(self.repo, root)
+
     def test_cpu_qualify_uses_same_immutable_cuda_binaries(self):
         root, manifest = self.make_bundle()
         exemplar = manifest["gates"]["bf16"]

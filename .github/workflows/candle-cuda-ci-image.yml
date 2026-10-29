@@ -1,90 +1,84 @@
 name: Candle CI CUDA 12.9.2 SM61 image
 on:
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      image:
+        description: Independently tested immutable CUDA compiler image
+        value: ${{ jobs.publish.outputs.image }}
+      environment_key:
+        description: Hash of the CUDA environment inputs
+        value: ${{ jobs.publish.outputs.environment_key }}
   push:
-    branches: [orch/extended-v1]
+    branches: [orch/extended-v1, orch/legacy-cuda-v1, ci/cuda-environment-publish]
     paths:
       - .github/workflows/candle-cuda-ci-image.yml
-      - .github/container/Containerfile.cuda1292-ubuntu2604
+      - .github/container/cuda-image.json
+      - .github/container/**
+      - .github/scripts/ci-cuda-image.py
+      - .github/scripts/ci-cuda-image-selftest.py
 permissions:
   contents: read
-concurrency:
-  group: candle-ci-image-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   validate:
-    name: Independently validate the CPU loader and CUDA image recipe
+    name: Independently validate CUDA environment reuse
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    outputs:
+      environment_key: ${{ steps.identity.outputs.environment_key }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - name: CPU link stub fail-closed tests (no GPU required)
-        run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
-      - name: Verify the image and toolchain version contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          recipe=.github/container/Containerfile.cuda1292-ubuntu2604
-          grep -Fxq 'FROM docker.io/library/ubuntu:26.04' "$recipe"
-          grep -Fxq 'ARG HALF_DUPLEX_RUST_TOOLCHAIN=1.99.0' "$recipe"
-          grep -Fq 'cuda-toolkit-12-9=12.9.2-1' "$recipe"
-          grep -Fq 'libcudnn9-cuda-12=9.10.2.21-1' "$recipe"
-          grep -Fq 'nvcc -ccbin=/usr/bin/g++-14 -arch=sm_61' "$recipe"
+      - run: python3 .github/scripts/ci-cuda-image-selftest.py
+      - run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
+      - id: identity
+        run: python3 .github/scripts/ci-cuda-image.py identity --spec .github/container/cuda-image.json
 
   publish:
-    name: Build, smoke-test and publish immutable CUDA image
+    name: Resolve or publish the verified CUDA environment
     needs: validate
+    concurrency:
+      group: ci-cuda-environment-${{ github.repository }}-${{ needs.validate.outputs.environment_key }}
+      cancel-in-progress: false
     runs-on: ubuntu-26.04
     timeout-minutes: 180
     permissions:
       contents: read
       packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      environment_key: ${{ steps.image.outputs.environment_key }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - name: Build image and record the upstream Ubuntu digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          base=docker.io/library/ubuntu:26.04
-          digest="$(docker buildx imagetools inspect "$base" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "Ubuntu base $base@$digest" >> "$GITHUB_STEP_SUMMARY"
-          docker build --pull \
-            --label "org.opencontainers.image.source=https://github.com/haricot/candle" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            -f .github/container/Containerfile.cuda1292-ubuntu2604 \
-            -t candle-ci-sm61:candidate .github/container
-      - name: Independently smoke-test pinned CUDA, cuDNN, Rust and GCC
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm --entrypoint /bin/bash candle-ci-sm61:candidate -c '
-            set -euo pipefail
-            test "$(dpkg-query -W -f=\${Version} cuda-toolkit-12-9)" = 12.9.2-1
-            test "$(dpkg-query -W -f=\${Version} libcudnn9-cuda-12)" = 9.10.2.21-1
-            test "$(gcc-14 -dumpversion)" = 14
-            nvcc --version | grep -q "release 12.9"
-            rustup run 1.99.0 rustc --version | grep -q "rustc 1.99.0"
-            rustup run 1.99.0 cargo --version | grep -q "cargo 1.99.0"
-          '
-      - name: Publish image to GHCR only after all independent tests passed
-        shell: bash
+      - name: Authenticate the repository package publisher
         env:
           GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Reuse matching inputs or build and independently smoke-test a new environment
+        id: image
+        run: python3 .github/scripts/ci-cuda-image.py ensure --spec .github/container/cuda-image.json --output "$RUNNER_TEMP/cuda-image-first.json"
+      - name: Prove the next identical resolution reuses the exact published image
         run: |
-          set -euo pipefail
-          image="ghcr.io/haricot/candle-ci-sm61"
-          tag="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker tag candle-ci-sm61:candidate "$image:$tag"
-          docker push "$image:$tag"
-          digest="$(docker buildx imagetools inspect "$image:$tag" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "CANDLE_CI_IMAGE=PASS image=$image@$digest"
-          echo "Image (use digest for P2): $image@$digest" >> "$GITHUB_STEP_SUMMARY"
-          echo "P1 only: existing Candle Extended jobs are unchanged and still build locally." >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/scripts/ci-cuda-image.py ensure --spec .github/container/cuda-image.json --output "$RUNNER_TEMP/cuda-image-second.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          first=json.loads((root/"cuda-image-first.json").read_text())
+          second=json.loads((root/"cuda-image-second.json").read_text())
+          assert second["rebuilt"] is False
+          assert first["image"] == second["image"]
+          assert first["environment_key"] == second["environment_key"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("CUDA_ENVIRONMENT_REUSE=PASS image="+second["image"]+"\\n")
+          PY
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cuda-environment-${{ github.run_id }}-${{ github.run_attempt }}-candle
+          path: ${{ runner.temp }}/cuda-image-*.json
+          if-no-files-found: warn
+          retention-days: 30
