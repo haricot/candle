@@ -81,6 +81,7 @@ pub mod openclip;
 pub mod paddleocr_vl;
 pub mod paligemma;
 pub mod parler_tts;
+pub mod pockettts;
 pub mod persimmon;
 pub mod phi;
 pub mod phi3;

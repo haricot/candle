@@ -61,16 +61,14 @@ fn preflight(device: &Device) -> Result<f32> {
     let full = deconv.forward(&input)?;
     expect_shape(&full, &[1, CODEC_DIM, 48], "Mimi grouped transposed conv")?;
 
-    // Two causal chunks of one latent frame each. Preserve the k - stride
-    // overlap rather than treating the individual transposed convolutions
-    // as independent PCM chunks.
-    let first = deconv.forward(&input.narrow(2, 0, 1)?)?;
-    let second = deconv.forward(&input.narrow(2, 1, 1)?)?;
-    let head = first.narrow(2, 0, UPSAMPLE_STRIDE)?;
-    let overlap = (first.narrow(2, UPSAMPLE_STRIDE, UPSAMPLE_STRIDE)?
-        + second.narrow(2, 0, UPSAMPLE_STRIDE)?)?;
-    let tail = second.narrow(2, UPSAMPLE_STRIDE, UPSAMPLE_STRIDE)?;
-    let streamed = Tensor::cat(&[&head, &overlap, &tail], 2)?;
+    // Streaming state remains device-resident across arbitrarily sized chunks.
+    let mut stream = candle_transformers::models::pockettts::StreamingConvTranspose1d::new(
+        deconv, UPSAMPLE_STRIDE, UPSAMPLE_KERNEL,
+    )?;
+    let first = stream.push(&input.narrow(2, 0, 1)?)?;
+    let second = stream.push(&input.narrow(2, 1, 1)?)?;
+    let tail = stream.finish()?;
+    let streamed = Tensor::cat(&[&first, &second, &tail], 2)?;
     expect_shape(&streamed, &[1, CODEC_DIM, 48], "Mimi streamed overlap")?;
 
     let delta = (&full - &streamed)?.abs()?.max_all()?.to_scalar::<f32>()?;
@@ -107,7 +105,7 @@ fn main() -> Result<()> {
     };
     let delta = preflight(&device)?;
     println!(
-        "POCKETTTS_SM61_A0=PASS backend={backend} dtype=f32 flow_projection=PASS mimi_projection=PASS grouped_ct1d=PASS stream_overlap_max_abs={delta}"
+        "POCKETTTS_SM61_A1=PASS backend={backend} dtype=f32 flow_projection=PASS mimi_projection=PASS grouped_ct1d=PASS stream_overlap_max_abs={delta}"
     );
     Ok(())
 }
