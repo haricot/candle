@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "kind": "legacy-cuda-five",
+  "main_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+  "campaign": "legacy-40969858003-1",
+  "strategy": "exact-delta",
+  "integration_target": "legacy-cuda",
+  "promotion_target": "cuda_legacy",
+  "old_integration_sha": "bfce966ad4d61a48801eb6af4db8b8eabebc01a8",
+  "source_config_sha256": "baeacdfdf7e49d850f72c6222ad062cb98b0be3e642bc5d9ec2914c9af4f854a",
+  "validation_state": "UNVALIDATED_CANDIDATE",
+  "features": [
+    {
+      "feature": "bf16_candle",
+      "source_ref": "bf16_candle",
+      "target_ref": "bf16_candle",
+      "source_sha": "db2b69cb554ee605d9f06f8775776386b452970a",
+      "review_source_sha": "c146a477591c4be1104f189f5809a974664a28d8",
+      "old_target_sha": "db2b69cb554ee605d9f06f8775776386b452970a",
+      "prepared_sha": "9762d52efc40c1a19430831ab312e271fa374f3b",
+      "preparation_ref": "prepare/legacy/legacy-40969858003-1/bf16_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "c10b86bfca090f47bcf2c05e971745441e832e72055521ac30c19d204c138105",
+      "prepared_patch_sha256": "c10b86bfca090f47bcf2c05e971745441e832e72055521ac30c19d204c138105"
+    },
+    {
+      "feature": "fp8_candle",
+      "source_ref": "fp8_candle",
+      "target_ref": "fp8_candle",
+      "source_sha": "fae6bee2a9b90a4b7dad88861198d8cf160941f0",
+      "review_source_sha": "e7d2a9d615853dca263c236e381e5e76f45fec9f",
+      "old_target_sha": "fae6bee2a9b90a4b7dad88861198d8cf160941f0",
+      "prepared_sha": "d661b333a2a561b3a1231e91d837ed510cbd0ef9",
+      "preparation_ref": "prepare/legacy/legacy-40969858003-1/fp8_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "61ffd1ab0fef22898a203ffac3f9ff858a5d0ef57cc3eda96ee2cc6e933c4b95",
+      "prepared_patch_sha256": "61ffd1ab0fef22898a203ffac3f9ff858a5d0ef57cc3eda96ee2cc6e933c4b95"
+    },
+    {
+      "feature": "fp4_candle",
+      "source_ref": "fp4_candle",
+      "target_ref": "fp4_candle",
+      "source_sha": "dbaab42a4cd1a036c8464728529dca8f911983a9",
+      "review_source_sha": "4487e9a719d71d09ab3e30874b756e0a5d17640c",
+      "old_target_sha": "dbaab42a4cd1a036c8464728529dca8f911983a9",
+      "prepared_sha": "f9a03e2377f82884f5f5d811d4db11051010de70",
+      "preparation_ref": "prepare/legacy/legacy-40969858003-1/fp4_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "44eb6dc676db4d55186dacfcecd5cfebf45e4fc6118f95b1d68cc9a1a5c17012",
+      "prepared_patch_sha256": "44eb6dc676db4d55186dacfcecd5cfebf45e4fc6118f95b1d68cc9a1a5c17012"
+    },
+    {
+      "feature": "cudnn_fallback_candle",
+      "source_ref": "cudnn_fallback_candle",
+      "target_ref": "cudnn_fallback_candle",
+      "source_sha": "c06e0f005637155036680af2430f8ff84571d1c6",
+      "review_source_sha": "84a5a3694ac4c03b4d7e7d20d349ae58d69d7c1f",
+      "old_target_sha": "c06e0f005637155036680af2430f8ff84571d1c6",
+      "prepared_sha": "4deac7f7ea75d3819ff2ba675cfc16443059fc28",
+      "preparation_ref": "prepare/legacy/legacy-40969858003-1/cudnn_fallback_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "8c40b61afe81830619bcc4ef395149829a3edd39127608a80bc698e1d13365c3",
+      "prepared_patch_sha256": "8c40b61afe81830619bcc4ef395149829a3edd39127608a80bc698e1d13365c3"
+    },
+    {
+      "feature": "moe_simt_f16_candle",
+      "source_ref": "moe_simt_f16_candle",
+      "target_ref": "moe_simt_f16_candle",
+      "source_sha": "1fd05900a04b321ea3d9eddcdf7212175304af1d",
+      "review_source_sha": "1c62e23cf6c986826ef12c9d544ee9356972d59b",
+      "old_target_sha": "1fd05900a04b321ea3d9eddcdf7212175304af1d",
+      "prepared_sha": "000209a8120672fb924a0925c999bfbdb7a7669e",
+      "preparation_ref": "prepare/legacy/legacy-40969858003-1/moe_simt_f16_candle",
+      "common_base_sha": "c68b24997319b8d76e5a4e775dab197c7f26322a",
+      "source_patch_sha256": "b5f1c835a067f668cfb7878eb5aa643592350dde60009f27fdd771e62a3f5c5f",
+      "prepared_patch_sha256": "b5f1c835a067f668cfb7878eb5aa643592350dde60009f27fdd771e62a3f5c5f"
+    }
+  ]
+}
