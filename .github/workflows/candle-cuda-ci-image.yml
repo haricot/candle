@@ -1,0 +1,84 @@
+name: Candle CI CUDA 12.9.2 SM61 image
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      image:
+        description: Independently tested immutable CUDA compiler image
+        value: ${{ jobs.publish.outputs.image }}
+      environment_key:
+        description: Hash of the CUDA environment inputs
+        value: ${{ jobs.publish.outputs.environment_key }}
+  push:
+    branches: [orch/extended-v1, orch/legacy-cuda-v1, ci/cuda-environment-publish]
+    paths:
+      - .github/workflows/candle-cuda-ci-image.yml
+      - .github/container/cuda-image.json
+      - .github/container/**
+      - .github/scripts/ci-cuda-image.py
+      - .github/scripts/ci-cuda-image-selftest.py
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Independently validate CUDA environment reuse
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    outputs:
+      environment_key: ${{ steps.identity.outputs.environment_key }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - run: python3 .github/scripts/ci-cuda-image-selftest.py
+      - run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
+      - id: identity
+        run: python3 .github/scripts/ci-cuda-image.py identity --spec .github/container/cuda-image.json
+
+  publish:
+    name: Resolve or publish the verified CUDA environment
+    needs: validate
+    concurrency:
+      group: ci-cuda-environment-${{ github.repository }}-${{ needs.validate.outputs.environment_key }}
+      cancel-in-progress: false
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      environment_key: ${{ steps.image.outputs.environment_key }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Authenticate the repository package publisher
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Reuse matching inputs or build and independently smoke-test a new environment
+        id: image
+        run: python3 .github/scripts/ci-cuda-image.py ensure --spec .github/container/cuda-image.json --output "$RUNNER_TEMP/cuda-image-first.json"
+      - name: Prove the next identical resolution reuses the exact published image
+        run: |
+          python3 .github/scripts/ci-cuda-image.py ensure --spec .github/container/cuda-image.json --output "$RUNNER_TEMP/cuda-image-second.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          first=json.loads((root/"cuda-image-first.json").read_text())
+          second=json.loads((root/"cuda-image-second.json").read_text())
+          assert second["rebuilt"] is False
+          assert first["image"] == second["image"]
+          assert first["environment_key"] == second["environment_key"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("CUDA_ENVIRONMENT_REUSE=PASS image="+second["image"]+"\\n")
+          PY
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cuda-environment-${{ github.run_id }}-${{ github.run_attempt }}-candle
+          path: ${{ runner.temp }}/cuda-image-*.json
+          if-no-files-found: warn
+          retention-days: 30

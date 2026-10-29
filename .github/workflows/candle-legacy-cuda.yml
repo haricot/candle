@@ -11,6 +11,9 @@ on:
       - .github/scripts/candle-legacy-cpu.sh
       - .github/scripts/candle-legacy-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh
+      - .github/scripts/candle-extended-build-once.py
+      - .github/container/cuda-image.json
+      - .github/workflows/candle-cuda-ci-image.yml
       - .github/scripts/candle-promote-validated.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
@@ -35,12 +38,19 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: candle-legacy-cuda-${{ github.event_name == 'push' && github.sha || inputs.campaign }}
   cancel-in-progress: false
 
 jobs:
+  cuda_image:
+    uses: ./.github/workflows/candle-cuda-ci-image.yml
+    permissions:
+      contents: read
+      packages: write
+
   prepare:
     runs-on: ubuntu-26.04
     timeout-minutes: 75
@@ -59,6 +69,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify hosted Legacy archive coverage before assembly
+        run: python3 .github/scripts/legacy-build-once-selftest.py
       - name: Prepare exact five-feature legacy-cuda candidate
         id: assemble
         shell: bash
@@ -153,10 +165,12 @@ jobs:
           retention-days: 30
 
   integrated_cuda_compile:
-    needs: [prepare, integrated_cpu]
+    needs: [prepare, integrated_cpu, cuda_image]
     if: needs.integrated_cpu.result == 'success'
     runs-on: ubuntu-26.04
-    timeout-minutes: 150
+    timeout-minutes: 210
+    outputs:
+      hosted_manifest_sha256: ${{ steps.build_once.outputs.manifest_sha256 }}
     env:
       CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
       CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
@@ -165,6 +179,8 @@ jobs:
       LOCK_SHA256: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
+      CANDLE_BUILD_SOURCE: legacy
+      CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -179,11 +195,24 @@ jobs:
         with:
           name: legacy-${{ needs.prepare.outputs.campaign }}-integrated-cpu
           path: ${{ runner.temp }}/candidate-cpu-proof
-      - run: |
-          docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
-            --tag candle-cuda1292-u2604:legacy-cuda .ci-tools/.github/container
-          docker image inspect candle-cuda1292-u2604:legacy-cuda --format '{{.Id}}'
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: cuda_cache
+        with:
+          path: |
+            ${{ runner.temp }}/cuda-cargo
+            target
+          key: candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ needs.prepare.outputs.base_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ needs.prepare.outputs.base_sha }}-
+            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-
+      - name: Pull the verified immutable CUDA environment
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$CANDLE_CUDA_IMAGE"
       - shell: bash
+        id: build_once
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/cuda-cargo"
@@ -194,12 +223,27 @@ jobs:
             --env "HOME=$RUNNER_TEMP/cuda-home" \
             --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
             --env RUSTUP_HOME=/opt/rustup \
-            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL \
+            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL --env CANDLE_BUILD_SOURCE --env CANDLE_CUDA_IMAGE \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
             --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
             --env CHECK_CAMPAIGN --env LOCK_SHA256 \
-            candle-cuda1292-u2604:legacy-cuda \
-            bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+            "$CANDLE_CUDA_IMAGE" \
+            bash -c '
+              set -euo pipefail
+              git config --global --add safe.directory "$GITHUB_WORKSPACE"
+              bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+              python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
+                build --out "$RUNNER_TEMP/legacy-sm61-build-once"
+            '
+          echo "manifest_sha256=$(sha256sum "$RUNNER_TEMP/legacy-sm61-build-once/manifest.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: always() && steps.cuda_cache.outputs.cache-primary-key != ''
+        continue-on-error: true
+        with:
+          path: |
+            ${{ runner.temp }}/cuda-cargo
+            target
+          key: ${{ steps.cuda_cache.outputs.cache-primary-key }}
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -207,10 +251,18 @@ jobs:
           path: ${{ runner.temp }}/candle-candidate-cuda/
           if-no-files-found: warn
           retention-days: 30
+      - if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: legacy-${{ needs.prepare.outputs.campaign }}-build-once
+          path: ${{ runner.temp }}/legacy-sm61-build-once/
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 30
 
   physical_sm61:
     name: SM61 legacy runtime
-    needs: [prepare, integrated_cuda_compile]
+    needs: [prepare, integrated_cuda_compile, cuda_image]
     if: needs.integrated_cuda_compile.result == 'success'
     runs-on:
       - self-hosted
@@ -227,6 +279,10 @@ jobs:
       NVCC: /opt/cuda/bin/nvcc
       NVCC_CCBIN: gcc-14
       CARGO_INCREMENTAL: '0'
+      CANDLE_BUILD_SOURCE: legacy
+      CANDLE_BUILD_ONCE_EXECUTOR: physical-sm61
+      CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
+      EXTENDED_BUILD_ONCE_MANIFEST_SHA256: ${{ needs.integrated_cuda_compile.outputs.hosted_manifest_sha256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -238,8 +294,14 @@ jobs:
           ref: ${{ github.sha }}
           path: .ci-tools
           persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: legacy-${{ needs.prepare.outputs.campaign }}-build-once
+          path: ${{ runner.temp }}/legacy-sm61-build-once
       - name: Validate integrated legacy CUDA on physical SM61
         shell: bash
+        env:
+          CANDLE_LEGACY_BUILD_ONCE_DIR: ${{ runner.temp }}/legacy-sm61-build-once
         run: bash .ci-tools/.github/scripts/candle-legacy-sm61.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

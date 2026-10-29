@@ -61,11 +61,21 @@ export CARGO_INCREMENTAL=0
 
 CORE_FEATURES="cuda,cudnn,cuda-legacy-bf16,cuda-legacy-fp8,cuda-legacy-fp4"
 
+if [[ -n "${CANDLE_LEGACY_BUILD_ONCE_DIR:-}" ]]; then
+  archive_driver="$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py"
+  python3 "$archive_driver" verify --bundle "$CANDLE_LEGACY_BUILD_ONCE_DIR" || fail "immutable archive verification failed"
+fi
+
 run_gate() {
   local name="$1"
   shift
   echo "=== GATE $name ===" | tee -a "$REPORT_DIR/summary.txt"
-  "$@" 2>&1 | tee "$REPORT_DIR/$name.log"
+  if [[ -n "${CANDLE_LEGACY_BUILD_ONCE_DIR:-}" ]]; then
+    python3 "$archive_driver" run-gate --bundle "$CANDLE_LEGACY_BUILD_ONCE_DIR" \
+      --report "$REPORT_DIR" --name "$name" 2>&1 | tee "$REPORT_DIR/$name.log"
+  else
+    "$@" 2>&1 | tee "$REPORT_DIR/$name.log"
+  fi
   echo "GATE_$name=PASS" | tee -a "$REPORT_DIR/summary.txt"
 }
 
