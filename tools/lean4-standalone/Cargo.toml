@@ -1,0 +1,20 @@
+[package]
+name = "haricot-lean4-contracts"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Standalone Lean 4 kernel contracts for Candle, independent of ASD-Core"
+
+# Keep the standalone proof/runtime adapter outside Candle's default workspace.
+[workspace]
+
+[features]
+default = []
+candle = ["dep:candle-core"]
+cuda = ["candle", "candle-core/cuda"]
+lean-ffi = ["dep:lean-ffi"]
+
+[dependencies]
+candle-core = { path = "../../candle-core", optional = true, default-features = false }
+# Native Lean↔Rust ownership model candidate. Opt-in; Lean is not linked by default.
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "b4beefd55352ad1d864562b1f15cb52db6186b2d", optional = true }
