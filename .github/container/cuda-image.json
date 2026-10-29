@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "repository": "haricot/candle",
+  "image": "ghcr.io/haricot/candle/ci-cuda-sm61",
+  "base_image": "docker.io/library/ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c",
+  "recipe": ".github/container/Containerfile.cuda1292-ubuntu2604",
+  "context": ".github/container",
+  "files": [".github/container/Containerfile.cuda1292-ubuntu2604"],
+  "build_args": {"HALF_DUPLEX_RUST_TOOLCHAIN": "1.99.0"},
+  "smoke": ".github/container/cuda-image-smoke.sh"
+}

@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # Experimental: Ubuntu 26.04 + official NVIDIA ubuntu2404 CUDA packages.
 # Pinned versions reproduce the physical Pascal SM61 Podman build.
-FROM docker.io/library/ubuntu:26.04
+ARG BASE_IMAGE=docker.io/library/ubuntu:26.04
+FROM ${BASE_IMAGE}
 ARG HALF_DUPLEX_RUST_TOOLCHAIN=1.99.0
 ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda-12.9 \
@@ -74,7 +75,7 @@ RUN set -eux; \
     rm -f /tmp/sm61.cu /tmp/sm61.o
 RUN set -eux; \
     curl --fail --location --show-error --silent --retry 3 https://sh.rustup.rs \
-      | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable; \
+      | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "$HALF_DUPLEX_RUST_TOOLCHAIN"; \
     /opt/cargo/bin/rustup toolchain install "$HALF_DUPLEX_RUST_TOOLCHAIN" \
       --profile minimal --component rustfmt --component clippy; \
     /opt/cargo/bin/rustc --version; \
