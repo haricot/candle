@@ -109,11 +109,8 @@ if has_feature embeddinggemma2; then
   run_gate embeddinggemma2_cuda_compile \
     cargo check -p candle-examples --example embedding-gemma2 --features cuda --release --locked
 fi
-if has_feature lean4_standalone; then
-  # Only CUDA adapter compilation; Lean mathematical proof ran in CPU gate.
-  run_gate lean4_cuda_adapter_compile \
-    cargo check --manifest-path tools/lean4-standalone/Cargo.toml --features cuda --release
-fi
+# Formal Lean4 checks are separately maintained in haricot-verify. The
+# Extended GPU promotion qualifies executable CUDA/SM61 behaviour only.
 
 # Preserve the already-qualified Legacy runtime behavior.
 if has_feature bf16_candle; then

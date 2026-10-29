@@ -149,6 +149,7 @@ def build(args):
     if out.exists():
         fail("build directory must be fresh: " + str(out))
     out.mkdir(parents=True)
+    shutil.copyfile(repo / "Cargo.lock", out / "Cargo.lock")
     env = os.environ.copy()
     flags = env.get("RUSTFLAGS", "")
     if "target-cpu" in flags or "target-feature" in flags:
@@ -204,10 +205,8 @@ def build(args):
         check("embeddinggemma2_cuda_compile",
               ["check", "-p", "candle-examples", "--example", "embedding-gemma2",
                "--features", "cuda", "--release", "--locked"])
-    if "lean4_standalone" in features:
-        check("lean4_cuda_adapter_compile",
-              ["check", "--manifest-path", "tools/lean4-standalone/Cargo.toml",
-               "--features", "cuda", "--release"])
+    # Lean4 verification has its own pinned source and CI in haricot-verify.
+    # Extended qualifies runtime CUDA behaviour, not formal mathematics.
 
     if "bf16_candle" in features:
         tests("bf16", "candle-core", ["--features", core],
@@ -246,7 +245,7 @@ def build(args):
         "pockettts_sm61_standalone": ("pockettts_cuda_contracts", "models::pockettts"),
     }
     # Compile the same transformer unit-test binary once for all model gates.
-    if any(f in features for f in models):
+    if any(f in features for f in models) or "embeddinggemma2" in features:
         raw = log_cargo(repo, out, "voice_cuda_unit_binary",
                         ["cargo", "test", "-p", "candle-transformers", "--lib",
                          "--release", "--locked", "--features", "cuda", "--no-run"],
@@ -255,6 +254,9 @@ def build(args):
         for feature, (name, test_filter) in models.items():
             if feature in features:
                 gate(name, "test", [binary], "candle-transformers", [test_filter])
+        if "embeddinggemma2" in features:
+            gate("embeddinggemma2_cpu_contracts", "test", [binary],
+                 "candle-transformers", ["embedding_gemma2::tests"])
     if "transcribepsy_standalone" in features:
         example("transcribepsy_cuda_cli", "candle-examples", "transcribepsy_tp3",
                 ["--features", "cuda"], is_test=True)
@@ -316,7 +318,15 @@ def load_bundle(repo, root):
             fail("archive comes from a future run attempt")
     except (TypeError, KeyError, ValueError):
         fail("invalid run attempt provenance")
-    if sha256(repo / "Cargo.lock") != manifest.get("lock_sha256"):
+    # Extended candidates have no tracked Cargo.lock. The hosted build resolves
+    # and archives exactly one lockfile. Never re-resolve it on either executor.
+    archived_lock = root / "Cargo.lock"
+    if archived_lock.is_symlink() or not archived_lock.is_file() or not stat.S_ISREG(archived_lock.stat().st_mode):
+        fail("missing or unsafe archived Cargo.lock")
+    if sha256(archived_lock) != manifest.get("lock_sha256"):
+        fail("archived Cargo.lock mismatch")
+    candidate_lock = repo / "Cargo.lock"
+    if candidate_lock.exists() and sha256(candidate_lock) != manifest.get("lock_sha256"):
         fail("Cargo.lock mismatch")
     if sha256(source) != manifest.get("source_manifest_sha256"):
         fail("source manifest mismatch")
@@ -371,12 +381,68 @@ def exec_cmd(argv, cwd, log=None):
                 stream.close()
 
 
+def cpu_plan(features):
+    # These are CPU-capable contracts *inside the identical CUDA-built test
+    # executable* used for the physical SM61 gates. No Cargo invocation here.
+    models = (
+        ("embeddinggemma2", "embeddinggemma2_cpu_contracts"),
+        ("fireredvad_standalone", "fireredvad_cuda_contracts"),
+        ("smart_turn_standalone", "smart_turn_cuda_contracts"),
+        ("transcribepsy_standalone", "transcribepsy_cuda_contracts"),
+        ("nemotron_asr_streaming_standalone", "nemotron_asr_cuda_contracts"),
+        ("pockettts_sm61_standalone", "pockettts_cuda_contracts"),
+        ("transcribepsy_standalone", "transcribepsy_cuda_cli"),
+    )
+    return [name for feature, name in models if feature in features]
+
+
+def cpu_qualify(repo, root, manifest, report):
+    _, _, features, _ = load_source(repo)
+    plan = cpu_plan(features)
+    report.mkdir(parents=True, exist_ok=True)
+    if any(report.iterdir()):
+        fail("CPU evidence output directory must be empty")
+    if not plan:
+        fail("no supported CPU contracts in the CUDA-built archive")
+    for name in plan:
+        record = manifest["gates"].get(name)
+        if not record or record["kind"] != "test" or not record["binaries"]:
+            fail("missing CPU contract in verified archive: " + name)
+        print("=== CPU CUDA-BUILT GATE " + name + " ===", flush=True)
+        for index, binary in enumerate(record["binaries"]):
+            path = root / binary["path"]
+            path.chmod(path.stat().st_mode | stat.S_IXUSR)
+            exec_cmd([str(path)] + record["argv"], repo / record["cwd"],
+                     str(report / f"{name}-{index}.log"))
+    if "pockettts_sm61_standalone" in features:
+        pocket = manifest["gates"].get("pockettts_flowlm_mimi_cuda")
+        if not pocket or len(pocket["binaries"]) != 1 or pocket["kind"] != "example":
+            fail("missing PocketTTS CPU/CUDA shared executable")
+        path = root / pocket["binaries"][0]["path"]
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        log = report / "pockettts_cpu_preflight.log"
+        exec_cmd([str(path), "--device", "cpu"], repo, str(log))
+        if "POCKETTTS_SM61_A1=PASS backend=cpu" not in log.read_text():
+            fail("PocketTTS CPU preflight missing PASS marker")
+        plan.append("pockettts_cpu_preflight")
+    (report / "report.json").write_text(json.dumps({
+        "status": "CPU_CUDA_BUILT_PASSED", "candidate_sha": manifest["candidate_sha"],
+        "campaign": manifest["campaign"], "lock_sha256": manifest["lock_sha256"],
+        "manifest_sha256": sha256(root / "manifest.json"), "gates": plan,
+        "gpu_executed": False, "cargo_invoked": False,
+    }, indent=2, sort_keys=True) + "\n")
+    print("EXTENDED_CPU_EXECUTE=PASS gates=" + str(len(plan)), flush=True)
+
+
 def execute(args):
     repo = Path.cwd().resolve()
     root = Path(args.bundle).resolve()
     manifest = load_bundle(repo, root)
     if args.action == "verify":
         print(f"EXTENDED_BUILD_ONCE_VERIFIED=PASS gates={len(manifest['gates'])}")
+        return
+    if args.action == "cpu-qualify":
+        cpu_qualify(repo, root, manifest, Path(args.report).resolve())
         return
     record = manifest["gates"].get(args.name)
     if record is None:
@@ -428,7 +494,7 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     build_parser = sub.add_parser("build")
     build_parser.add_argument("--out", required=True)
-    for name in ("verify", "run-gate"):
+    for name in ("verify", "run-gate", "cpu-qualify"):
         p = sub.add_parser(name)
         p.add_argument("--bundle", required=True)
         p.add_argument("--report")
@@ -438,8 +504,8 @@ def main():
     if args.action == "build":
         build(args)
     else:
-        if args.action == "run-gate" and not args.report:
-            fail("run-gate requires --report")
+        if args.action in ("run-gate", "cpu-qualify") and not args.report:
+            fail(args.action + " requires --report")
         execute(args)
 
 

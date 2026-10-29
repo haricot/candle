@@ -97,131 +97,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  standalone_cpu:
+  cpu_cuda_compile:
     needs: prepare
     if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    runs-on: ubuntu-26.04
-    timeout-minutes: 90
-    env:
-      MODE: standalone
-      FEATURE: ${{ matrix.feature }}
-      SOURCE: ${{ matrix.source_sha }}
-      SHA: ${{ matrix.prepared_sha }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ matrix.prepared_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ github.sha }}
-          path: .ci-tools
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
-        with:
-          toolchain: stable
-          components: rustfmt
-      - if: matrix.feature == 'lean4_standalone'
-        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
-        with:
-          lake-package-directory: tools/lean4-standalone/lean
-          auto-config: false
-          build: true
-          use-github-cache: false
-      - name: Independent source CPU gate
-        if: matrix.feature != 'half_duplex_standalone'
-        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
-      - if: matrix.feature == 'half_duplex_standalone'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: CPU-only dependencies for the native Half Duplex contracts
-        if: matrix.feature == 'half_duplex_standalone'
-        run: |
-          python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.12.1+cpu'
-          python -m pip install 'numpy<3' PyYAML safetensors sentencepiece soundfile protobuf
-      - name: Independent native Half Duplex CPU gate
-        if: matrix.feature == 'half_duplex_standalone'
-        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
-      - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: extended-${{ needs.prepare.outputs.campaign }}-${{ matrix.feature }}-cpu
-          path: ${{ runner.temp }}/extended-standalone-cpu/
-          if-no-files-found: warn
-          retention-days: 30
-
-  integrated_cpu:
-    needs: [prepare, standalone_cpu]
-    if: needs.standalone_cpu.result == 'success'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 150
-    outputs:
-      lock_sha256: ${{ steps.check_half_duplex.outputs.lock_sha256 || steps.check.outputs.lock_sha256 }}
-    env:
-      MODE: integrated
-      SHA: ${{ needs.prepare.outputs.candidate_sha }}
-      CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
-      MANIFEST_SHA: ${{ needs.prepare.outputs.manifest_sha256 }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ needs.prepare.outputs.candidate_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ github.sha }}
-          path: .ci-tools
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
-        with:
-          toolchain: stable
-          components: rustfmt
-      - if: needs.prepare.outputs.has_lean == 'true'
-        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
-        with:
-          lake-package-directory: tools/lean4-standalone/lean
-          auto-config: false
-          build: true
-          use-github-cache: false
-      - id: check
-        if: needs.prepare.outputs.has_half_duplex != 'true'
-        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
-      - name: System dependencies for the CPU STT regression
-        if: needs.prepare.outputs.has_half_duplex == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build pkg-config libssl-dev
-      - if: needs.prepare.outputs.has_half_duplex == 'true'
-        uses: astral-sh/setup-uv@v6
-      - id: check_half_duplex
-        if: needs.prepare.outputs.has_half_duplex == 'true'
-        run: bash .ci-tools/.github/scripts/candle-extended-cpu.sh
-      - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: extended-${{ needs.prepare.outputs.campaign }}-integrated-cpu
-          path: ${{ runner.temp }}/extended-integrated-cpu/
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Preserve CPU Half Duplex regression evidence
-        if: always() && needs.prepare.outputs.has_half_duplex == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: extended-${{ needs.prepare.outputs.campaign }}-half-duplex-cpu
-          path: halfduplex-ci-published/*.json
-          if-no-files-found: warn
-          retention-days: 30
-
-  integrated_cuda_compile:
-    needs: [prepare, integrated_cpu]
-    if: needs.integrated_cpu.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 240
     outputs:
@@ -231,7 +109,6 @@ jobs:
       CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
       CHECK_BRANCH: extended_integration
       CHECK_CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
-      LOCK_SHA256: ${{ needs.integrated_cpu.outputs.lock_sha256 }}
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
     steps:
@@ -244,10 +121,6 @@ jobs:
           ref: ${{ github.sha }}
           path: .ci-tools
           persist-credentials: false
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
-        with:
-          name: extended-${{ needs.prepare.outputs.campaign }}-integrated-cpu
-          path: ${{ runner.temp }}/candidate-cpu-proof
       - run: |
           docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
             --tag candle-cuda1292-u2604:extended .ci-tools/.github/container
@@ -272,6 +145,13 @@ jobs:
             candle-cuda1292-u2604:extended \
             bash -c '
               set -euo pipefail
+              # The composed candidate intentionally has no tracked Cargo.lock.
+              # Resolve it once here and bind both CPU and GPU to these bytes.
+              cargo generate-lockfile
+              mkdir -p "$RUNNER_TEMP/candidate-cpu-proof"
+              cp Cargo.lock "$RUNNER_TEMP/candidate-cpu-proof/Cargo.lock"
+              LOCK_SHA256="$(sha256sum Cargo.lock | cut -d" " -f1)"
+              export LOCK_SHA256
               bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
               python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
                 build --out "$RUNNER_TEMP/extended-sm61-build-once"
@@ -293,10 +173,70 @@ jobs:
           compression-level: 1
           retention-days: 30
 
+  cpu_execute:
+    name: CPU Execute — CUDA-built artifacts
+    needs: [prepare, cpu_cuda_compile]
+    if: needs.cpu_cuda_compile.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    env:
+      CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      CUDA_COMPUTE_CAP: '61'
+      CARGO_INCREMENTAL: '0'
+      EXTENDED_BUILD_ONCE_MANIFEST_SHA256: ${{ needs.cpu_cuda_compile.outputs.hosted_manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-build-once
+          path: ${{ runner.temp }}/extended-sm61-build-once
+      - name: Recreate the pinned CUDA userspace without a GPU
+        run: |
+          docker build --pull --file .ci-tools/.github/container/Containerfile.cuda1292-ubuntu2604 \
+            --tag candle-cuda1292-u2604:extended .ci-tools/.github/container
+      - name: Execute CPU model contracts from the verified CUDA archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cuda-home" "$RUNNER_TEMP/extended-cpu-execute"
+          docker run --rm --user "$(id -u):$(id -g)" --security-opt=no-new-privileges \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP:rw" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env "HOME=$RUNNER_TEMP/cuda-home" \
+            --env RUSTUP_HOME=/opt/rustup \
+            --env CUDA_COMPUTE_CAP --env CANDIDATE_SHA \
+            --env GITHUB_WORKSPACE --env RUNNER_TEMP \
+            --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env EXTENDED_BUILD_ONCE_MANIFEST_SHA256 \
+            candle-cuda1292-u2604:extended \
+            bash -c '
+              set -euo pipefail
+              git config --global --add safe.directory "$GITHUB_WORKSPACE"
+              python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
+                cpu-qualify --bundle "$RUNNER_TEMP/extended-sm61-build-once" \
+                --report "$RUNNER_TEMP/extended-cpu-execute"
+            '
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extended-${{ needs.prepare.outputs.campaign }}-cpu-execute
+          path: ${{ runner.temp }}/extended-cpu-execute/
+          if-no-files-found: warn
+          retention-days: 30
+
   physical_sm61:
     name: SM61 Extended runtime
-    needs: [prepare, integrated_cuda_compile]
-    if: needs.integrated_cuda_compile.result == 'success'
+    needs: [prepare, cpu_cuda_compile, cpu_execute]
+    if: needs.cpu_execute.result == 'success'
     runs-on:
       - self-hosted
       - Linux
@@ -333,7 +273,7 @@ jobs:
         shell: bash
         env:
           CANDLE_EXTENDED_BUILD_ONCE_DIR: ${{ runner.temp }}/extended-sm61-build-once
-          EXTENDED_BUILD_ONCE_MANIFEST_SHA256: ${{ needs.integrated_cuda_compile.outputs.hosted_manifest_sha256 }}
+          EXTENDED_BUILD_ONCE_MANIFEST_SHA256: ${{ needs.cpu_cuda_compile.outputs.hosted_manifest_sha256 }}
         run: bash .ci-tools/.github/scripts/candle-extended-sm61.sh
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -354,8 +294,8 @@ jobs:
 
   promote_validated:
     name: Promote validated Extended refs
-    needs: [prepare, physical_sm61]
-    if: needs.physical_sm61.result == 'success' && needs.prepare.outputs.published == 'true'
+    needs: [prepare, cpu_execute, physical_sm61]
+    if: needs.cpu_execute.result == 'success' && needs.physical_sm61.result == 'success' && needs.prepare.outputs.published == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:

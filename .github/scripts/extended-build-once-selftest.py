@@ -76,6 +76,7 @@ class BuildOnceTests(unittest.TestCase):
     def make_bundle(self):
         root = self.repo / "bundle"
         root.mkdir()
+        shutil.copyfile(self.repo / "Cargo.lock", root / "Cargo.lock")
         (root / "bin").mkdir()
         shutil.copyfile("/bin/true", root / "bin/test")
         digest = module.sha256(root / "bin/test")
@@ -128,6 +129,15 @@ class BuildOnceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "executable digest mismatch"):
             module.load_bundle(self.repo, root)
 
+    def test_untracked_lock_from_archive_and_tampering(self):
+        root, _ = self.make_bundle()
+        (self.repo / "Cargo.lock").unlink()
+        self.assertEqual(module.load_bundle(self.repo, root)["schema"], 1)
+        with (root / "Cargo.lock").open("ab") as stream:
+            stream.write(b"tamper")
+        with self.assertRaisesRegex(RuntimeError, "archived Cargo.lock mismatch"):
+            module.load_bundle(self.repo, root)
+
     def test_manifest_rewrite_fails_independent_hosted_attestation(self):
         root, manifest = self.make_bundle()
         manifest["gates"]["bf16"]["cwd"] = "candle-core"
@@ -164,7 +174,7 @@ class BuildOnceTests(unittest.TestCase):
         expected = {
             "combined_compile", "downstream_transformers_compile",
             "downstream_qwen3_cuda_compile", "embeddinggemma2_cuda_compile",
-            "lean4_cuda_adapter_compile", "bf16", "fp8", "fp4_mxfp4",
+            "embeddinggemma2_cpu_contracts", "bf16", "fp8", "fp4_mxfp4",
             "cudnn_fallback", "moe_simt_f16", "asd_module_provider",
             "asd_runtime_profile_swap", "fireredvad_cuda_contracts",
             "smart_turn_cuda_contracts", "transcribepsy_cuda_contracts",
@@ -175,9 +185,40 @@ class BuildOnceTests(unittest.TestCase):
         self.assertEqual(set(built["gates"]), expected)
         shell = (HERE / "candle-extended-sm61.sh").read_text()
         legacy_gates = set(re.findall(r"\brun_gate\s+([a-z][a-z0-9_]+)\b", shell))
-        self.assertEqual(legacy_gates, expected)
+        self.assertEqual(legacy_gates, expected - {"embeddinggemma2_cpu_contracts"})
         self.assertEqual(built["environment"], ENVIRONMENT)
         self.assertEqual(built["rustflags"], "-C target-cpu=x86-64")
+
+    def test_cpu_qualify_uses_same_immutable_cuda_binaries(self):
+        root, manifest = self.make_bundle()
+        exemplar = manifest["gates"]["bf16"]
+        for name in module.cpu_plan(set(FEATURES)):
+            manifest["gates"][name] = {
+                **exemplar, "cwd": "candle-transformers", "argv": ["models::test"]
+            }
+        manifest["gates"]["pockettts_flowlm_mimi_cuda"] = {
+            **exemplar, "kind": "example", "argv": ["--device", "cuda"]
+        }
+        self.write_manifest(root, manifest)
+        os.environ["EXTENDED_BUILD_ONCE_MANIFEST_SHA256"] = module.sha256(root / "manifest.json")
+
+        def fake_exec(argv, _cwd, log=None):
+            if log:
+                Path(log).write_text(
+                    "POCKETTTS_SM61_A1=PASS backend=cpu\n" if argv[-2:] == ["--device", "cpu"]
+                    else "model contracts PASS\n"
+                )
+
+        args = type("Args", (), {
+            "bundle": str(root), "action": "cpu-qualify", "name": None,
+            "report": str(self.repo / "cpu-evidence"),
+        })()
+        with mock.patch.object(module, "exec_cmd", side_effect=fake_exec):
+            module.execute(args)
+        proof = json.loads((self.repo / "cpu-evidence/report.json").read_text())
+        self.assertEqual(proof["status"], "CPU_CUDA_BUILT_PASSED")
+        self.assertIn("pockettts_cpu_preflight", proof["gates"])
+        self.assertFalse(proof["cargo_invoked"])
 
 
 if __name__ == "__main__":
