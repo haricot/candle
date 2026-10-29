@@ -4843,3 +4843,8 @@ extern "C" __global__ void indexed_moe_forward_q8_0_q8_1(
     indexed_moe_forward<QK8_0, QI8_0, block_q8_0, VDR_Q8_0_Q8_1_MMVQ, vec_dot_q8_0_q8_1>
         (all_weights, all_inputs, indices, all_outputs, n, k, batch, topk, k_padded, input_dim1);     
 }
+
+// F8E FP8 kernels share their standalone source.
+#if defined(CANDLE_CUDA_LEGACY_FP8)
+#include "fp8_sm61_f8.cuh"
+#endif
