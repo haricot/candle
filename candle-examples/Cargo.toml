@@ -48,6 +48,8 @@ tekken-rs = { version = "0.1.1", optional = true }
 anyhow = { workspace = true }
 byteorder = { workspace = true }
 clap = { workspace = true }
+hound = { workspace = true }
+sha2 = "0.10"
 imageproc = { workspace = true }
 memmap2 = { workspace = true }
 rand = { workspace = true }
