@@ -1,0 +1,536 @@
+{
+  "date": "2026-10-23",
+  "device": "CPU",
+  "dtype": "F32",
+  "model_revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+  "model_sha256": "9eebdd6590289cb3030f310858f3df93256600a800a3e8200c5993d5f967e174",
+  "transformers_commit": "944e22eb226890dec60299386579275a66b3b44d",
+  "torch": "2.8.0+cpu",
+  "fixture": {
+    "dataset": "amu-cai/CAMEO",
+    "revision": "c7f2fc9f0538ca871d38e183ba8ad6c329120ecc",
+    "split": "cafe",
+    "license": "CC-BY-NC-SA-4.0",
+    "selection": "speaker_id=cafe_12;emotion=neutral;min(file_id)",
+    "file_id_sha256": "9045183c682f1cac8724a2d811ec517f357a2c91c9b163fbaf7ef79afaf3aa24",
+    "pcm_sha256": "c333bd62e3224931788c8ec8b379161d5c62220d9794d8666636aee480bb8baf",
+    "wav_sha256": "c2d42a97888961145f0c549809382c7eb0deadae33bf7a9a72da66563124c974",
+    "sample_rate": 16000,
+    "frames": 55649,
+    "public_expected_transcription": "Un cheval fou dans mon jardin"
+  },
+  "cases": [
+    {
+      "name": "stream-fr",
+      "mode": "streaming",
+      "language": "fr-FR",
+      "lookahead": 3,
+      "samples": 55649,
+      "wav_sha256": "c2d42a97888961145f0c549809382c7eb0deadae33bf7a9a72da66563124c974",
+      "encoder_frames": 48,
+      "tokens": 12,
+      "decisions": 60,
+      "text": "Un cheval fou dans mon jardin",
+      "attention_cache_frames": 48,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              348,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.3248856563346995e-06,
+            "cosine": 0.9999999999999486,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 31420,
+            "elements": 44544
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              48,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 4.336237907409668e-06,
+            "rmse": 1.2813844788211254e-07,
+            "cosine": 0.9999999999961121,
+            "max_error_over_bound": 0.036752004821863034,
+            "bitwise_equal_elements": 1198,
+            "elements": 49152
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "offline-fr",
+      "mode": "offline",
+      "language": "fr-FR",
+      "lookahead": 3,
+      "samples": 55649,
+      "wav_sha256": "c2d42a97888961145f0c549809382c7eb0deadae33bf7a9a72da66563124c974",
+      "encoder_frames": 45,
+      "tokens": 15,
+      "decisions": 60,
+      "text": "Un cheval fou dans mon jardin.",
+      "attention_cache_frames": 0,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              348,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.3248856563346995e-06,
+            "cosine": 0.9999999999999486,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 31420,
+            "elements": 44544
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              45,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 4.425644874572754e-06,
+            "rmse": 1.3442448056224375e-07,
+            "cosine": 0.999999999995733,
+            "max_error_over_bound": 0.03750973642880686,
+            "bitwise_equal_elements": 1245,
+            "elements": 46080
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "streaming-auto",
+      "mode": "streaming",
+      "language": "auto",
+      "lookahead": 3,
+      "samples": 55649,
+      "wav_sha256": "c2d42a97888961145f0c549809382c7eb0deadae33bf7a9a72da66563124c974",
+      "encoder_frames": 48,
+      "tokens": 12,
+      "decisions": 60,
+      "text": "Un cheval fou dans mon jardin",
+      "attention_cache_frames": 48,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              348,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.3248856563346995e-06,
+            "cosine": 0.9999999999999486,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 31420,
+            "elements": 44544
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              48,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 4.336237907409668e-06,
+            "rmse": 1.2813844788211254e-07,
+            "cosine": 0.9999999999961121,
+            "max_error_over_bound": 0.036752004821863034,
+            "bitwise_equal_elements": 1198,
+            "elements": 49152
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "offline-auto",
+      "mode": "offline",
+      "language": "auto",
+      "lookahead": 3,
+      "samples": 55649,
+      "wav_sha256": "c2d42a97888961145f0c549809382c7eb0deadae33bf7a9a72da66563124c974",
+      "encoder_frames": 45,
+      "tokens": 15,
+      "decisions": 60,
+      "text": "Un cheval fou dans mon jardin.",
+      "attention_cache_frames": 0,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              348,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.3248856563346995e-06,
+            "cosine": 0.9999999999999486,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 31420,
+            "elements": 44544
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              45,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 4.425644874572754e-06,
+            "rmse": 1.3442448056224375e-07,
+            "cosine": 0.999999999995733,
+            "max_error_over_bound": 0.03750973642880686,
+            "bitwise_equal_elements": 1245,
+            "elements": 46080
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "long-r0",
+      "mode": "streaming",
+      "language": "fr-FR",
+      "lookahead": 0,
+      "samples": 111298,
+      "wav_sha256": "049631c8e32684f5a17f4e50acb3d7851e041624d5f7edb566761afcc0ea4d9e",
+      "encoder_frames": 88,
+      "tokens": 25,
+      "decisions": 113,
+      "text": "Un cheval fou dans mon jardin, un cheval fou dans mon jardin",
+      "attention_cache_frames": 56,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              696,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.296200761100344e-06,
+            "cosine": 0.9999999999999487,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 62827,
+            "elements": 89088
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              88,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 5.960464477539062e-07,
+            "rmse": 3.512624528783178e-08,
+            "cosine": 0.999999999999705,
+            "max_error_over_bound": 0.0050280157299433725,
+            "bitwise_equal_elements": 2222,
+            "elements": 90112
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "long-r3",
+      "mode": "streaming",
+      "language": "fr-FR",
+      "lookahead": 3,
+      "samples": 111298,
+      "wav_sha256": "049631c8e32684f5a17f4e50acb3d7851e041624d5f7edb566761afcc0ea4d9e",
+      "encoder_frames": 88,
+      "tokens": 25,
+      "decisions": 113,
+      "text": "Un cheval fou dans mon jardin, un cheval fou dans mon jardin",
+      "attention_cache_frames": 56,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              696,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.296200761100344e-06,
+            "cosine": 0.9999999999999487,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 62827,
+            "elements": 89088
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              88,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 4.336237907409668e-06,
+            "rmse": 9.629919528910067e-08,
+            "cosine": 0.9999999999977711,
+            "max_error_over_bound": 0.036752004821863034,
+            "bitwise_equal_elements": 2128,
+            "elements": 90112
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "long-r6",
+      "mode": "streaming",
+      "language": "fr-FR",
+      "lookahead": 6,
+      "samples": 111298,
+      "wav_sha256": "049631c8e32684f5a17f4e50acb3d7851e041624d5f7edb566761afcc0ea4d9e",
+      "encoder_frames": 91,
+      "tokens": 25,
+      "decisions": 116,
+      "text": "Un cheval fou dans mon jardin, un cheval fou dans mon jardin",
+      "attention_cache_frames": 56,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              696,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.296200761100344e-06,
+            "cosine": 0.9999999999999487,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 62827,
+            "elements": 89088
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              91,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 9.834766387939453e-07,
+            "rmse": 3.970999093561765e-08,
+            "cosine": 0.9999999999996205,
+            "max_error_over_bound": 0.007761394049856608,
+            "bitwise_equal_elements": 2146,
+            "elements": 93184
+          }
+        },
+        "pass": true
+      }
+    },
+    {
+      "name": "long-r13",
+      "mode": "streaming",
+      "language": "fr-FR",
+      "lookahead": 13,
+      "samples": 111298,
+      "wav_sha256": "049631c8e32684f5a17f4e50acb3d7851e041624d5f7edb566761afcc0ea4d9e",
+      "encoder_frames": 98,
+      "tokens": 25,
+      "decisions": 123,
+      "text": "Un cheval fou dans mon jardin, un cheval fou dans mon jardin",
+      "attention_cache_frames": 56,
+      "metrics": {
+        "exact": {
+          "mode": true,
+          "language": true,
+          "lookahead": true,
+          "samples": true,
+          "sample_rate": true,
+          "mel_frames": true,
+          "encoder_frames": true,
+          "text": true,
+          "tokens": true,
+          "decisions": true
+        },
+        "stages": {
+          "mel": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              696,
+              128
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 0.0001983642578125,
+            "rmse": 4.296200761100344e-06,
+            "cosine": 0.9999999999999487,
+            "max_error_over_bound": 0.11911548733266922,
+            "bitwise_equal_elements": 62827,
+            "elements": 89088
+          },
+          "encoder": {
+            "pass_": true,
+            "finite": true,
+            "shape": [
+              1,
+              98,
+              1024
+            ],
+            "atol": 0.0001,
+            "rtol": 0.0001,
+            "max_abs": 6.079673767089844e-06,
+            "rmse": 7.443620127722485e-08,
+            "cosine": 0.9999999999986606,
+            "max_error_over_bound": 0.05378392805197394,
+            "bitwise_equal_elements": 2502,
+            "elements": 100352
+          }
+        },
+        "pass": true
+      }
+    }
+  ]
+}
