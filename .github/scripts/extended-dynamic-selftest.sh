@@ -13,9 +13,9 @@ for script in \
   bash -n "$script"
 done
 
-# Exercise the earlier compositions and the current twelve-source voice set.
+# Exercise the earlier compositions and the current thirteen-source voice set.
 # production assembler. Validate source uniqueness and candidate parity.
-for count in 6 7 8 9 12; do
+for count in 6 7 8 9 12 13; do
   jq --argjson count "$count" '.features |= .[:$count]' "$config" > "$scratch/config.json"
   jq -e --argjson count "$count" '
     .schema_version == 1 and .kind == "extended-main-exact-delta" and
@@ -28,7 +28,8 @@ for count in 6 7 8 9 12; do
       (.review_source_sha | test("^[a-f0-9]{40}$")) and
       (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
         "embedding-gemma2-native","moe-selection","lean4-contracts","half-duplex-native",
-        "fireredvad-native","smart-turn-native","transcribepsy-native","nemotron-asr-native"] | index($tests) != null))
+        "fireredvad-native","smart-turn-native","transcribepsy-native",
+        "nemotron-asr-native","pockettts-native"] | index($tests) != null))
   ' "$scratch/config.json" >/dev/null
   jq --argjson count "$count" '
     {schema_version:1,kind:"extended-multi",integration_target:"extended",

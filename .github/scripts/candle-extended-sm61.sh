@@ -155,6 +155,13 @@ if has_feature nemotron_asr_streaming_standalone; then
     "$model_dir" "$fixture_wav" "$REPORT_DIR/nemotron-real-parity" cuda-cudnn
 fi
 
+# PocketTTS A1 is an operator-level CUDA smoke, not model/audio parity.
+if has_feature pockettts_sm61_standalone; then
+  run_gate pockettts_cuda_contracts cargo test -p candle-transformers --lib --release --locked --features cuda models::pockettts
+  run_gate pockettts_flowlm_mimi_cuda cargo run -p candle-examples --example pockettts-sm61 --release --locked --features cuda -- --device cuda
+  grep -Fq 'POCKETTTS_SM61_A1=PASS backend=cuda' "$REPORT_DIR/pockettts_flowlm_mimi_cuda.log" || fail "PocketTTS CUDA operator smoke missing PASS marker"
+fi
+
 echo "EXTENDED_SM61_CANDIDATE=$actual_sha" | tee -a "$REPORT_DIR/summary.txt"
 echo "EXTENDED_SM61_CAMPAIGN=$campaign" | tee -a "$REPORT_DIR/summary.txt"
 echo "EXTENDED_SM61_VALIDATION=PASS" | tee -a "$REPORT_DIR/summary.txt"

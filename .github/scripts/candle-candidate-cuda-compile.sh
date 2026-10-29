@@ -106,6 +106,22 @@ if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == lega
 fi
 
 
+# Compile the PocketTTS operator path with native CUDA before reserving the
+# physical Pascal runner. Real GPU execution remains a separate SM61 gate.
+if [[ "$CHECK_BRANCH" == extended_integration && "$build_rc" -eq 0 ]] &&
+   jq -e '.features | any(.feature == "pockettts_sm61_standalone")' "$manifest" >/dev/null; then
+  pockettts_rc=0
+  cargo check -p candle-examples --example pockettts-sm61 --features cuda --locked \
+    > "$report/pockettts-cuda-check.log" 2>&1 || pockettts_rc=$?
+  if ((pockettts_rc != 0)); then
+    echo "::error::PocketTTS FlowLM/Mimi CUDA example fails hosted compilation"
+    tail -n 120 "$report/pockettts-cuda-check.log"
+    build_rc=$pockettts_rc
+  else
+    echo "PocketTTS FlowLM/Mimi CUDA example compile PASS" >> "$report/environment.txt"
+  fi
+fi
+
 # Isolated FP4 deliberately leaves the normal GGUF MXFP4 paths enabled.
 # Also compile the explicitly opted-in NVFP4 software kernels/tests under SM61
 # before any physical GPU testing; failing this extra gate fails Candidate CI.

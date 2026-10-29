@@ -129,6 +129,17 @@
       "cuda_features": [
         "cuda"
       ]
+    },
+    {
+      "feature": "pockettts_sm61_standalone",
+      "source_ref": "pockettts_sm61_standalone",
+      "target_ref": "pockettts_sm61_standalone",
+      "review_source_sha": "8011e583d754decac2d8e9057392153e904eb95a",
+      "pin_source_sha": true,
+      "cpu_tests": "pockettts-native",
+      "cuda_features": [
+        "cuda"
+      ]
     }
   ],
   "publication": {
@@ -140,7 +151,7 @@
       "physical_sm61_extended_pass",
       "all_voice_model_contracts_and_cli_pass"
     ],
-    "hosted_validation_state": "PENDING_TWELVE_SOURCE_CPU_CUDA_AND_PHYSICAL_SM61",
+    "hosted_validation_state": "PENDING_THIRTEEN_SOURCE_CPU_CUDA_AND_PHYSICAL_SM61",
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
     "never_push_to_main": true,

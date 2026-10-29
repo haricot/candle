@@ -92,6 +92,20 @@ if [[ "$MODE" == integrated ]]; then
       tail -n 120 "$report/nemotron-asr-cli.log"; exit 1;
     }
   fi
+  if has_feature pockettts_sm61_standalone; then
+    cargo test -p candle-transformers --lib --locked models::pockettts > "$report/pockettts-operator-tests.log" 2>&1 || {
+      tail -n 120 "$report/pockettts-operator-tests.log"; exit 1;
+    }
+    cargo test -p candle-examples --example pockettts-sm61 --locked > "$report/pockettts-cli-tests.log" 2>&1 || {
+      tail -n 120 "$report/pockettts-cli-tests.log"; exit 1;
+    }
+    cargo run -p candle-examples --example pockettts-sm61 --locked -- --device cpu > "$report/pockettts-cpu-preflight.log" 2>&1 || {
+      tail -n 120 "$report/pockettts-cpu-preflight.log"; exit 1;
+    }
+    grep -Fq 'POCKETTTS_SM61_A1=PASS backend=cpu' "$report/pockettts-cpu-preflight.log" || {
+      echo "::error::PocketTTS CPU operator preflight did not produce PASS"; exit 1;
+    }
+  fi
   cargo test -p candle-core --no-default-features --locked --lib > "$report/core-lib-tests.log" 2>&1 || {
     tail -n 120 "$report/core-lib-tests.log"; exit 1;
   }
@@ -143,6 +157,11 @@ case "$FEATURE" in
   nemotron_asr_streaming_standalone)
     cargo test -p candle-transformers --lib --locked nemotron3_5_asr > "$report/cpu-tests.log" 2>&1 &&
     cargo build -p candle-examples --example nemotron_asr --locked >> "$report/cpu-tests.log" 2>&1 ;;
+  pockettts_sm61_standalone)
+    cargo test -p candle-transformers --lib --locked models::pockettts > "$report/cpu-tests.log" 2>&1 &&
+    cargo test -p candle-examples --example pockettts-sm61 --locked >> "$report/cpu-tests.log" 2>&1 &&
+    cargo run -p candle-examples --example pockettts-sm61 --locked -- --device cpu >> "$report/cpu-tests.log" 2>&1 &&
+    grep -Fq 'POCKETTTS_SM61_A1=PASS backend=cpu' "$report/cpu-tests.log" ;;
 
   fp4_candle)
     cargo test -p candle-core --no-default-features --locked       --test mxfp4_tests --test nvfp4_experiment --test fp4_e7c_contract --test nvfp4_loader_tests > "$report/cpu-tests.log" 2>&1 ;;

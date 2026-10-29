@@ -23,7 +23,8 @@ jq -e '
     (.review_source_sha | type == "string" and test("^[a-f0-9]{40}$")) and
     (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
       "embedding-gemma2-native","moe-selection","lean4-contracts",
-      "fireredvad-native","smart-turn-native","transcribepsy-native","nemotron-asr-native"] | index($tests) != null) and
+      "fireredvad-native","smart-turn-native","transcribepsy-native",
+      "nemotron-asr-native","pockettts-native"] | index($tests) != null) and
     (.cuda_features | type == "array" and all(.[]; type == "string" and test("^[a-z0-9_-]+$"))) and
     ((.pin_source_sha // false) | type == "boolean"))
 ' "$cfg" >/dev/null
