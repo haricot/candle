@@ -14,6 +14,8 @@ on:
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-extended-build-once.py
       - .github/scripts/extended-build-once-selftest.py
+      - .github/scripts/candle-cpu-cuda-link-stub.py
+      - .github/scripts/candle-cpu-cuda-link-stub-selftest.py
       - .github/scripts/candle-candidate-cuda-compile.sh
       - .github/container/Containerfile.cuda1292-ubuntu2604
       - .github/scripts/candle-promote-validated.sh
@@ -78,6 +80,8 @@ jobs:
         run: bash .github/scripts/extended-dynamic-selftest.sh
       - name: Validate hosted executable archive and replay contracts
         run: python3 .github/scripts/extended-build-once-selftest.py
+      - name: Independently test CUDA link stub isolation for hosted CPU execution
+        run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
       - name: Prepare manifest-defined Extended candidate
         id: assemble
         shell: bash
@@ -221,7 +225,8 @@ jobs:
             bash -c '
               set -euo pipefail
               git config --global --add safe.directory "$GITHUB_WORKSPACE"
-              python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
+              python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-cpu-cuda-link-stub.py" \
+                -- python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
                 cpu-qualify --bundle "$RUNNER_TEMP/extended-sm61-build-once" \
                 --report "$RUNNER_TEMP/extended-cpu-execute"
             '
