@@ -1,0 +1,90 @@
+name: Candle CI CUDA 12.9.2 SM61 image
+on:
+  workflow_dispatch:
+  push:
+    branches: [orch/extended-v1]
+    paths:
+      - .github/workflows/candle-cuda-ci-image.yml
+      - .github/container/Containerfile.cuda1292-ubuntu2604
+permissions:
+  contents: read
+concurrency:
+  group: candle-ci-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Independently validate the CPU loader and CUDA image recipe
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: CPU link stub fail-closed tests (no GPU required)
+        run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
+      - name: Verify the image and toolchain version contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          recipe=.github/container/Containerfile.cuda1292-ubuntu2604
+          grep -Fxq 'FROM docker.io/library/ubuntu:26.04' "$recipe"
+          grep -Fxq 'ARG HALF_DUPLEX_RUST_TOOLCHAIN=1.99.0' "$recipe"
+          grep -Fq 'cuda-toolkit-12-9=12.9.2-1' "$recipe"
+          grep -Fq 'libcudnn9-cuda-12=9.10.2.21-1' "$recipe"
+          grep -Fq 'nvcc -ccbin=/usr/bin/g++-14 -arch=sm_61' "$recipe"
+
+  publish:
+    name: Build, smoke-test and publish immutable CUDA image
+    needs: validate
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Build image and record the upstream Ubuntu digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=docker.io/library/ubuntu:26.04
+          digest="$(docker buildx imagetools inspect "$base" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "Ubuntu base $base@$digest" >> "$GITHUB_STEP_SUMMARY"
+          docker build --pull \
+            --label "org.opencontainers.image.source=https://github.com/haricot/candle" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            -f .github/container/Containerfile.cuda1292-ubuntu2604 \
+            -t candle-ci-sm61:candidate .github/container
+      - name: Independently smoke-test pinned CUDA, cuDNN, Rust and GCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/bash candle-ci-sm61:candidate -c '
+            set -euo pipefail
+            test "$(dpkg-query -W -f=\${Version} cuda-toolkit-12-9)" = 12.9.2-1
+            test "$(dpkg-query -W -f=\${Version} libcudnn9-cuda-12)" = 9.10.2.21-1
+            test "$(gcc-14 -dumpversion)" = 14
+            nvcc --version | grep -q "release 12.9"
+            rustup run 1.99.0 rustc --version | grep -q "rustc 1.99.0"
+            rustup run 1.99.0 cargo --version | grep -q "cargo 1.99.0"
+          '
+      - name: Publish image to GHCR only after all independent tests passed
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/haricot/candle-ci-sm61"
+          tag="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag candle-ci-sm61:candidate "$image:$tag"
+          docker push "$image:$tag"
+          digest="$(docker buildx imagetools inspect "$image:$tag" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "CANDLE_CI_IMAGE=PASS image=$image@$digest"
+          echo "Image (use digest for P2): $image@$digest" >> "$GITHUB_STEP_SUMMARY"
+          echo "P1 only: existing Candle Extended jobs are unchanged and still build locally." >> "$GITHUB_STEP_SUMMARY"
