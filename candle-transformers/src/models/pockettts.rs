@@ -1,7 +1,7 @@
 //! Reusable building blocks for a continuous-latent FlowLM/Mimi audio path.
 //! No application-specific voice policies or checkpoint assets.
 
-use candle_core::{Error, Result, Tensor};
+use candle::{Error, Result, Tensor};
 use candle_nn::{
     conv1d_no_bias, linear_no_bias, Conv1d, Conv1dConfig, ConvTranspose1d, Linear, Module,
     VarBuilder,
@@ -131,7 +131,7 @@ impl StreamingConvTranspose1d {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use candle_core::{DType, Device};
+    use candle::{DType, Device};
     use candle_nn::ConvTranspose1dConfig;
 
     fn make_layer(device: &Device, biased: bool) -> Result<ConvTranspose1d> {
