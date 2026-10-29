@@ -906,7 +906,12 @@ SOFTMAX_OP(__half, float, softmax_f16)
 RMSNORM_OP(__half, rmsnorm_f16)
 LAYERNORM_OP(__half, layernorm_f16)
 ROPE_OP(__half, rope_f16, rope_i_f16, rope_thd_f16)
+// Native scalar-half atomicAdd is unavailable before sm_70. The current
+// Candle reduction dispatcher uses fast_sum_f16, which remains available.
+// Do not expose the unsupported general sum_f16 entry point on Pascal.
+#if __CUDA_ARCH__ >= 700
 SUM_OP(__half, sum_f16)
+#endif
 FAST_OP(__half, fast_min_f16, fast_max_f16, fast_argmin_f16, fast_argmax_f16, fast_sum_f16)
 #endif
 
