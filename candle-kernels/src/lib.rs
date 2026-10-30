@@ -1,3 +1,9 @@
+include!(concat!(env!("OUT_DIR"), "/cuda_build_info.rs"));
+
+pub mod asd_exact;
+
+pub mod asd_paths;
+
 mod ptx {
     include!(concat!(env!("OUT_DIR"), "/ptx.rs"));
 }
@@ -6,10 +12,13 @@ mod ptx {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Id {
     Affine,
+    AsdDw5x5,
+    AsdFusions,
     Binary,
     Cast,
     Conv,
     Fill,
+    GroupedTranspose,
     Indexing,
     Quantized,
     Reduce,
@@ -18,12 +27,15 @@ pub enum Id {
     Unary,
 }
 
-pub const ALL_IDS: [Id; 11] = [
+pub const ALL_IDS: [Id; 14] = [
     Id::Affine,
+    Id::AsdDw5x5,
+    Id::AsdFusions,
     Id::Binary,
     Id::Cast,
     Id::Conv,
     Id::Fill,
+    Id::GroupedTranspose,
     Id::Indexing,
     Id::Quantized,
     Id::Reduce,
@@ -68,10 +80,13 @@ macro_rules! mdl {
 }
 
 mdl!(AFFINE, Affine);
+mdl!(ASD_DW5X5, AsdDw5x5);
+mdl!(ASD_FUSIONS, AsdFusions);
 mdl!(BINARY, Binary);
 mdl!(CAST, Cast);
 mdl!(CONV, Conv);
 mdl!(FILL, Fill);
+mdl!(GROUPED_TRANSPOSE, GroupedTranspose);
 mdl!(INDEXING, Indexing);
 mdl!(QUANTIZED, Quantized);
 mdl!(REDUCE, Reduce);
