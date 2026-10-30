@@ -188,6 +188,73 @@ class BuildOnceTests(unittest.TestCase):
         self.assertEqual(legacy_gates, expected - {"embeddinggemma2_cpu_contracts"})
         self.assertEqual(built["environment"], ENVIRONMENT)
         self.assertEqual(built["rustflags"], "-C target-cpu=x86-64")
+        cli = built["gates"]["nemotron_asr_cuda_cli"]
+        parity = built["gates"]["nemotron_asr_cuda_real_parity"]
+        self.assertEqual(cli["kind"], "hosted-check")
+        self.assertEqual(parity["kind"], "nemotron-parity")
+        self.assertEqual(cli["binaries"], parity["binaries"])
+        self.assertTrue(cli["binaries"])
+
+    def nemotron_bundle(self):
+        root, manifest = self.make_bundle()
+        exemplar = manifest["gates"]["bf16"]
+        manifest["gates"]["nemotron_asr_cuda_cli"] = {
+            **exemplar, "kind": "hosted-check"
+        }
+        manifest["gates"]["nemotron_asr_cuda_real_parity"] = {
+            **exemplar, "kind": "nemotron-parity"
+        }
+        self.write_manifest(root, manifest)
+        os.environ["EXTENDED_BUILD_ONCE_MANIFEST_SHA256"] = module.sha256(root / "manifest.json")
+        return root
+
+    def test_nemotron_compilation_gate_never_executes_cli_without_model_arguments(self):
+        root = self.nemotron_bundle()
+        args = type("Args", (), {
+            "bundle": str(root), "action": "run-gate", "name": "nemotron_asr_cuda_cli",
+            "report": str(self.repo / "report"),
+        })()
+        with mock.patch.object(module, "exec_cmd", side_effect=AssertionError("unexpected model launch")):
+            module.execute(args)
+
+    def test_nemotron_real_parity_keeps_all_model_input_and_reference_arguments(self):
+        root = self.nemotron_bundle()
+        model = self.repo / "readonly-model"
+        wav = self.repo / "readonly-input.wav"
+        os.environ.update(CANDLE_NEMOTRON_MODEL_DIR=str(model), CANDLE_NEMOTRON_TEST_WAV=str(wav))
+        args = type("Args", (), {
+            "bundle": str(root), "action": "run-gate", "name": "nemotron_asr_cuda_real_parity",
+            "report": str(self.repo / "report"),
+        })()
+        with mock.patch.object(module, "exec_cmd") as execute:
+            module.execute(args)
+        self.assertEqual(execute.call_count, 4)
+        for call, (language, device) in zip(execute.call_args_list,
+                [("fr-FR", "cpu"), ("fr-FR", "cuda-cudnn"), ("auto", "cpu"), ("auto", "cuda-cudnn")]):
+            argv = call.args[0]
+            options = dict(zip(argv[1::2], argv[2::2]))
+            self.assertEqual(options["--model-dir"], str(model))
+            self.assertEqual(options["--input"], str(wav))
+            self.assertEqual(options["--mode"], "streaming")
+            self.assertEqual(options["--language"], language)
+            self.assertEqual(options["--lookahead"], "3")
+            self.assertEqual(options["--device"], device)
+            self.assertEqual(options["--dtype"], "f32")
+            if device == "cuda-cudnn":
+                self.assertEqual(options["--expect-result"],
+                    str(self.repo / "report/nemotron-real-parity" / ("cpu-" + language) / "result.json"))
+            else:
+                self.assertNotIn("--expect-result", options)
+
+    def test_nemotron_parity_failure_is_not_replaced_by_compilation_success(self):
+        root = self.nemotron_bundle()
+        args = type("Args", (), {
+            "bundle": str(root), "action": "run-gate", "name": "nemotron_asr_cuda_real_parity",
+            "report": str(self.repo / "report"),
+        })()
+        with mock.patch.object(module, "exec_cmd", side_effect=RuntimeError("physical parity failed")):
+            with self.assertRaisesRegex(RuntimeError, "physical parity failed"):
+                module.execute(args)
 
     def test_legacy_archive_preserves_all_original_gpu_gates(self):
         os.environ["CANDLE_BUILD_SOURCE"] = "legacy"

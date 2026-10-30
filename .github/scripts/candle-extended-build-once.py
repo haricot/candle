@@ -187,14 +187,14 @@ def build(args):
         gate(name, "test", [stage_binary(bins[target], out) for target in wanted],
              cwd or package, filters)
 
-    def example(name, package, target, flags, argv=(), is_test=False):
+    def example(name, package, target, flags, argv=(), is_test=False, compile_only=False):
         command = ["cargo", "test" if is_test else "build", "-p", package,
                    "--release", "--locked", "--example", target]
         if is_test:
             command.append("--no-run")
         command += flags
         bins = log_cargo(repo, out, name, command, env, [target])
-        gate(name, "test" if is_test else "example",
+        gate(name, "hosted-check" if compile_only else "test" if is_test else "example",
              [stage_binary(bins[target], out)], package if is_test else ".", argv)
 
     check("combined_compile", ["check", "-p", "candle-core", "-p", "candle-nn",
@@ -270,7 +270,10 @@ def build(args):
                 ["--features", "cuda"], is_test=True)
     if "nemotron_asr_streaming_standalone" in features:
         example("nemotron_asr_cuda_cli", "candle-examples", "nemotron_asr",
-                ["--features", "cuda,cudnn"])
+                ["--features", "cuda,cudnn"], compile_only=True)
+        # The original gate is `cargo build`, not an argument-free model run.
+        # The separately mandatory parity gate executes this exact binary with
+        # the read-only checkpoint/WAV, CPU reference and CUDA expectations.
         gate("nemotron_asr_cuda_real_parity", "nemotron-parity",
              gates["nemotron_asr_cuda_cli"]["binaries"])
     if "pockettts_sm61_standalone" in features:
