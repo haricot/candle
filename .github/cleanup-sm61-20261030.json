@@ -2,7 +2,7 @@
   "schema_version": 1,
   "repository": "haricot/candle",
   "scope": "sm61-hygiene-20261030",
-  "phase": "preview",
+  "phase": "apply",
   "validation": {
     "run_id": 41036699911,
     "gpu_job_id": 124010214498,
@@ -583,5 +583,6 @@
     ".github/workflows/candle-integration-gpu.yml",
     ".github/workflows/candle-integration-gpu-handoff.yml",
     ".github/workflows/candle-integration-promote.yml"
-  ]
+  ],
+  "preview_run_id": 41077942446
 }
