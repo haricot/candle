@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest import mock
 
@@ -327,6 +328,41 @@ class BuildOnceTests(unittest.TestCase):
 
 
 class HostedPortabilityTests(unittest.TestCase):
+    def test_full_docker_wrapper_keeps_the_precheck_inside_the_container(self):
+        workflow = (HERE.parent / "workflows/candle-extended-composite.yml").read_text()
+        match = re.search(r"(?ms)^        id: build_once\n        run: \|\n(.*?)(?=^      -)", workflow)
+        self.assertIsNotNone(match)
+        command = textwrap.dedent(match.group(1))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / "bin"
+            tools.mkdir()
+            docker = tools / "docker"
+            docker.write_text("#!" + os.sys.executable + "\n" +
+                'import json,os,sys\nfrom pathlib import Path\n'
+                'Path(os.environ["TEST_DOCKER_ARGV"]).write_text(json.dumps(sys.argv[1:]))\n'
+                'out=Path(os.environ["RUNNER_TEMP"])/"extended-sm61-build-once"\n'
+                'out.mkdir(parents=True)\n(out/"manifest.json").write_text("{}\\n")\n')
+            docker.chmod(0o755)
+            env = os.environ.copy()
+            env.update(PATH=str(tools) + os.pathsep + env.get("PATH", ""),
+                       RUNNER_TEMP=str(root / "runner-temp"), GITHUB_WORKSPACE=str(root / "checkout"),
+                       GITHUB_OUTPUT=str(root / "output"), TEST_DOCKER_ARGV=str(root / "docker-argv.json"),
+                       CANDLE_CUDA_IMAGE="ghcr.io/test/compiler@sha256:" + "a" * 64)
+            result = subprocess.run(["bash", "-c", command], cwd=root, env=env,
+                                    text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            argv = json.loads((root / "docker-argv.json").read_text())
+            self.assertEqual(argv[-3:-1], ["bash", "-c"])
+            body = argv[-1]
+            self.assertIn("cargo generate-lockfile", body)
+            self.assertIn("export LOCK_SHA256", body)
+            self.assertIn('RUSTFLAGS="-C target-cpu=x86-64" bash ', body)
+            self.assertIn('candle-extended-build-once.py"', body)
+            self.assertIn('build --out "$RUNNER_TEMP/extended-sm61-build-once"', body)
+            self.assertEqual((root / "output").read_text(),
+                             "manifest_sha256=" + hashlib.sha256(b"{}\n").hexdigest() + "\n")
+
     @unittest.skipUnless(shutil.which("cargo"), "real Cargo cache portability regression")
     def test_precheck_rebuilds_native_cached_build_scripts_for_portable_x86_64(self):
         workflow = (HERE.parent / "workflows/candle-extended-composite.yml").read_text()
