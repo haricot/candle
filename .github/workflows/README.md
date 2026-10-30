@@ -26,9 +26,11 @@ but its formal proof runs separately in `haricot/haricot-verify`.
 - `candle-cleanup.yml`: auditable, opt-in branch cleanup; **not** an automatic
   campaign and not a replacement for Extended promotion.
 - `candle-cuda1292-container-smoke.yml`: CUDA container smoke tests on PRs.
-- `ci_cuda.yaml`, `maturin.yml`, `python.yml`, `rust-ci.yml`:
+- `maturin.yml`, `python.yml`, `rust-ci.yml`:
   upstream-related build and package CI.
 - `trufflehog.yml`: security scanning.
+
+The old `ci_cuda.yaml` definition targeted upstream SM86/AWS runners and CUDA 13. It has been disabled since January 2026 and is removed from the three maintained orchestration branches. The digest-pinned CUDA 12.9 SM61 producer and its current consumers are retained.
 
 ## Retired orchestration files
 
