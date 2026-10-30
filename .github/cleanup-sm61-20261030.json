@@ -2,7 +2,7 @@
   "schema_version": 2,
   "repository": "haricot/candle",
   "scope": "sm61-hygiene-20261030-followup",
-  "phase": "preview",
+  "phase": "apply",
   "validation": {
     "run_id": 41036699911,
     "gpu_job_id": 124010214498,
@@ -273,5 +273,6 @@
   ],
   "orphan_workflows": [
     ".github/workflows/fp4-format-once.yml"
-  ]
+  ],
+  "preview_run_id": 41135197600
 }
