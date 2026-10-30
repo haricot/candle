@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "haricot/candle",
-  "scope": "sm61-hygiene-20261030",
-  "phase": "apply",
+  "scope": "sm61-hygiene-20261030-followup",
+  "phase": "preview",
   "validation": {
     "run_id": 41036699911,
     "gpu_job_id": 124010214498,
@@ -11,52 +11,28 @@
   },
   "completed_runs": [
     40897509915,
-    40912806616,
-    40919684300,
-    40950200463,
-    40969852762,
-    40969858003,
-    40969957630,
-    41033583724,
-    41035558192
+    41036699911
   ],
+  "promoted_runs": {
+    "40897509915": {
+      "candidate": "39c9ab148c18afbf3518b62a9d1457db8340f864",
+      "gpu_job_id": 123548318856,
+      "promotion_job_id": 123573108640
+    },
+    "41036699911": {
+      "candidate": "e0dbd926ae211ee19cf1ac0f6ae4b0cbabc00646",
+      "gpu_job_id": 124010214498,
+      "promotion_job_id": 124014696537
+    }
+  },
   "protected_heads": {
     "TranscribePsy": "b2c3e57bbf31e45a593a4866b42e839aa721bb9c",
     "archive/extended/sm61-validated-40897509915-1": "39c9ab148c18afbf3518b62a9d1457db8340f864",
     "archive/extended/sm61-validated-41036699911-1": "e0dbd926ae211ee19cf1ac0f6ae4b0cbabc00646",
-    "archive/promotion/extended-40897509915-1/before/TranscribePsy": "b2c3e57bbf31e45a593a4866b42e839aa721bb9c",
-    "archive/promotion/extended-40897509915-1/before/asd_core_v3_standalone": "71992ff26190b09af769355eb936302132dd8de1",
-    "archive/promotion/extended-40897509915-1/before/bf16_candle": "db2b69cb554ee605d9f06f8775776386b452970a",
-    "archive/promotion/extended-40897509915-1/before/cudnn_fallback_candle": "c06e0f005637155036680af2430f8ff84571d1c6",
-    "archive/promotion/extended-40897509915-1/before/embeddinggemma2": "4a0baa95d6dcb923d5a7c0d24b74a57174b28cdd",
-    "archive/promotion/extended-40897509915-1/before/extended": "40b5a8acc43b5f8ef925370ae12daddd929f39f2",
-    "archive/promotion/extended-40897509915-1/before/fireredvad_standalone": "d230bb7ae6929a993b0073737716ff87eba65be8",
-    "archive/promotion/extended-40897509915-1/before/fp4_candle": "dbaab42a4cd1a036c8464728529dca8f911983a9",
-    "archive/promotion/extended-40897509915-1/before/fp8_candle": "fae6bee2a9b90a4b7dad88861198d8cf160941f0",
-    "archive/promotion/extended-40897509915-1/before/lean4_standalone": "5ee24746b4c3217b664ae8d20d2e482b3abfb9bc",
-    "archive/promotion/extended-40897509915-1/before/moe_simt_f16_candle": "1fd05900a04b321ea3d9eddcdf7212175304af1d",
-    "archive/promotion/extended-40897509915-1/before/nemotron_asr_streaming_standalone": "6b7fbd9eeb81dad45f3a4d10e7816ee722818137",
-    "archive/promotion/extended-40897509915-1/before/pockettts_sm61_standalone": "8011e583d754decac2d8e9057392153e904eb95a",
-    "archive/promotion/extended-40897509915-1/before/smart_turn_standalone": "52d840f89075e09f0940b8de5c4a49971c2c67de",
-    "archive/promotion/extended-41036699911-1/before/TranscribePsy": "b2c3e57bbf31e45a593a4866b42e839aa721bb9c",
-    "archive/promotion/extended-41036699911-1/before/asd_core_v3_standalone": "71992ff26190b09af769355eb936302132dd8de1",
-    "archive/promotion/extended-41036699911-1/before/bf16_candle": "db2b69cb554ee605d9f06f8775776386b452970a",
-    "archive/promotion/extended-41036699911-1/before/cudnn_fallback_candle": "c06e0f005637155036680af2430f8ff84571d1c6",
-    "archive/promotion/extended-41036699911-1/before/embeddinggemma2": "4a0baa95d6dcb923d5a7c0d24b74a57174b28cdd",
-    "archive/promotion/extended-41036699911-1/before/extended": "39c9ab148c18afbf3518b62a9d1457db8340f864",
-    "archive/promotion/extended-41036699911-1/before/fireredvad_standalone": "d230bb7ae6929a993b0073737716ff87eba65be8",
-    "archive/promotion/extended-41036699911-1/before/fp4_candle": "dbaab42a4cd1a036c8464728529dca8f911983a9",
-    "archive/promotion/extended-41036699911-1/before/fp8_candle": "fae6bee2a9b90a4b7dad88861198d8cf160941f0",
-    "archive/promotion/extended-41036699911-1/before/lean4_standalone": "5ee24746b4c3217b664ae8d20d2e482b3abfb9bc",
-    "archive/promotion/extended-41036699911-1/before/moe_simt_f16_candle": "1fd05900a04b321ea3d9eddcdf7212175304af1d",
-    "archive/promotion/extended-41036699911-1/before/nemotron_asr_streaming_standalone": "6b7fbd9eeb81dad45f3a4d10e7816ee722818137",
-    "archive/promotion/extended-41036699911-1/before/pockettts_sm61_standalone": "8011e583d754decac2d8e9057392153e904eb95a",
-    "archive/promotion/extended-41036699911-1/before/smart_turn_standalone": "52d840f89075e09f0940b8de5c4a49971c2c67de",
     "asd_core_v3_standalone": "71992ff26190b09af769355eb936302132dd8de1",
     "bf16_candle": "db2b69cb554ee605d9f06f8775776386b452970a",
     "ci/bf16-examples-cuda-legacy-alias": "c146a477591c4be1104f189f5809a974664a28d8",
     "ci/cuda-environment-publish": "0fb09b042c6e8b58d1746f72e7c3e79425fc45a9",
-    "ci/extended-examples-legacy-alias-validation": "afda3c765cf78a613bd2f92f6e62921264eb28e1",
     "ci/fp4-examples-cuda-legacy-aliases": "4487e9a719d71d09ab3e30874b756e0a5d17640c",
     "ci/fp8-examples-cuda-legacy-alias": "e7d2a9d615853dca263c236e381e5e76f45fec9f",
     "ci/post-sm61-cleanup-20261016": "0f79696445e81498a0719d1d59b9528eb7bde966",
@@ -103,23 +79,10 @@
     "moe_simt_f16_candle": "1fd05900a04b321ea3d9eddcdf7212175304af1d",
     "motionbricks_candle": "a5d60c5aea6167d5c86130ee2153aaf0ffafd326",
     "nemotron_asr_streaming_standalone": "6b7fbd9eeb81dad45f3a4d10e7816ee722818137",
-    "orch/extended-v1": "09cba4c636a82c62d523d530e1dce8cdc43b4d11",
-    "orch/legacy-cuda-v1": "712edc52bd36e2c01774b98e4c8fe3cfa0ea72b2",
+    "orch/extended-v1": "c59ad938dbc047a606011a06abf8eef03348bf89",
+    "orch/legacy-cuda-v1": "e20a574631181fb65f34071f6ff49b68efea9c56",
     "perf/improve_to_dtype": "435301e3019b24d6dcf878a4f2c3d657e7f82f2f",
     "pockettts_sm61_standalone": "8011e583d754decac2d8e9057392153e904eb95a",
-    "prepare/extended/extended-41036699911-1/asd_core_v3_standalone": "4beaa96aa2d0241dfb98f4301ec726903dd7f718",
-    "prepare/extended/extended-41036699911-1/bf16_candle": "002955672a1f2f959be8d60d3af1913fd37d505d",
-    "prepare/extended/extended-41036699911-1/cudnn_fallback_candle": "3f1b3e11c2a0646ea7312ffb4a3b6f0d6a8e49d3",
-    "prepare/extended/extended-41036699911-1/embeddinggemma2": "00d552bc4b009bf5e3e4f5919dbefbd9aa1852a6",
-    "prepare/extended/extended-41036699911-1/fireredvad_standalone": "bf75bf014fb7d2218470566baa8f54ba412fd30a",
-    "prepare/extended/extended-41036699911-1/fp4_candle": "6e3016ba01db1ea1b26e698ab22eee4a15837b42",
-    "prepare/extended/extended-41036699911-1/fp8_candle": "89a9745f0d84c03c846741ba88ac4376a1e3d318",
-    "prepare/extended/extended-41036699911-1/lean4_standalone": "f5dd9ed90c8a1f9df84d46708f3d1a44fc9f9e1c",
-    "prepare/extended/extended-41036699911-1/moe_simt_f16_candle": "7cfb2188aa9fff9bacead24bf11df3a65726fd7c",
-    "prepare/extended/extended-41036699911-1/nemotron_asr_streaming_standalone": "d2b79c98419f008e47917babe103f8b13a560d03",
-    "prepare/extended/extended-41036699911-1/pockettts_sm61_standalone": "d4c64a21faee9da42ce35d59fe589cd2406a33a9",
-    "prepare/extended/extended-41036699911-1/smart_turn_standalone": "36b451eba959e36c001fbd4890668d51dcfc8cf4",
-    "prepare/extended/extended-41036699911-1/transcribepsy_standalone": "18da905d88af8e46583d19145ec6a8c67ca6d16d",
     "prepare/legacy/legacy-40969964274-1/bf16_candle": "df83de21441090374049572fa8d8eeea8c79b214",
     "prepare/legacy/legacy-40969964274-1/cudnn_fallback_candle": "c81daca3da6e5a17f4458f18e2c306497cf21ced",
     "prepare/legacy/legacy-40969964274-1/fp4_candle": "358a719a6a92ed7d667eb9e903f4f4bfc7948359",
@@ -136,453 +99,179 @@
   },
   "targets": [
     {
-      "ref": "prepare/extended/extended-40897509915-1/asd_core_v3_standalone",
-      "sha": "f78701b8e209a6248e587e5f4ad17545f28d3c0d"
+      "ref": "archive/promotion/extended-40897509915-1/before/TranscribePsy",
+      "sha": "b2c3e57bbf31e45a593a4866b42e839aa721bb9c"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/bf16_candle",
-      "sha": "b64ec8dd03f4d3a3bc385e137dafc4e2575fcbe0"
+      "ref": "archive/promotion/extended-40897509915-1/before/asd_core_v3_standalone",
+      "sha": "71992ff26190b09af769355eb936302132dd8de1"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/cudnn_fallback_candle",
-      "sha": "2547433fdbde9ce6233cb12a305b2f06e6e77a93"
+      "ref": "archive/promotion/extended-40897509915-1/before/bf16_candle",
+      "sha": "db2b69cb554ee605d9f06f8775776386b452970a"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/embeddinggemma2",
-      "sha": "118d87aa61f32e5e958f67dabc474fbf3a35bb0d"
+      "ref": "archive/promotion/extended-40897509915-1/before/cudnn_fallback_candle",
+      "sha": "c06e0f005637155036680af2430f8ff84571d1c6"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/fireredvad_standalone",
-      "sha": "9bbf82fa0e2c6b12f05a264d4eeedc40beca58e2"
+      "ref": "archive/promotion/extended-40897509915-1/before/embeddinggemma2",
+      "sha": "4a0baa95d6dcb923d5a7c0d24b74a57174b28cdd"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/fp4_candle",
-      "sha": "af7058db572af2c79e151ee948f2485bf2c90bb4"
+      "ref": "archive/promotion/extended-40897509915-1/before/extended",
+      "sha": "40b5a8acc43b5f8ef925370ae12daddd929f39f2"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/fp8_candle",
-      "sha": "082e2d4a1853aa9327b76e573bf3c5eac57fb1c2"
+      "ref": "archive/promotion/extended-40897509915-1/before/fireredvad_standalone",
+      "sha": "d230bb7ae6929a993b0073737716ff87eba65be8"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/lean4_standalone",
-      "sha": "59b219d6e40b5729c7921890d8afef46b8229493"
+      "ref": "archive/promotion/extended-40897509915-1/before/fp4_candle",
+      "sha": "dbaab42a4cd1a036c8464728529dca8f911983a9"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/moe_simt_f16_candle",
-      "sha": "20e782cdb94a2bb0f9f30c0527f81b3bbdf66649"
+      "ref": "archive/promotion/extended-40897509915-1/before/fp8_candle",
+      "sha": "fae6bee2a9b90a4b7dad88861198d8cf160941f0"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/nemotron_asr_streaming_standalone",
-      "sha": "af3c140e429bd26383896015d28672f0ba992c94"
+      "ref": "archive/promotion/extended-40897509915-1/before/lean4_standalone",
+      "sha": "5ee24746b4c3217b664ae8d20d2e482b3abfb9bc"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/pockettts_sm61_standalone",
-      "sha": "f92cf704768f9a4ca24342470f20ce0e26ea6afe"
+      "ref": "archive/promotion/extended-40897509915-1/before/moe_simt_f16_candle",
+      "sha": "1fd05900a04b321ea3d9eddcdf7212175304af1d"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/smart_turn_standalone",
-      "sha": "bcdd999947b688fb01d3c2423da6c2c44bf6f96d"
+      "ref": "archive/promotion/extended-40897509915-1/before/nemotron_asr_streaming_standalone",
+      "sha": "6b7fbd9eeb81dad45f3a4d10e7816ee722818137"
     },
     {
-      "ref": "prepare/extended/extended-40897509915-1/transcribepsy_standalone",
-      "sha": "46ce0d6164dc7beb3d06dacc085287be39c096bf"
+      "ref": "archive/promotion/extended-40897509915-1/before/pockettts_sm61_standalone",
+      "sha": "8011e583d754decac2d8e9057392153e904eb95a"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/asd_core_v3_standalone",
-      "sha": "4d7c5fedf25d04b4f1ce483227bb59c27f5ee6dd"
+      "ref": "archive/promotion/extended-40897509915-1/before/smart_turn_standalone",
+      "sha": "52d840f89075e09f0940b8de5c4a49971c2c67de"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/bf16_candle",
-      "sha": "41bd8f16bd951dc9ca35c4915f82c0f2b840dcf2"
+      "ref": "archive/promotion/extended-41036699911-1/before/TranscribePsy",
+      "sha": "b2c3e57bbf31e45a593a4866b42e839aa721bb9c"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/cudnn_fallback_candle",
-      "sha": "aeec382bab324937e8115fffa26a5d67601a1014"
+      "ref": "archive/promotion/extended-41036699911-1/before/asd_core_v3_standalone",
+      "sha": "71992ff26190b09af769355eb936302132dd8de1"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/embeddinggemma2",
-      "sha": "1e4f85e311a981b3084fbb7ff26960ccf29a8317"
+      "ref": "archive/promotion/extended-41036699911-1/before/bf16_candle",
+      "sha": "db2b69cb554ee605d9f06f8775776386b452970a"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/fireredvad_standalone",
-      "sha": "cd98c21aef5ce73cd984e50c989c512126b68bb9"
+      "ref": "archive/promotion/extended-41036699911-1/before/cudnn_fallback_candle",
+      "sha": "c06e0f005637155036680af2430f8ff84571d1c6"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/fp4_candle",
-      "sha": "4ba19998d1b10bf749f22009f8c98a5849e73620"
+      "ref": "archive/promotion/extended-41036699911-1/before/embeddinggemma2",
+      "sha": "4a0baa95d6dcb923d5a7c0d24b74a57174b28cdd"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/fp8_candle",
-      "sha": "938d83e244db110b821a466131df7b164d66be7f"
+      "ref": "archive/promotion/extended-41036699911-1/before/extended",
+      "sha": "39c9ab148c18afbf3518b62a9d1457db8340f864"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/lean4_standalone",
-      "sha": "054d16f0df7caa169cb473f1dc812250ea92e62f"
+      "ref": "archive/promotion/extended-41036699911-1/before/fireredvad_standalone",
+      "sha": "d230bb7ae6929a993b0073737716ff87eba65be8"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/moe_simt_f16_candle",
-      "sha": "19c5aa326d63b6b30507ccc6385653d4954c658b"
+      "ref": "archive/promotion/extended-41036699911-1/before/fp4_candle",
+      "sha": "dbaab42a4cd1a036c8464728529dca8f911983a9"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/nemotron_asr_streaming_standalone",
-      "sha": "82063471ece5f3d3c1b6160326a9d165dc126220"
+      "ref": "archive/promotion/extended-41036699911-1/before/fp8_candle",
+      "sha": "fae6bee2a9b90a4b7dad88861198d8cf160941f0"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/pockettts_sm61_standalone",
-      "sha": "cae2cd3525106fcb79051bd7570c6350aac6c328"
+      "ref": "archive/promotion/extended-41036699911-1/before/lean4_standalone",
+      "sha": "5ee24746b4c3217b664ae8d20d2e482b3abfb9bc"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/smart_turn_standalone",
-      "sha": "3e49c310c404f663ebc5a960efcc1b4d0d5b3ec4"
+      "ref": "archive/promotion/extended-41036699911-1/before/moe_simt_f16_candle",
+      "sha": "1fd05900a04b321ea3d9eddcdf7212175304af1d"
     },
     {
-      "ref": "prepare/extended/extended-40912806616-1/transcribepsy_standalone",
-      "sha": "1e5f71d3a3c7c33c19c43b4e0b2ac92ef08c10b3"
+      "ref": "archive/promotion/extended-41036699911-1/before/nemotron_asr_streaming_standalone",
+      "sha": "6b7fbd9eeb81dad45f3a4d10e7816ee722818137"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/asd_core_v3_standalone",
-      "sha": "890e1fa05ee220650dd49e399e4d6d0228b64c91"
+      "ref": "archive/promotion/extended-41036699911-1/before/pockettts_sm61_standalone",
+      "sha": "8011e583d754decac2d8e9057392153e904eb95a"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/bf16_candle",
-      "sha": "97c44c328b792c1fe895fe6c04dbd5f27d4b7fff"
+      "ref": "archive/promotion/extended-41036699911-1/before/smart_turn_standalone",
+      "sha": "52d840f89075e09f0940b8de5c4a49971c2c67de"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/cudnn_fallback_candle",
-      "sha": "a81b12aac3f621103558623b1c4da9f91a43e3a9"
+      "ref": "ci/extended-examples-legacy-alias-validation",
+      "sha": "afda3c765cf78a613bd2f92f6e62921264eb28e1",
+      "merged_into": "orch/extended-v1"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/embeddinggemma2",
-      "sha": "b79a364d05439e725a18dd84315c97febd9212d7"
+      "ref": "prepare/extended/extended-41036699911-1/asd_core_v3_standalone",
+      "sha": "4beaa96aa2d0241dfb98f4301ec726903dd7f718"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/fireredvad_standalone",
-      "sha": "594451896c0c97d3767a81a7f7c3cdbde1394856"
+      "ref": "prepare/extended/extended-41036699911-1/bf16_candle",
+      "sha": "002955672a1f2f959be8d60d3af1913fd37d505d"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/fp4_candle",
-      "sha": "77012fe634bee61f23dc846c7781f7ad6e5e2d7a"
+      "ref": "prepare/extended/extended-41036699911-1/cudnn_fallback_candle",
+      "sha": "3f1b3e11c2a0646ea7312ffb4a3b6f0d6a8e49d3"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/fp8_candle",
-      "sha": "17b92cfd9d146d02d49afcb7e9e53d7bbc3369e8"
+      "ref": "prepare/extended/extended-41036699911-1/embeddinggemma2",
+      "sha": "00d552bc4b009bf5e3e4f5919dbefbd9aa1852a6"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/lean4_standalone",
-      "sha": "d79c1c2d62a956ac9170bf916bcb228b765fb89d"
+      "ref": "prepare/extended/extended-41036699911-1/fireredvad_standalone",
+      "sha": "bf75bf014fb7d2218470566baa8f54ba412fd30a"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/moe_simt_f16_candle",
-      "sha": "caa18f2aab2b3493727642811ce1f8f4ab5aaf3c"
+      "ref": "prepare/extended/extended-41036699911-1/fp4_candle",
+      "sha": "6e3016ba01db1ea1b26e698ab22eee4a15837b42"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/nemotron_asr_streaming_standalone",
-      "sha": "396a37b6e5be54f82c3651e1ce8554d7d99fd7ed"
+      "ref": "prepare/extended/extended-41036699911-1/fp8_candle",
+      "sha": "89a9745f0d84c03c846741ba88ac4376a1e3d318"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/pockettts_sm61_standalone",
-      "sha": "bb730b4e1fd4ffc6d1171e11e4b6f163cfde7b56"
+      "ref": "prepare/extended/extended-41036699911-1/lean4_standalone",
+      "sha": "f5dd9ed90c8a1f9df84d46708f3d1a44fc9f9e1c"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/smart_turn_standalone",
-      "sha": "fadffa787c78370913643499a675e7c218854fa6"
+      "ref": "prepare/extended/extended-41036699911-1/moe_simt_f16_candle",
+      "sha": "7cfb2188aa9fff9bacead24bf11df3a65726fd7c"
     },
     {
-      "ref": "prepare/extended/extended-40919684300-1/transcribepsy_standalone",
-      "sha": "68476c5bb770c1aec76509e8a52dc7b0db6aae18"
+      "ref": "prepare/extended/extended-41036699911-1/nemotron_asr_streaming_standalone",
+      "sha": "d2b79c98419f008e47917babe103f8b13a560d03"
     },
     {
-      "ref": "prepare/extended/extended-40950200463-1/asd_core_v3_standalone",
-      "sha": "baf5e2a767a5bff1dd54e15617039fc153ab6b0b"
+      "ref": "prepare/extended/extended-41036699911-1/pockettts_sm61_standalone",
+      "sha": "d4c64a21faee9da42ce35d59fe589cd2406a33a9"
     },
     {
-      "ref": "prepare/extended/extended-40950200463-1/bf16_candle",
-      "sha": "ac3c71473d42fa50226c6ee126adcdf74a5a9727"
+      "ref": "prepare/extended/extended-41036699911-1/smart_turn_standalone",
+      "sha": "36b451eba959e36c001fbd4890668d51dcfc8cf4"
     },
     {
-      "ref": "prepare/extended/extended-40950200463-1/cudnn_fallback_candle",
-      "sha": "3047e6d825b5060adbef9db6345014591484a4fe"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/embeddinggemma2",
-      "sha": "9990ba16e926059d6480be41a18539db92a3ce04"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/fireredvad_standalone",
-      "sha": "e129e12f137228389c730238388b92ef236e6df1"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/fp4_candle",
-      "sha": "b1638326956506f570d3f36f92aa8b591f7a3e67"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/fp8_candle",
-      "sha": "0a46334045069188a576a18d3a243e0f0acf7802"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/lean4_standalone",
-      "sha": "0d4c147257d3911258214d952c30cc7487e0736a"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/moe_simt_f16_candle",
-      "sha": "2c3b79b6b9337cc1607f9eada3f0ae52c8575c44"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/nemotron_asr_streaming_standalone",
-      "sha": "470e8b1bbd8f9481ed73ee327f7fd3f1ec69336f"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/pockettts_sm61_standalone",
-      "sha": "ec809a75c7f1e77a99bf662421a9c1fea6d3f4f0"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/smart_turn_standalone",
-      "sha": "e6ef61505924d5593b815842b47f1f3fcf118481"
-    },
-    {
-      "ref": "prepare/extended/extended-40950200463-1/transcribepsy_standalone",
-      "sha": "1cac93df1610a5b8f87508316785821a570bd533"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/asd_core_v3_standalone",
-      "sha": "6400e95e0d53b268359f493b45fa403a940a6100"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/bf16_candle",
-      "sha": "8c20011a0477a91e7223c8238c16591979d49756"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/cudnn_fallback_candle",
-      "sha": "40ce00d26535cfa6a56a8f6ad05fd70bfa8200d2"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/embeddinggemma2",
-      "sha": "9569fb75236d46f27ea5509ff97f6bdeaf9f2a8c"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/fireredvad_standalone",
-      "sha": "575d1cca4d1cf98d4dd94a107a95e8745bc8f703"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/fp4_candle",
-      "sha": "2db6058f532243d1f5bff6390de8f0508c972f3d"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/fp8_candle",
-      "sha": "8c9ac0a1f230a225be0f414f447366dac9056461"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/lean4_standalone",
-      "sha": "998d3c2bba7328fea88c40d01d1a966089692a54"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/moe_simt_f16_candle",
-      "sha": "e04ddcffc834b9f5e03bc355761512700e7914b1"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/nemotron_asr_streaming_standalone",
-      "sha": "7b3048a0ecefad3e5b4acd1080a8a744822a959b"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/pockettts_sm61_standalone",
-      "sha": "ad67a8a416a0cd82a253dc0982153a2d9e297f4e"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/smart_turn_standalone",
-      "sha": "208581b4fcdfb4c20022b4dbfb4b91ec1a99539f"
-    },
-    {
-      "ref": "prepare/extended/extended-40969852762-1/transcribepsy_standalone",
-      "sha": "cca0f769e5a7d3ac457946241f7ff18757f2e7d2"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/asd_core_v3_standalone",
-      "sha": "88ec2514b3527a96e395a9a2c78eb6213b5d87f0"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/bf16_candle",
-      "sha": "8015be9caf58bdac0f44ef90b4f8a91fc424751d"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/cudnn_fallback_candle",
-      "sha": "949af656747c239b649fadc4a59b22a9b59100a0"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/embeddinggemma2",
-      "sha": "f5d40ce506ad2bdcaec8c368326e2fc2d65214bb"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/fireredvad_standalone",
-      "sha": "b9513db76ed3b7b90b84e85a8dc8b617e0a05468"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/fp4_candle",
-      "sha": "e87ee042a0f729f4ce4c0cf98ee415d3b14ee1f9"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/fp8_candle",
-      "sha": "6d27cc475f7c075ac04ca7b2e6ce52de09968fb8"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/lean4_standalone",
-      "sha": "fcb8bc8c0d729f4ec4d4429d0ff277c39b235d1d"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/moe_simt_f16_candle",
-      "sha": "78e728c3769b9434bbf14056b9fdbceb8c6201d1"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/nemotron_asr_streaming_standalone",
-      "sha": "7e7abbc250dc4cba40f1158a834bc1adfde502a7"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/pockettts_sm61_standalone",
-      "sha": "d52d7438be688c32ae075dbee005f565b13ce73f"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/smart_turn_standalone",
-      "sha": "47c14ff61156b02339a85cb3a701c2ed1b1b42b8"
-    },
-    {
-      "ref": "prepare/extended/extended-40969957630-1/transcribepsy_standalone",
-      "sha": "605762205b93ad6475df691b1f24b30c04a1b2cc"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/asd_core_v3_standalone",
-      "sha": "2c23d02d8a1f712a27973e96f04341768248e6b4"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/bf16_candle",
-      "sha": "c206167bcf5d4b8f0f96626907884fe5fb89c870"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/cudnn_fallback_candle",
-      "sha": "c6054f27ce79eeb4eda8db723fb212bac24c8175"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/embeddinggemma2",
-      "sha": "4082db69df8aed0f0404f8448ecb8d1b2b325e16"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/fireredvad_standalone",
-      "sha": "cdd9ce246f314c1ad25db592dbaf9868a0362652"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/fp4_candle",
-      "sha": "b32d971325cd040a688ca59773c8efd949d35c83"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/fp8_candle",
-      "sha": "cb4be76e8d9b109a2f070305990565dba30ed95b"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/lean4_standalone",
-      "sha": "d5b8a380362ed587f16980c3da3d791520bc22a0"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/moe_simt_f16_candle",
-      "sha": "bf6ef0f41f2a1b183d063b53b38bac695d9731d2"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/nemotron_asr_streaming_standalone",
-      "sha": "9f24f626345e3453303d39be65bf257c3e820149"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/pockettts_sm61_standalone",
-      "sha": "0aedf9a9fd59b483fdcfc33595a1763017df15db"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/smart_turn_standalone",
-      "sha": "fc8e3fd377a76aa27005af8a5fa2e7e97af03b2f"
-    },
-    {
-      "ref": "prepare/extended/extended-41033583724-1/transcribepsy_standalone",
-      "sha": "7269623df2be704efec66455c5c14e887d49602f"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/asd_core_v3_standalone",
-      "sha": "eb0107d95692fd7426f4ecefeccefeafe1bfb6d0"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/bf16_candle",
-      "sha": "55b973a959a9714adafdf311da9e029d42da22fe"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/cudnn_fallback_candle",
-      "sha": "973df4f76fa35b82b432bc261845f4ffa9727a46"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/embeddinggemma2",
-      "sha": "c50171715a363ffd8d76afdf74e379f52db583cf"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/fireredvad_standalone",
-      "sha": "bc7f1d2590d5214c931a7c9cc49a084a6e2dd041"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/fp4_candle",
-      "sha": "581740c3a6504a08f1c846630f5389a6f196a375"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/fp8_candle",
-      "sha": "779309d1a0b100abff67ac0510bf15fe83a4e857"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/lean4_standalone",
-      "sha": "8c8e1f8e29e1b692b592a5d30a906279581f804c"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/moe_simt_f16_candle",
-      "sha": "4a089e4bcbeeff6c6f01f7cc7b684c62701b97a6"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/nemotron_asr_streaming_standalone",
-      "sha": "e981e17a648b8714a4cbaecf27f0d1ac94ff4fe3"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/pockettts_sm61_standalone",
-      "sha": "1631ac4a4db3218e5092a509c3da60d8ce3f3f52"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/smart_turn_standalone",
-      "sha": "cb951de6afd9048989cbe0b19712703afd2f9374"
-    },
-    {
-      "ref": "prepare/extended/extended-41035558192-1/transcribepsy_standalone",
-      "sha": "2000fc6861c5d6ae22cab232a2a73c276b18bac3"
-    },
-    {
-      "ref": "prepare/legacy/legacy-40969858003-1/bf16_candle",
-      "sha": "9762d52efc40c1a19430831ab312e271fa374f3b"
-    },
-    {
-      "ref": "prepare/legacy/legacy-40969858003-1/cudnn_fallback_candle",
-      "sha": "4deac7f7ea75d3819ff2ba675cfc16443059fc28"
-    },
-    {
-      "ref": "prepare/legacy/legacy-40969858003-1/fp4_candle",
-      "sha": "f9a03e2377f82884f5f5d811d4db11051010de70"
-    },
-    {
-      "ref": "prepare/legacy/legacy-40969858003-1/fp8_candle",
-      "sha": "d661b333a2a561b3a1231e91d837ed510cbd0ef9"
-    },
-    {
-      "ref": "prepare/legacy/legacy-40969858003-1/moe_simt_f16_candle",
-      "sha": "000209a8120672fb924a0925c999bfbdb7a7669e"
+      "ref": "prepare/extended/extended-41036699911-1/transcribepsy_standalone",
+      "sha": "18da905d88af8e46583d19145ec6a8c67ca6d16d"
     }
   ],
   "retired_workflows": [
-    ".github/workflows/candle-six-gpu-drift-resume.yml",
-    ".github/workflows/candle-six-temporary-cleanup.yml",
-    ".github/workflows/candle-standalone-integration.yml",
-    ".github/workflows/extended-dynamic-config-ci.yml",
-    ".github/workflows/fp8-rebase-bootstrap.yml",
-    ".github/workflows/candle-cuda1292-candidate-request.yml",
-    ".github/workflows/candle-integration.yml",
-    ".github/workflows/candle-integration-gpu.yml",
-    ".github/workflows/candle-integration-gpu-handoff.yml",
-    ".github/workflows/candle-integration-promote.yml"
+    ".github/workflows/fp4-format-once.yml"
   ],
-  "preview_run_id": 41077942446
+  "orphan_workflows": [
+    ".github/workflows/fp4-format-once.yml"
+  ]
 }

@@ -13,6 +13,8 @@ WORKFLOW = ".github/workflows/candle-sm61-hygiene.yml"
 TAG_PREFIX = "archive/candle-pruned-20261030/"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 PREPARE = re.compile(r"prepare/(?:legacy|extended)/(?:legacy|extended)-(\d+)-\d+/[A-Za-z0-9_.-]+\Z")
+BACKUP = re.compile(r"archive/promotion/(?:legacy|extended)-(\d+)-\d+/before/[A-Za-z0-9_.-]+\Z")
+MERGED_CI = {"ci/extended-examples-legacy-alias-validation"}
 
 
 def command(*args):
@@ -29,19 +31,34 @@ def fingerprint(plan):
 
 
 def validate(plan):
-    if (plan.get("schema_version") != 1 or plan.get("repository") != "haricot/candle"
-            or plan.get("scope") != "sm61-hygiene-20261030"
+    version = plan.get("schema_version")
+    expected_scope = {1: "sm61-hygiene-20261030", 2: "sm61-hygiene-20261030-followup"}.get(version)
+    if (expected_scope is None or plan.get("repository") != "haricot/candle"
+            or plan.get("scope") != expected_scope
             or plan.get("phase") not in ("preview", "apply")):
         raise RuntimeError("invalid hygiene request")
     refs = [t["ref"] for t in plan["targets"]]
     if not refs or len(refs) != len(set(refs)):
         raise RuntimeError("empty or duplicate target refs")
     for item in plan["targets"]:
+        if not SHA.fullmatch(item["sha"]) or item["ref"] in plan["protected_heads"]:
+            raise RuntimeError("target SHA or protected ref is invalid")
         match = PREPARE.fullmatch(item["ref"])
-        if (not match or not SHA.fullmatch(item["sha"])
-                or int(match[1]) not in plan["completed_runs"]
-                or item["ref"] in plan["protected_heads"]):
-            raise RuntimeError("target is not a pinned completed preparation ref")
+        if match and int(match[1]) in plan["completed_runs"]:
+            continue
+        backup = BACKUP.fullmatch(item["ref"]) if version == 2 else None
+        if backup and str(backup[1]) in plan.get("promoted_runs", {}):
+            continue
+        if (version == 2 and item["ref"] in MERGED_CI
+                and item.get("merged_into") in plan["protected_heads"]):
+            continue
+        raise RuntimeError("target is not a pinned completed preparation, promotion backup or merged CI ref")
+    if version == 2:
+        for proof in plan["promoted_runs"].values():
+            if not SHA.fullmatch(proof["candidate"]):
+                raise RuntimeError("invalid promoted candidate")
+        if not set(plan["orphan_workflows"]).issubset(plan["retired_workflows"]):
+            raise RuntimeError("orphan workflows must be explicitly retired")
     for path in plan["retired_workflows"]:
         if not re.fullmatch(r"\.github/workflows/[A-Za-z0-9_.-]+\.yml", path):
             raise RuntimeError("invalid retired workflow path")
@@ -107,6 +124,27 @@ def preflight(plan, refs):
     for run_id in plan["completed_runs"]:
         if api("/actions/runs/" + str(run_id)).get("status") != "completed":
             raise RuntimeError("preparation campaign is still active")
+    if plan["schema_version"] == 2:
+        for run_id, proof in plan["promoted_runs"].items():
+            run = api("/actions/runs/" + run_id)
+            jobs = api("/actions/runs/" + run_id + "/jobs?per_page=100")["jobs"]
+            if run.get("status") != "completed" or run.get("conclusion") != "success":
+                raise RuntimeError("promotion backup still belongs to an unfinished campaign")
+            for key in ("gpu_job_id", "promotion_job_id"):
+                if not any(j["id"] == proof[key] and j["conclusion"] == "success" for j in jobs):
+                    raise RuntimeError("promotion backup lacks physical validation or promotion")
+            if refs.heads().get("archive/extended/sm61-validated-" + run_id + "-1") != proof["candidate"]:
+                raise RuntimeError("physical validation archive changed")
+        for item in plan["targets"]:
+            if item["ref"] in MERGED_CI:
+                command("git", "merge-base", "--is-ancestor", item["sha"],
+                        plan["protected_heads"][item["merged_into"]])
+        # A registered one-shot workflow is retired only when no current head
+        # contains its file. Historical commits, runs and artifacts are retained.
+        for sha in set(refs.heads().values()):
+            for path in plan["orphan_workflows"]:
+                if command("git", "ls-tree", "--name-only", sha, "--", path):
+                    raise RuntimeError("orphan workflow still exists on a current head: " + path)
     protected = {t["ref"] for t in plan["targets"]}
     page = 1
     while True:
@@ -121,8 +159,9 @@ def preflight(plan, refs):
         page = 1
         while True:
             runs = api("/actions/runs?status=" + state + "&per_page=100&page=" + str(page))["workflow_runs"]
-            if any(r.get("path") in retired for r in runs):
-                raise RuntimeError("a retired workflow is still active")
+            targets = {t["ref"] for t in plan["targets"]}
+            if any(r.get("path") in retired or r.get("head_branch") in targets for r in runs):
+                raise RuntimeError("a target branch or retired workflow is still active")
             if len(runs) < 100:
                 break
             page += 1

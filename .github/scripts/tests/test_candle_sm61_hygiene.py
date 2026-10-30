@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location("hygiene", Path(__file__).resolve().parents[1] / "candle-sm61-hygiene.py")
 hygiene = importlib.util.module_from_spec(spec)
@@ -97,6 +98,84 @@ class HygieneTests(unittest.TestCase):
         self.refs.archive(self.plan)
         self.refs.archive(self.plan)
         self.refs.check(self.plan)
+
+    def followup(self, ref):
+        self.plan.update(schema_version=2, scope="sm61-hygiene-20261030-followup",
+                         promoted_runs={"40969957630": {"candidate": self.old, "gpu_job_id": 1,
+                                                       "promotion_job_id": 2}},
+                         orphan_workflows=[], validation={"run_id": 40969957630,
+                                                        "gpu_job_id": 1, "promotion_job_id": 2})
+        self.plan["targets"] = [{"ref": ref, "sha": self.old}]
+        self.proof_ref = "archive/extended/sm61-validated-40969957630-1"
+        hygiene.command("git", "push", "origin", self.old + ":refs/heads/" + ref,
+                        self.old + ":refs/heads/" + self.proof_ref)
+
+    @staticmethod
+    def successful_api(path):
+        if "/jobs?" in path:
+            return {"jobs": [{"id": 1, "conclusion": "success"}, {"id": 2, "conclusion": "success"}]}
+        if path.startswith("/actions/runs/"):
+            return {"id": 40969957630, "status": "completed", "conclusion": "success"}
+        if path.startswith("/pulls?"):
+            return []
+        return {"workflow_runs": []}
+
+    def test_completed_promotion_backup_is_archived_before_branch_removal(self):
+        ref = "archive/promotion/extended-40969957630-1/before/extended"
+        self.followup(ref)
+        hygiene.validate(self.plan)
+        with mock.patch.object(hygiene, "api", side_effect=self.successful_api):
+            hygiene.preflight(self.plan, self.refs)
+        self.refs.archive(self.plan)
+        self.refs.delete(self.plan)
+        self.refs.check(self.plan, deleted=True)
+        self.assertEqual(self.refs.heads()[self.proof_ref], self.old)
+        tag = hygiene.TAG_PREFIX + ref
+        self.assertEqual(hygiene.command("git", "ls-remote", "origin", "refs/tags/" + tag + "^{}").split()[0], self.old)
+
+    def test_unattested_promotion_backup_is_rejected(self):
+        self.followup("archive/promotion/extended-12345-1/before/extended")
+        with self.assertRaises(RuntimeError):
+            hygiene.validate(self.plan)
+
+    def test_failed_promotion_rejects_cleanup_even_after_gpu_success(self):
+        self.followup("archive/promotion/extended-40969957630-1/before/extended")
+        def failed(path):
+            value = self.successful_api(path)
+            if path.startswith("/actions/runs/40969957630/jobs"):
+                value["jobs"][1]["conclusion"] = "failure"
+            return value
+        with mock.patch.object(hygiene, "api", side_effect=failed), self.assertRaises(RuntimeError):
+            hygiene.preflight(self.plan, self.refs)
+
+    def test_merged_ci_ref_requires_actual_ancestry_of_protected_head(self):
+        ref = "ci/extended-examples-legacy-alias-validation"
+        self.followup(ref)
+        self.plan["targets"][0]["merged_into"] = "extended"
+        hygiene.validate(self.plan)
+        with mock.patch.object(hygiene, "api", side_effect=self.successful_api):
+            hygiene.preflight(self.plan, self.refs)
+        self.plan["protected_heads"] = {"extended": self.old}
+        self.plan["targets"][0]["sha"] = self.new
+        hygiene.command("git", "push", "origin", self.new + ":refs/heads/" + ref)
+        hygiene.command("git", "push", "--force", "origin", self.old + ":refs/heads/extended")
+        with mock.patch.object(hygiene, "api", side_effect=self.successful_api), self.assertRaises(subprocess.CalledProcessError):
+            hygiene.preflight(self.plan, self.refs)
+
+    def test_orphan_workflow_is_rejected_if_present_on_any_current_branch(self):
+        self.followup("archive/promotion/extended-40969957630-1/before/extended")
+        self.plan.update(orphan_workflows=["data.txt"], retired_workflows=["data.txt"])
+        with mock.patch.object(hygiene, "api", side_effect=self.successful_api), self.assertRaisesRegex(RuntimeError, "still exists"):
+            hygiene.preflight(self.plan, self.refs)
+
+    def test_open_pr_preserves_target_branch(self):
+        self.followup("archive/promotion/extended-40969957630-1/before/extended")
+        def open_pr(path):
+            if path.startswith("/pulls?"):
+                return [{"base": {"ref": "extended"}, "head": {"ref": self.plan["targets"][0]["ref"]}}]
+            return self.successful_api(path)
+        with mock.patch.object(hygiene, "api", side_effect=open_pr), self.assertRaisesRegex(RuntimeError, "open PR"):
+            hygiene.preflight(self.plan, self.refs)
 
 
 if __name__ == "__main__":
