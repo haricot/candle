@@ -179,7 +179,9 @@ jobs:
               cp Cargo.lock "$RUNNER_TEMP/candidate-cpu-proof/Cargo.lock"
               LOCK_SHA256="$(sha256sum Cargo.lock | cut -d" " -f1)"
               export LOCK_SHA256
-              bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+              # Cached build scripts must run on every hosted x86-64 CPU.
+              # Override the candidate workspace's target-cpu=native here too.
+              RUSTFLAGS="-C target-cpu=x86-64" bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
               python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
                 build --out "$RUNNER_TEMP/extended-sm61-build-once"
             '

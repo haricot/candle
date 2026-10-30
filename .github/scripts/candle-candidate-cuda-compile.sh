@@ -58,6 +58,7 @@ fi
 {
   nvcc --version
   rustc --version
+  echo "rustflags: ${RUSTFLAGS:-workspace-default}"
   echo "target: sm_61"
   echo "features: $features"
 } > "$report/environment.txt"
@@ -65,6 +66,10 @@ build_rc=0
 cargo check -p candle-core -p candle-nn --lib --tests \
   --no-default-features --features "$features" --locked \
   > "$report/cuda-check.log" 2>&1 || build_rc=$?
+if ((build_rc != 0)); then
+  echo "::error::Initial CUDA compile failed (rc=$build_rc)"
+  tail -n 100 "$report/cuda-check.log"
+fi
 
 if [[ "$CHECK_BRANCH" == extended_integration && "$build_rc" -eq 0 ]]; then
   qwen3_rc=0

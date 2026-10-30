@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -323,6 +324,44 @@ class BuildOnceTests(unittest.TestCase):
         self.assertEqual(proof["status"], "CPU_CUDA_BUILT_PASSED")
         self.assertIn("pockettts_cpu_preflight", proof["gates"])
         self.assertFalse(proof["cargo_invoked"])
+
+
+class HostedPortabilityTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("cargo"), "real Cargo cache portability regression")
+    def test_precheck_rebuilds_native_cached_build_scripts_for_portable_x86_64(self):
+        workflow = (HERE.parent / "workflows/candle-extended-composite.yml").read_text()
+        command = next(line.strip() for line in workflow.splitlines()
+                       if line.strip().startswith("RUSTFLAGS=") and
+                       "candle-candidate-cuda-compile.sh" in line)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / ".cargo").mkdir()
+            (root / "Cargo.toml").write_text(
+                '[package]\nname="portable-build-script-probe"\nversion="0.1.0"\nedition="2021"\n')
+            (root / "src/lib.rs").write_text("pub fn probe() {}\n")
+            (root / ".cargo/config.toml").write_text(
+                '[build]\nrustflags=["-C", "target-cpu=native"]\n')
+            (root / "build.rs").write_text(
+                'fn main() { println!("cargo:warning=HOST_RUSTFLAGS={}", '
+                'std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap().replace("\\u{1f}", " ")); }\n')
+            tools = root / ".ci-tools/.github/scripts"
+            tools.mkdir(parents=True)
+            (tools / "candle-candidate-cuda-compile.sh").write_text(
+                "#!/bin/bash\nset -euo pipefail\nexec cargo check --offline -vv\n")
+            env = os.environ.copy()
+            for key in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"):
+                env.pop(key, None)
+            env.update(GITHUB_WORKSPACE=str(root), CARGO_TARGET_DIR=str(root / "target"))
+            native = subprocess.run(["cargo", "check", "--offline", "-vv"], cwd=root,
+                                    env=env, text=True, capture_output=True, timeout=60)
+            self.assertEqual(native.returncode, 0, native.stderr)
+            self.assertIn("HOST_RUSTFLAGS=-C target-cpu=native", native.stderr)
+            portable = subprocess.run(["bash", "-c", command], cwd=root, env=env,
+                                      text=True, capture_output=True, timeout=60)
+            self.assertEqual(portable.returncode, 0, portable.stderr)
+            self.assertIn("HOST_RUSTFLAGS=-C target-cpu=x86-64", portable.stderr)
+            self.assertNotIn("HOST_RUSTFLAGS=-C target-cpu=native", portable.stderr)
 
 
 if __name__ == "__main__":
