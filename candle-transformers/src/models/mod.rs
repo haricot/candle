@@ -73,6 +73,7 @@ pub mod mobileclip;
 pub mod mobilenetv4;
 pub mod mobileone;
 pub mod modernbert;
+pub mod nemotron3_5_asr;
 pub mod moondream;
 pub mod mpt;
 pub mod nomic_bert;
