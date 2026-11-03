@@ -10,7 +10,7 @@ import stat
 
 NAMES = {
     "nemotron_asr_cuda_cli": ("applications", "nemotron_asr"),
-    "pockettts_flowlm_mimi_cuda": ("applications", "pockettts-sm61"),
+    "pockettts_flowlm_mimi_cuda": ("diagnostics", "pockettts-sm61"),
     "asd_module_provider": ("diagnostics", "asd_v3_module_provider_validate"),
     "asd_runtime_profile_swap": ("diagnostics", "asd_v3_phase_d_runtime_profile_swap_validate"),
 }
@@ -66,7 +66,8 @@ def export(bundle, destination, expected):
             prior = next((r for r in records if r["sha256"] == fingerprint), None)
             path = prior["path"] if prior else category + "/" + name
             records.append({"gate":gate,"kind":record["kind"],"path":path,
-                            "sha256":fingerprint,"bytes":binary["bytes"],"source":source})
+                            "sha256":fingerprint,"bytes":binary["bytes"],"source":source,
+                            "argv":record.get("argv",[]),"cwd":record.get("cwd",".")})
     destination.mkdir(parents=True)
     for record in records:
         target = destination / record["path"]
@@ -88,8 +89,9 @@ def export(bundle, destination, expected):
         "# Candle - executables nommes\n\n"
         "Ces fichiers sont copies octet pour octet depuis l'archive CI, sans recompilation.\n\n"
         "- `applications/` : programmes utilisateur. `nemotron_asr` exige ses poids et un WAV; "
-        "`pockettts-sm61` est l'exemple de qualification d'operateurs, pas le moteur PocketTTS C3.\n"
-        "- `diagnostics/` : outils de validation ASD et autres diagnostics.\n"
+        "les dossiers absents ne sont pas produits par cette campagne.\n"
+        "- `diagnostics/` : validation ASD et `pockettts-sm61`, exemple de qualification "
+        "d'operateurs, pas le moteur PocketTTS C3.\n"
         "- `tests/` : executables du harnais de tests Rust, pas des applications de modele.\n"
         "- `index.json` : correspondance complete des gates, fichiers et SHA256; "
         "plusieurs gates peuvent partager le meme executable.\n\n"
