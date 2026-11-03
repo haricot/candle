@@ -19,6 +19,8 @@ jobs:
           toolchain: '1.99.0'
       - name: Check explicit CPU targets and actual release build reuse
         run: python3 -B .github/scripts/candle-build-profile-selftest.py
+      - name: Check readable program export
+        run: python3 -B .github/scripts/candle-export-programs-selftest.py
       - name: Check immutable archive execution contracts
         shell: bash
         run: |

@@ -13,6 +13,8 @@ on:
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/candle-export-programs.py
+      - .github/scripts/candle-export-programs-selftest.py
       - .github/scripts/candle-build-profile-selftest.py
       - .github/scripts/extended-build-once-selftest.py
       - .github/scripts/candle-cpu-cuda-link-stub.py
@@ -213,6 +215,20 @@ jobs:
           name: extended-${{ needs.prepare.outputs.campaign }}-cuda-compile
           path: ${{ runner.temp }}/candle-candidate-cuda/
           if-no-files-found: warn
+          retention-days: 30
+      - name: Export readable release programs and test executables
+        env:
+          EXPECTED_MANIFEST: ${{ steps.build_once.outputs.manifest_sha256 }}
+        run: |
+          python3 .ci-tools/.github/scripts/candle-export-programs.py \
+            --bundle "$RUNNER_TEMP/extended-sm61-build-once" \
+            --expected-sha256 "$EXPECTED_MANIFEST" \
+            --out "$RUNNER_TEMP/candle-extended-programs"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-extended-${{ needs.prepare.outputs.campaign }}-${{ env.CANDLE_CPU_PROFILE }}-programs
+          path: ${{ runner.temp }}/candle-extended-programs/
+          if-no-files-found: error
           retention-days: 30
       - if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

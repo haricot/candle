@@ -1,0 +1,48 @@
+name: Package existing qualified Candle programs without rebuilding
+on:
+  push:
+    branches: [ci/candle-release-profile-extended]
+    paths: [.github/package-existing.once]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - run: python3 -B .github/scripts/candle-export-programs-selftest.py
+      - name: Verify the original ZIP and export exact named executables
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/haricot/candle/actions/runs/41036699911 --jq '.conclusion' | grep -Fx success
+          gh api repos/haricot/candle/actions/artifacts/12970036042/zip > "$RUNNER_TEMP/bundle.zip"
+          echo "6d7539cc3078099d63f4e26228c1c3d636faee9761b7ac09fcd53cf239371b53  $RUNNER_TEMP/bundle.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import os, pathlib, stat, zipfile
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          out=root/'original'; out.mkdir()
+          with zipfile.ZipFile(root/'bundle.zip') as archive:
+              for entry in archive.infolist():
+                  target=(out/entry.filename).resolve()
+                  if not target.is_relative_to(out.resolve()) or stat.S_ISLNK(entry.external_attr>>16):
+                      raise SystemExit('Unsafe archive path')
+              archive.extractall(out)
+          PY
+          python3 .github/scripts/candle-export-programs.py \
+            --bundle "$RUNNER_TEMP/original" \
+            --expected-sha256 "$(cat "$RUNNER_TEMP/original/manifest.sha256")" \
+            --out "$RUNNER_TEMP/readable"
+          cd "$RUNNER_TEMP/readable"
+          sha256sum -c SHA256SUMS
+          cat index.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-extended-41036699911-1-portable-programs
+          path: ${{ runner.temp }}/readable/
+          if-no-files-found: error
+          retention-days: 30
