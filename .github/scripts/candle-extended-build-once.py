@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import stat
@@ -21,9 +22,55 @@ import sys
 SCHEMA = 1
 FEATURE_RE = re.compile(r"^[a-z0-9_-]+$")
 
+CPU_TARGETS = {"portable": "x86-64", "avx2": "x86-64-v3"}
+# Linux names for the x86-64-v2/v3 additions. The kernel advertises AVX only
+# when the OS can preserve its register state; intersect all visible CPUs.
+AVX2_CPU_FLAGS = frozenset((
+    "avx", "avx2", "bmi1", "bmi2", "cx16", "f16c", "fma", "lahf_lm",
+    "lzcnt", "movbe", "popcnt", "sse3", "sse4_1", "sse4_2", "ssse3", "xsave",
+))
+
 
 def fail(message):
     raise RuntimeError("EXTENDED_BUILD_ONCE=FAIL " + message)
+
+
+def cpu_rustflags(profile):
+    if profile not in CPU_TARGETS:
+        fail("unknown CPU profile: " + str(profile))
+    return "-C target-cpu=" + CPU_TARGETS[profile]
+
+
+def check_cpu(profile, cpuinfo=None, machine=None):
+    cpu_rustflags(profile)
+    if (machine or platform.machine()).lower() not in {"x86_64", "amd64"}:
+        fail("CPU profile requires x86-64")
+    if profile == "portable":
+        return
+    if cpuinfo is None:
+        cpuinfo = Path("/proc/cpuinfo").read_text()
+    processors = [set(line.split(":", 1)[1].split()) for line in cpuinfo.splitlines()
+                  if line.split(":", 1)[0].strip() == "flags" and ":" in line]
+    if not processors:
+        fail("cannot establish CPU support for avx2 profile")
+    flags = set.intersection(*processors)
+    for alias, canonical in (("pni", "sse3"), ("abm", "lzcnt"), ("bmi", "bmi1")):
+        if alias in flags:
+            flags.add(canonical)
+    missing = AVX2_CPU_FLAGS - flags
+    if missing:
+        fail("CPU cannot execute avx2 archive; missing " + ",".join(sorted(missing)))
+
+
+def build_rustflags(env):
+    profile = env.get("CANDLE_CPU_PROFILE", "portable")
+    flags = cpu_rustflags(profile)
+    if env.get("CARGO_ENCODED_RUSTFLAGS") or env.get("CARGO_BUILD_RUSTFLAGS"):
+        fail("alternate Cargo rustflags would override the selected CPU profile")
+    if env.get("RUSTFLAGS", "").strip() not in {"", flags}:
+        fail("pre-existing RUSTFLAGS differ from the selected CPU profile")
+    check_cpu(profile)
+    return profile, flags
 
 
 def sha256(path):
@@ -157,10 +204,7 @@ def build(args):
     out.mkdir(parents=True)
     shutil.copyfile(repo / "Cargo.lock", out / "Cargo.lock")
     env = os.environ.copy()
-    flags = env.get("RUSTFLAGS", "")
-    if "target-cpu" in flags or "target-feature" in flags:
-        fail("pre-existing CPU-specific RUSTFLAGS cannot be proven portable")
-    env["RUSTFLAGS"] = (flags + " -C target-cpu=x86-64").strip()
+    cpu_profile, env["RUSTFLAGS"] = build_rustflags(env)
     env["CARGO_INCREMENTAL"] = "0"
     # Hosted runners have substantially less RAM than the developer's Pascal
     # machine. Bound linker/NVCC fan-out to avoid OOM during release archives.
@@ -287,6 +331,7 @@ def build(args):
         "source_manifest_sha256": sha256(source),
         "cuda_features": core,
         "rustflags": env["RUSTFLAGS"],
+        "cpu_profile": cpu_profile,
         "environment": environment(repo),
         "gates": gates,
     }
@@ -340,8 +385,14 @@ def load_bundle(repo, root):
         fail("source manifest mismatch")
     if manifest.get("cuda_features") != core:
         fail("CUDA feature set mismatch")
-    if "target-cpu=x86-64" not in manifest.get("rustflags", ""):
-        fail("archive is not explicitly portable")
+    # Old archives are portable. Never accept v3/v4 or extra target features
+    # merely because their flags contain the substring target-cpu=x86-64.
+    cpu_profile = manifest.get("cpu_profile", "portable")
+    if manifest.get("rustflags") != cpu_rustflags(cpu_profile):
+        fail("archive CPU profile/flags mismatch")
+    if os.environ.get("CANDLE_CPU_PROFILE", cpu_profile) != cpu_profile:
+        fail("archive CPU profile differs from the requested profile")
+    check_cpu(cpu_profile)
     if os.environ.get("CANDLE_BUILD_ONCE_EXECUTOR") == "physical-sm61":
         built = manifest.get("environment", {})
         image = os.environ.get("CANDLE_CUDA_IMAGE", "")
@@ -512,6 +563,9 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     build_parser = sub.add_parser("build")
     build_parser.add_argument("--out", required=True)
+    cpu_parser = sub.add_parser("cpu-rustflags")
+    cpu_parser.add_argument("--profile", choices=tuple(CPU_TARGETS),
+                            default=os.environ.get("CANDLE_CPU_PROFILE", "portable"))
     for name in ("verify", "run-gate", "cpu-qualify"):
         p = sub.add_parser(name)
         p.add_argument("--bundle", required=True)
@@ -519,7 +573,13 @@ def main():
         if name == "run-gate":
             p.add_argument("--name", required=True)
     args = parser.parse_args()
-    if args.action == "build":
+    if args.action == "cpu-rustflags":
+        # This runs before Cargo, including its cached build-script programs.
+        check_cpu(args.profile)
+        if os.environ.get("CARGO_ENCODED_RUSTFLAGS") or os.environ.get("CARGO_BUILD_RUSTFLAGS"):
+            fail("alternate Cargo rustflags would override the selected CPU profile")
+        print(cpu_rustflags(args.profile))
+    elif args.action == "build":
         build(args)
     else:
         if args.action in ("run-gate", "cpu-qualify") and not args.report:
