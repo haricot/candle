@@ -1,0 +1,28 @@
+name: EmbeddingGemma 2 CPU Rust
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - embeddinggemma2
+    paths:
+      - "candle-transformers/src/models/embedding_gemma2.rs"
+      - "candle-transformers/src/models/mod.rs"
+      - "candle-examples/examples/embedding-gemma2/**"
+      - ".github/workflows/embeddinggemma2-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check native Candle encoder
+        run: cargo check -p candle-transformers --lib
+      - name: Check Rust CLI
+        run: cargo check -p candle-examples --example embedding-gemma2
+      - name: Test model configuration
+        run: cargo test -p candle-transformers embedding_gemma2::tests::parses_real_google_layer_shapes --lib
