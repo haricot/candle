@@ -1,4 +1,4 @@
-name: Launch complete Candle AVX2 current campaigns
+name: Launch complete Candle Extended after hosted disk cleanup
 on:
   push:
     branches: [ci/launch-candle-avx2-20261103]
@@ -24,7 +24,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          targets=json.loads("[{\"ref\":\"orch/extended-v1\",\"sha\":\"c9c341742ee7cb21ffc70bb1a77daee50c90e7e7\",\"workflow\":\"candle-extended-composite.yml\",\"kind\":\"extended\"},{\"ref\":\"orch/legacy-cuda-v1\",\"sha\":\"58a086620cdf98e84d8fb6787d1938812bdab5a4\",\"workflow\":\"candle-legacy-cuda.yml\",\"kind\":\"legacy\"}]")
+          targets=json.loads("[{\"ref\":\"orch/extended-v1\",\"sha\":\"53977e176cd918561d60ea2c8251a0e87dd55400\",\"workflow\":\"candle-extended-composite.yml\",\"kind\":\"extended\"}]")
           repository="haricot/candle"
           def api(path):
               return json.loads(subprocess.check_output(["gh","api","repos/"+repository+"/"+path],text=True))
@@ -47,7 +47,7 @@ jobs:
                   if not all_preparations_failed:
                       print("ALREADY_DISPATCHED="+str(matches[0]["id"]),flush=True)
                       continue
-              campaign=target["kind"]+"-avx2-"+os.environ["GITHUB_RUN_ID"]
+              campaign=target["kind"]+"-avx2-disk-"+os.environ["GITHUB_RUN_ID"]
               inputs={"campaign":campaign,"base_sha":"cfcbd7186d13271843ce7eb41d25659bd0835850","publish":"true","cpu_profile":"avx2"}
               if target["kind"]=="extended":
                   inputs["half_duplex_profile"]="auto"
