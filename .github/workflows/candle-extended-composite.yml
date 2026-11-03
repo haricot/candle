@@ -24,6 +24,8 @@ on:
       - .github/container/cuda-image.json
       - .github/workflows/candle-cuda-ci-image.yml
       - .github/scripts/ci-cuda-image.py
+      - .github/scripts/free-hosted-disk.sh
+      - .github/scripts/free-hosted-disk-selftest.py
       - .github/scripts/candle-promote-validated.sh
       - .github/scripts/candle-resolve-bf16-fp8.sh
       - .github/scripts/candle-resolve-bf16-fp8-fp4.sh
@@ -161,6 +163,10 @@ jobs:
           restore-keys: |
             candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-${{ needs.prepare.outputs.base_sha }}-
             candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-
+      - name: Free unused hosted SDKs before extracting CUDA
+        env:
+          HARICOT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash .ci-tools/.github/scripts/free-hosted-disk.sh
       - name: Pull the verified immutable CUDA environment
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -253,6 +259,10 @@ jobs:
         with:
           name: extended-${{ needs.prepare.outputs.campaign }}-build-once
           path: ${{ runner.temp }}/extended-sm61-build-once
+      - name: Free unused hosted SDKs before extracting CUDA
+        env:
+          HARICOT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash .ci-tools/.github/scripts/free-hosted-disk.sh
       - name: Pull the verified immutable CUDA environment
         env:
           GHCR_TOKEN: ${{ github.token }}
