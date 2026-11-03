@@ -238,6 +238,7 @@ jobs:
             --env RUSTUP_HOME=/opt/rustup \
             --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL --env CANDLE_BUILD_SOURCE --env CANDLE_CUDA_IMAGE --env CANDLE_CPU_PROFILE \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
+            --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
             --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
             --env CHECK_CAMPAIGN --env LOCK_SHA256 \
             "$CANDLE_CUDA_IMAGE" \
