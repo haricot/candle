@@ -357,7 +357,8 @@ class HostedPortabilityTests(unittest.TestCase):
             body = argv[-1]
             self.assertIn("cargo generate-lockfile", body)
             self.assertIn("export LOCK_SHA256", body)
-            self.assertIn('RUSTFLAGS="-C target-cpu=x86-64" bash ', body)
+            self.assertIn('cpu-rustflags)', body)
+            self.assertIn('export RUSTFLAGS CANDLE_CUDA_BUILD_PROFILE=release', body)
             self.assertIn('candle-extended-build-once.py"', body)
             self.assertIn('build --out "$RUNNER_TEMP/extended-sm61-build-once"', body)
             self.assertEqual((root / "output").read_text(),
@@ -366,9 +367,9 @@ class HostedPortabilityTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("cargo"), "real Cargo cache portability regression")
     def test_precheck_rebuilds_native_cached_build_scripts_for_portable_x86_64(self):
         workflow = (HERE.parent / "workflows/candle-extended-composite.yml").read_text()
-        command = next(line.strip() for line in workflow.splitlines()
-                       if line.strip().startswith("RUSTFLAGS=") and
-                       "candle-candidate-cuda-compile.sh" in line)
+        command = "\n".join(line.strip() for line in workflow.splitlines()
+                            if line.strip().startswith(("RUSTFLAGS=", "export RUSTFLAGS"))
+                            or line.strip().startswith('bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"'))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "src").mkdir()
@@ -383,6 +384,7 @@ class HostedPortabilityTests(unittest.TestCase):
                 'std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap().replace("\\u{1f}", " ")); }\n')
             tools = root / ".ci-tools/.github/scripts"
             tools.mkdir(parents=True)
+            shutil.copy2(HERE / "candle-extended-build-once.py", tools / "candle-extended-build-once.py")
             (tools / "candle-candidate-cuda-compile.sh").write_text(
                 "#!/bin/bash\nset -euo pipefail\nexec cargo check --offline -vv\n")
             env = os.environ.copy()

@@ -2,6 +2,15 @@
 set -uo pipefail
 report="$RUNNER_TEMP/candle-candidate-cuda"
 mkdir -p "$report"
+# The integrated precheck and executable producer share one release target
+# directory. Other callers retain their existing profile unless they opt in.
+profile_args=()
+profile_dir=debug
+case "${CANDLE_CUDA_BUILD_PROFILE:-dev}" in
+  dev) ;;
+  release) profile_args=(--release); profile_dir=release ;;
+  *) echo "::error::Unsupported CUDA build profile"; exit 2 ;;
+esac
 # Hosted CUDA containers run as root over a runner-owned workspace.
 # The checkout action's host safe.directory setting does not cross
 # the container HOME boundary; configure it before reading HEAD.
@@ -60,10 +69,11 @@ fi
   rustc --version
   echo "rustflags: ${RUSTFLAGS:-workspace-default}"
   echo "target: sm_61"
+  echo "cargo_profile: ${CANDLE_CUDA_BUILD_PROFILE:-dev}"
   echo "features: $features"
 } > "$report/environment.txt"
 build_rc=0
-cargo check -p candle-core -p candle-nn --lib --tests \
+cargo check "${profile_args[@]}" -p candle-core -p candle-nn --lib --tests \
   --no-default-features --features "$features" --locked \
   > "$report/cuda-check.log" 2>&1 || build_rc=$?
 if ((build_rc != 0)); then
@@ -78,7 +88,7 @@ if [[ "$CHECK_BRANCH" == extended_integration && "$build_rc" -eq 0 ]]; then
       (index("fp8_candle") != null) and (index("fp4_candle") != null)' "$manifest" >/dev/null; then
     qwen3_features=cuda,cuda-legacy-bf16,cuda-legacy-fp8,cuda-legacy-fp4
   fi
-  cargo check -p candle-examples --example quantized-qwen3 --features "$qwen3_features" --locked \
+  cargo check "${profile_args[@]}" -p candle-examples --example quantized-qwen3 --features "$qwen3_features" --locked \
     > "$report/qwen3-cuda-check.log" 2>&1 || qwen3_rc=$?
   if ((qwen3_rc != 0)); then
     echo "::error::Extended downstream quantized-qwen3 CUDA compile failed"
@@ -91,7 +101,7 @@ fi
 
 if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) && "$build_rc" -eq 0 ]]; then
   cuda_tests_rc=0
-  cargo check -p candle-core --features cuda --tests --locked \
+  cargo check "${profile_args[@]}" -p candle-core --features cuda --tests --locked \
     > "$report/cuda-tests-default.log" 2>&1 || cuda_tests_rc=$?
   if ((cuda_tests_rc != 0)); then
     echo "::error::Integrated candle-core CUDA --tests check failed"
@@ -101,7 +111,7 @@ if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == lega
 fi
 if [[ ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) && "$HAS_FP4" == true && "$build_rc" -eq 0 ]]; then
   fp4_tests_rc=0
-  cargo check -p candle-core --features "cuda cuda-legacy-fp4" --tests --locked \
+  cargo check "${profile_args[@]}" -p candle-core --features "cuda cuda-legacy-fp4" --tests --locked \
     > "$report/cuda-tests-legacy-fp4.log" 2>&1 || fp4_tests_rc=$?
   if ((fp4_tests_rc != 0)); then
     echo "::error::Integrated candle-core CUDA+legacy-FP4 --tests check failed"
@@ -116,7 +126,7 @@ fi
 if [[ "$CHECK_BRANCH" == extended_integration && "$build_rc" -eq 0 ]] &&
    jq -e '.features | any(.feature == "pockettts_sm61_standalone")' "$manifest" >/dev/null; then
   pockettts_rc=0
-  cargo check -p candle-examples --example pockettts-sm61 --features cuda --locked \
+  cargo check "${profile_args[@]}" -p candle-examples --example pockettts-sm61 --features cuda --locked \
     > "$report/pockettts-cuda-check.log" 2>&1 || pockettts_rc=$?
   if ((pockettts_rc != 0)); then
     echo "::error::PocketTTS FlowLM/Mimi CUDA example fails hosted compilation"
@@ -132,7 +142,7 @@ fi
 # before any physical GPU testing; failing this extra gate fails Candidate CI.
 if [[ "${CANDIDATE_REF:-}" == fp4_candle_standalone && "$build_rc" -eq 0 ]]; then
   fp4_rc=0
-  cargo check -p candle-core -p candle-nn --lib --tests --locked \
+  cargo check "${profile_args[@]}" -p candle-core -p candle-nn --lib --tests --locked \
     --no-default-features \
     --features "candle-core/cuda-legacy-fp4,candle-nn/cuda" \
     > "$report/fp4-legacy-optin-check.log" 2>&1 || fp4_rc=$?
@@ -151,7 +161,7 @@ fi
 # test with BOTH candle-nn features before assigning a physical GPU job.
 if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_runner_v2 || ( "$CHECK_BRANCH" == standalone_six_integration || "$CHECK_BRANCH" == legacy_cuda_integration || "$CHECK_BRANCH" == extended_integration ) ) && "$HAS_MOE" == true && "$build_rc" -eq 0 ]]; then
   moe_test_rc=0
-  cargo check -p candle-nn --locked --no-default-features \
+  cargo check "${profile_args[@]}" -p candle-nn --locked --no-default-features \
     --features "cuda cudnn" --test moe_simt_sm61 \
     > "$report/moe-test-compile.log" 2>&1 || moe_test_rc=$?
   if ((moe_test_rc != 0)); then
@@ -167,7 +177,7 @@ if [[ ( "$CHECK_BRANCH" == moe_simt_f16_candle || "$CHECK_BRANCH" == cuda_asd_ru
   # cargo check cannot prove static-library linkability. For Pascal,
   # the SIMT translation unit must define both the real SIMT entry
   # and the WMMA compatibility ABI stub omitted with WMMA objects.
-  archive="$(find target/debug/build -path '*/out/libmoe.a' -type f | sort | head -n 1)"
+  archive="$(find "${CARGO_TARGET_DIR:-target}/$profile_dir/build" -path '*/out/libmoe.a' -type f | sort | head -n 1)"
   if [[ -z "$archive" ]]; then
     echo "ERROR: libmoe.a absent after CUDA compilation" > "$report/moe-symbols.log"
     build_rc=1

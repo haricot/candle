@@ -13,6 +13,7 @@ on:
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/candle-build-profile-selftest.py
       - .github/scripts/extended-build-once-selftest.py
       - .github/scripts/candle-cpu-cuda-link-stub.py
       - .github/scripts/candle-cpu-cuda-link-stub-selftest.py
@@ -43,6 +44,12 @@ on:
         type: boolean
         required: true
         default: true
+      cpu_profile:
+        description: 'Rust CPU target: portable x86-64 or AVX2/FMA x86-64-v3'
+        type: choice
+        required: true
+        default: portable
+        options: [portable, avx2]
       half_duplex_profile:
         description: 'Half Duplex: auto selects 4 clips, or 42 when native engine/kernel sources changed; audit adds FP64'
         type: choice
@@ -57,6 +64,7 @@ permissions:
 concurrency:
   group: candle-extended-${{ github.event_name == 'push' && github.sha || inputs.campaign }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   cuda_image:
@@ -86,6 +94,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify release CPU target contracts
+        run: python3 -B .github/scripts/candle-build-profile-selftest.py
       - name: Validate dynamic source contract before assembly
         run: bash .github/scripts/extended-dynamic-selftest.sh
       - name: Validate hosted executable archive and replay contracts
@@ -126,6 +136,7 @@ jobs:
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
       CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
+      CANDLE_CPU_PROFILE: ${{ inputs.cpu_profile || 'portable' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -142,10 +153,10 @@ jobs:
           path: |
             ${{ runner.temp }}/cuda-cargo
             target
-          key: candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ needs.prepare.outputs.base_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-${{ needs.prepare.outputs.base_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ needs.prepare.outputs.base_sha }}-
-            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-
+            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-${{ needs.prepare.outputs.base_sha }}-
+            candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-
       - name: Pull the verified immutable CUDA environment
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -164,7 +175,7 @@ jobs:
             --env "HOME=$RUNNER_TEMP/cuda-home" \
             --env "CARGO_HOME=$RUNNER_TEMP/cuda-cargo" \
             --env RUSTUP_HOME=/opt/rustup \
-            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL --env CANDLE_CUDA_IMAGE \
+            --env CUDA_COMPUTE_CAP --env CARGO_INCREMENTAL --env CANDLE_CUDA_IMAGE --env CANDLE_CPU_PROFILE \
             --env GITHUB_WORKSPACE --env RUNNER_TEMP --env GITHUB_STEP_SUMMARY \
             --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
             --env CANDIDATE_SHA --env CANDIDATE_REF --env CHECK_BRANCH \
@@ -179,9 +190,11 @@ jobs:
               cp Cargo.lock "$RUNNER_TEMP/candidate-cpu-proof/Cargo.lock"
               LOCK_SHA256="$(sha256sum Cargo.lock | cut -d" " -f1)"
               export LOCK_SHA256
-              # Cached build scripts must run on every hosted x86-64 CPU.
+              # One explicit CPU/profile selection for the precheck and binaries.
               # Override target-cpu=native from the candidate workspace too.
-              RUSTFLAGS="-C target-cpu=x86-64" bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
+              RUSTFLAGS="$(python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" cpu-rustflags)"
+              export RUSTFLAGS CANDLE_CUDA_BUILD_PROFILE=release
+              bash "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-candidate-cuda-compile.sh"
               python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
                 build --out "$RUNNER_TEMP/extended-sm61-build-once"
             '
