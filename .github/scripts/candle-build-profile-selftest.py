@@ -102,6 +102,7 @@ class CpuProfileTests(unittest.TestCase):
             (root / ".cargo/config.toml").write_text('[build]\nrustflags=["-C","target-cpu=native"]\n')
             (root / "build.rs").write_text('''use std::{env,fs,path::PathBuf};
 fn main() {
+ println!("cargo:rerun-if-changed=build.rs");
  let p=PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("build-count");
  let n=fs::read_to_string(&p).unwrap_or("0".into()).parse::<u32>().unwrap();
  fs::write(p,(n+1).to_string()).unwrap();
