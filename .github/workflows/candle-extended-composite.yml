@@ -13,6 +13,8 @@ on:
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/candle-resolve-legacy-main.py
+      - .github/scripts/legacy-main-selftest.py
       - .github/scripts/candle-build-profile-selftest.py
       - .github/scripts/extended-build-once-selftest.py
       - .github/scripts/candle-cpu-cuda-link-stub.py
@@ -94,6 +96,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Reproduce and verify the reviewed upstream Legacy conflict resolution
+        run: python3 -B .github/scripts/legacy-main-selftest.py
       - name: Verify release CPU target contracts
         run: python3 -B .github/scripts/candle-build-profile-selftest.py
       - name: Validate dynamic source contract before assembly

@@ -94,10 +94,14 @@ for feature in "${features[@]}"; do
     git worktree add --detach "$work" "$base" > "$report/logs/$feature-worktree.log" 2>&1
     git -C "$work" config rerere.enabled false
     if ! git -C "$work" apply --3way --index "$source_patch" > "$report/logs/$feature-update.log" 2>&1; then
+      if python3 .github/scripts/candle-resolve-legacy-main.py resolve "$work" "$base" "$sha" "$source_patch"; then
+        echo "Replayed exact reviewed Legacy/Zip 9.1.3 migration" >> "$report/logs/$feature-update.log"
+      else
       git -C "$work" ls-files -u > "$report/conflicts/$feature-index.txt"
       git -C "$work" diff --name-only --diff-filter=U > "$report/conflicts/$feature-files.txt"
       git -C "$work" status --short > "$report/conflicts/$feature-status.txt"
       echo "::error::Exact feature delta conflicts with main for $feature"; exit 1
+      fi
     fi
     git -C "$work" diff --cached --check
     git -C "$work" diff --cached --quiet && {
@@ -118,8 +122,12 @@ for feature in "${features[@]}"; do
   git diff --binary --full-index "$base" "${prepared[$feature]}" > "$prepared_patch"
   prepared_patch_sha="$(sha256sum "$prepared_patch" | cut -d' ' -f1)"
   if [[ "$STRATEGY" == exact-delta ]] && ! cmp -s "$source_patch" "$prepared_patch"; then
+    if python3 .github/scripts/candle-resolve-legacy-main.py verify "$work" "$base" "$sha" "$source_patch"; then
+      echo "Reviewed migration preserves the exact source implementation and current upstream Zip API"
+    else
     diff -u "$source_patch" "$prepared_patch" > "$report/diffs/$feature-delta-mismatch.diff" || :
     echo "::error::Prepared $feature changed its exact standalone delta"; exit 3
+    fi
   fi
 
   jq -cn --arg feature "$feature"     --arg source_ref "${source_ref[$feature]}"     --arg target_ref "${target_ref[$feature]}"     --arg source_sha "$sha"     --arg review_source_sha "${review[$feature]}"     --arg prepared_sha "${prepared[$feature]}"     --arg preparation_ref "prepare/extended/$CAMPAIGN/$feature"     --arg common_base_sha "$common"     --arg source_patch_sha256 "$source_patch_sha"     --arg prepared_patch_sha256 "$prepared_patch_sha"     --argjson cuda_features "$(jq -c --arg f "$feature" '.features[] | select(.feature == $f) | .cuda_features' "$cfg")" \

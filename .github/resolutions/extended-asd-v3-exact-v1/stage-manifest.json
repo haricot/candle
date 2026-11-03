@@ -19,9 +19,9 @@
       "theirs": "39e16337c10111e55f8ca2ca2f8a5ef41a4eeb99"
     },
     "candle-kernels/Cargo.toml": {
-      "base": "d59f9ee086139937cae9783bd08ff0642489c761",
-      "ours": "b554c414e15a7ada3e9cf19942bf98e13c7a6248",
-      "theirs": "688a72492d6e5d654e56ac4cc591eab593698d0a"
+      "base": "3c7ecba4ae7658f2e7e1c05ce528d742d7d0de30",
+      "ours": "5af5c01f696ef02fa7bab89b7bda7dd11a2599a9",
+      "theirs": "8d4f4040299832e42287580752b30b5d34f622ae"
     },
     "candle-kernels/build.rs": {
       "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
@@ -32,5 +32,6 @@
   "historical_legacy_run": 37763913481,
   "historical_legacy_candidate": "0ed8cbe7622218ae1ce71d212fb5607186a1a0d0",
   "physical_validation": "PENDING for changed closure candidate",
-  "review_note": "Preserve reviewed ASD V3 / cuDNN fallback composition; transplant only exact current Legacy delta (BF16 FP32 matmul, FP4 test dependency and feature comments)."
+  "review_note": "Preserve reviewed ASD V3 / cuDNN fallback composition; transplant only exact current Legacy delta (BF16 FP32 matmul, FP4 test dependency and feature comments).",
+  "upstream_main": "cfcbd7186d13271843ce7eb41d25659bd0835850"
 }

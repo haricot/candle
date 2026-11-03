@@ -12,5 +12,6 @@
       "theirs": "c3a6e15fdec835b1e984993a86b396a5de9f083d"
     }
   },
-  "review_note": "exact-delta preparation restores clean main as the merge base; reviewed ours/theirs/postimage unchanged"
+  "review_note": "exact-delta preparation restores clean main as the merge base; reviewed ours/theirs/postimage unchanged",
+  "upstream_main": "cfcbd7186d13271843ce7eb41d25659bd0835850"
 }

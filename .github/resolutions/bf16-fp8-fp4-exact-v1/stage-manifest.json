@@ -10,14 +10,14 @@
       "theirs": "2982475149d60eb9c74e4bc20f4ebf861cd68ee1"
     },
     "candle-core/src/quantized/mod.rs": {
-      "base": "38e923c83869aaf3957f8b4d20ee4c051b46d6f3",
-      "ours": "81e6e8c8b22a04cad6b5a39a7c23d743b4fd8893",
-      "theirs": "b8f3882ec7c8a1026637bc472bee468fed4eb00f"
+      "base": "378cd906fdfd9e2677bc95ab534aaa2717fa3d1c",
+      "ours": "28ae28393e229ad3a4cf32179e01c287ce174217",
+      "theirs": "d0a68747e462d991acd5a3a2132659833ecff238"
     },
     "candle-kernels/Cargo.toml": {
-      "base": "d59f9ee086139937cae9783bd08ff0642489c761",
-      "ours": "9b441c0ab590d67df98a0f40830b422d0ded7d8f",
-      "theirs": "dbe076c4ac7da766985b6cb06137ba03c8ab97c8"
+      "base": "3c7ecba4ae7658f2e7e1c05ce528d742d7d0de30",
+      "ours": "d48ac67a9db477b05b5f8308d885ecc3728a16f9",
+      "theirs": "a2c6ca15f0f11d502c647baa3a0236aa4ae60914"
     },
     "candle-kernels/build.rs": {
       "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
@@ -30,5 +30,6 @@
       "theirs": "beac43f27c3eafd8b62e0d50417f507bf6d02c7a"
     }
   },
-  "review_note": "Closure 2026-10-16: preserve both FP8 R4D and FP4 source-owned modules and kernels, plus FP4 serde_json tests; exact three-stage inputs only."
+  "review_note": "Closure 2026-10-16: preserve both FP8 R4D and FP4 source-owned modules and kernels, plus FP4 serde_json tests; exact three-stage inputs only.",
+  "upstream_main": "cfcbd7186d13271843ce7eb41d25659bd0835850"
 }

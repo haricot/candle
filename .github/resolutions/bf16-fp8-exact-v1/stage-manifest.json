@@ -9,9 +9,9 @@
       "theirs": "ab77fe13389b710a3e6dea82ba398a846565e620"
     },
     "candle-kernels/Cargo.toml": {
-      "base": "d59f9ee086139937cae9783bd08ff0642489c761",
-      "ours": "4132dfa48541cf3505c16a3ea233c355f0addd44",
-      "theirs": "9515b520d6bdfd650b6543c1ae4a2589c3319274"
+      "base": "3c7ecba4ae7658f2e7e1c05ce528d742d7d0de30",
+      "ours": "642f1a8dbca3ce92e7ca721be67297c4a0ca37fd",
+      "theirs": "6ac3e2f018479f3565290ba804bb147b174369fe"
     },
     "candle-kernels/build.rs": {
       "base": "4710adedd0e01b0c13c06d7f71a727fdf1fc8243",
@@ -23,5 +23,6 @@
       "ours": "0d1f01a11822ce5ff5fbccf8525e00484c739671",
       "theirs": "51a33cce5fb9ef54d4e0e71bfab9be073b3b5093"
     }
-  }
+  },
+  "upstream_main": "cfcbd7186d13271843ce7eb41d25659bd0835850"
 }
