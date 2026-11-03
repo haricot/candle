@@ -1,0 +1,23 @@
+name: TranscribePsy standalone model contracts
+
+on:
+  push:
+    branches:
+      - TranscribePsy
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-model-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - name: Test native QVAC predictor and TDT policies
+        run: |
+          cargo test -p candle-transformers --lib transcribepsy
