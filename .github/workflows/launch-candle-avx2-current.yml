@@ -24,7 +24,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          targets=json.loads("[{\"ref\":\"orch/extended-v1\",\"sha\":\"8951bfc170b5b433b60ecbaf676a3708a1d553dc\",\"workflow\":\"candle-extended-composite.yml\",\"kind\":\"extended\"},{\"ref\":\"orch/legacy-cuda-v1\",\"sha\":\"290d5234a969acf658f4deeb04b6054e5e65e8c2\",\"workflow\":\"candle-legacy-cuda.yml\",\"kind\":\"legacy\"}]")
+          targets=json.loads("[{\"ref\":\"orch/extended-v1\",\"sha\":\"c9c341742ee7cb21ffc70bb1a77daee50c90e7e7\",\"workflow\":\"candle-extended-composite.yml\",\"kind\":\"extended\"},{\"ref\":\"orch/legacy-cuda-v1\",\"sha\":\"58a086620cdf98e84d8fb6787d1938812bdab5a4\",\"workflow\":\"candle-legacy-cuda.yml\",\"kind\":\"legacy\"}]")
           repository="haricot/candle"
           def api(path):
               return json.loads(subprocess.check_output(["gh","api","repos/"+repository+"/"+path],text=True))
