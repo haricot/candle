@@ -2,9 +2,15 @@
 """Reproduce the actual upstream conflict and reject modified inputs/outputs."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+
+# The prepare job executes this before the assembler configures Git identity.
+# Keep test identities scoped to this Python process and its child commands.
+os.environ.update(GIT_AUTHOR_NAME="Candle CI regression", GIT_AUTHOR_EMAIL="ci@example.invalid",
+                  GIT_COMMITTER_NAME="Candle CI regression", GIT_COMMITTER_EMAIL="ci@example.invalid")
 
 here = Path(__file__).resolve().parent
 loader = importlib.util.spec_from_file_location("resolver", here / "candle-resolve-legacy-main.py")
