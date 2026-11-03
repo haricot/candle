@@ -24,10 +24,13 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          targets=json.loads("[{\"ref\":\"orch/extended-v1\",\"sha\":\"16d80c4017cf4e13721fceff51d682c75766b01b\",\"workflow\":\"candle-extended-composite.yml\",\"kind\":\"extended\"},{\"ref\":\"orch/legacy-cuda-v1\",\"sha\":\"3b20e5b397ade6f8595156d38e961d4cd86ac2e3\",\"workflow\":\"candle-legacy-cuda.yml\",\"kind\":\"legacy\"}]")
+          targets=json.loads("[{\"ref\":\"orch/extended-v1\",\"sha\":\"8951bfc170b5b433b60ecbaf676a3708a1d553dc\",\"workflow\":\"candle-extended-composite.yml\",\"kind\":\"extended\"},{\"ref\":\"orch/legacy-cuda-v1\",\"sha\":\"290d5234a969acf658f4deeb04b6054e5e65e8c2\",\"workflow\":\"candle-legacy-cuda.yml\",\"kind\":\"legacy\"}]")
           repository="haricot/candle"
           def api(path):
               return json.loads(subprocess.check_output(["gh","api","repos/"+repository+"/"+path],text=True))
+          base=api("git/ref/heads/main")["object"]["sha"]
+          if base!="cfcbd7186d13271843ce7eb41d25659bd0835850":
+              raise SystemExit("Main moved outside the reviewed compatibility migration")
           for target in targets:
               actual=api("branches/"+target["ref"])
               if actual["commit"]["sha"]!=target["sha"]:
@@ -45,10 +48,10 @@ jobs:
                       print("ALREADY_DISPATCHED="+str(matches[0]["id"]),flush=True)
                       continue
               campaign=target["kind"]+"-avx2-"+os.environ["GITHUB_RUN_ID"]
-              inputs={"campaign":campaign,"base_sha":"c68b24997319b8d76e5a4e775dab197c7f26322a","publish":"true","cpu_profile":"avx2"}
+              inputs={"campaign":campaign,"base_sha":"cfcbd7186d13271843ce7eb41d25659bd0835850","publish":"true","cpu_profile":"avx2"}
               if target["kind"]=="extended":
                   inputs["half_duplex_profile"]="auto"
               payload={"ref":target["ref"],"inputs":inputs}
               subprocess.run(["gh","api","--method","POST","repos/"+repository+"/actions/workflows/"+target["workflow"]+"/dispatches","--input","-"],input=json.dumps(payload),text=True,check=True)
-              print("CANDLE_COMPLETE_DISPATCH="+target["kind"]+" candidate_recipe="+target["sha"]+" campaign="+campaign+" cpu_profile=avx2 base=c68b24997319b8d76e5a4e775dab197c7f26322a",flush=True)
+              print("CANDLE_COMPLETE_DISPATCH="+target["kind"]+" candidate_recipe="+target["sha"]+" campaign="+campaign+" cpu_profile=avx2 base=cfcbd7186d13271843ce7eb41d25659bd0835850",flush=True)
           PY
