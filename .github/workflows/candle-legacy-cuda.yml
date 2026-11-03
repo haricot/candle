@@ -12,6 +12,8 @@ on:
       - .github/scripts/candle-legacy-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh
       - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/candle-resolve-legacy-main.py
+      - .github/scripts/legacy-main-selftest.py
       - .github/scripts/candle-build-profile-selftest.py
       - .github/container/cuda-image.json
       - .github/workflows/candle-cuda-ci-image.yml
@@ -77,6 +79,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Reproduce and verify the reviewed upstream Legacy conflict resolution
+        run: python3 -B .github/scripts/legacy-main-selftest.py
       - name: Verify release CPU target contracts
         run: python3 -B .github/scripts/candle-build-profile-selftest.py
       - name: Verify hosted Legacy archive coverage before assembly

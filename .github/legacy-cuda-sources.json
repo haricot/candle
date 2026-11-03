@@ -73,6 +73,7 @@
     "force_with_lease": true,
     "promotion_after_physical_sm61": true
   },
-  "preparation_invariant": "diff(common_base, source) must equal diff(main, prepared) byte-for-byte; otherwise fail closed",
-  "promotion_target": "cuda_legacy"
+  "preparation_invariant": "Exact standalone delta except reviewed current-main Zip 9.1.3 compatibility; exact source patch SHA256, conflict blobs and entire prepared Git tree are required.",
+  "promotion_target": "cuda_legacy",
+  "reviewed_main_compatibility": ".github/resolutions/legacy-main-zip913-v1/manifest.json"
 }
