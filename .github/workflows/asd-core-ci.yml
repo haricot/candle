@@ -1,0 +1,76 @@
+name: ASD Core standalone validation
+on:
+  push:
+    branches:
+      - asd_core_v3_standalone
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grouped-cpu:
+    name: Grouped convolution CPU baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Enforce ASD source ownership
+        shell: bash
+        run: |
+          set -o pipefail
+          if find candle-kernels/src -type f -path '*/sm*_exact_grouped/*.cu' -print -quit | grep -q .; then
+            echo "architecture-specific ASD CUDA source must live outside Candle" >&2
+            exit 1
+          fi
+          if find tools -maxdepth 1 -type f -name 'asd-sm*-install.sh' -print -quit | grep -q .; then
+            echo "architecture-specific ASD artifact installers must live outside Candle" >&2
+            exit 1
+          fi
+          if grep -R -n -E 'sm61_exact_grouped_scope|CANDLE_SM61_EXACT_GROUPED_EVIDENCE_GPU_UUID' candle-kernels; then
+            echo "obsolete Candle-owned ASD source-provenance hook detected" >&2
+            exit 1
+          fi
+          if [[ -e candle-kernels/asd_exact_build_adapter_v2.rs || -e candle-kernels/asd_exact_v2_dispatch_template.rs ]]; then
+            echo "obsolete embedded Exact Profile generators must not return" >&2
+            exit 1
+          fi
+      - name: Check format
+        shell: bash
+        run: |
+          if cargo fmt --all -- --check; then
+            echo "ASD_FMT_CHECK=PASS"
+          else
+            echo "::warning::Rustfmt differences are advisory for standalone ASD validation"
+            echo "ASD_FMT_CHECK=ADVISORY_DIFF"
+          fi
+      - name: Check core and neural-network layers without CUDA
+        run: cargo check -p candle-core -p candle-nn --no-default-features
+      - name: Check downstream candle-transformers closure
+        run: cargo check -p candle-transformers --lib
+      - name: Test grouped convolutions and transpose on CPU
+        run: |
+          cargo test -p candle-core --no-default-features \
+            --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests
+      - name: Test candle-nn library on CPU
+        run: cargo test -p candle-nn --no-default-features --lib
+
+  metal-compile:
+    name: Metal smoke compile
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - name: Check grouped Metal targets
+        run: cargo check -p candle-core -p candle-nn --features metal
