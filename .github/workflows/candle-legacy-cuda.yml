@@ -12,6 +12,8 @@ on:
       - .github/scripts/candle-legacy-sm61.sh
       - .github/scripts/candle-candidate-cuda-compile.sh
       - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/free-hosted-disk.sh
+      - .github/scripts/free-hosted-disk-selftest.py
       - .github/scripts/candle-resolve-legacy-main.py
       - .github/scripts/legacy-main-selftest.py
       - .github/scripts/candle-build-profile-selftest.py
@@ -220,6 +222,10 @@ jobs:
           restore-keys: |
             candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-${{ needs.prepare.outputs.base_sha }}-
             candle-sm61-${{ needs.cuda_image.outputs.environment_key }}-${{ env.CANDLE_CPU_PROFILE }}-
+      - name: Free unused hosted SDKs before extracting CUDA
+        env:
+          HARICOT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash .ci-tools/.github/scripts/free-hosted-disk.sh
       - name: Pull the verified immutable CUDA environment
         env:
           GHCR_TOKEN: ${{ github.token }}
