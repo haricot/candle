@@ -96,6 +96,8 @@ snac = ["cpal", "symphonia", "rubato"]
 depth_anything_v2 = ["palette", "enterpolation"]
 tekken = ["tekken-rs"]
 buildtime-download = ["dep:hf-hub"]
+# Forward the opt-in software NVFP4 backend from the example package.
+cuda-legacy-fp4 = ["cuda", "candle/cuda-legacy-fp4"]
 
 [[example]]
 name = "llama_multiprocess"
