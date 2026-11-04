@@ -131,6 +131,7 @@ pub mod stable_lm;
 pub mod starcoder2;
 pub mod stella_en_v5;
 pub mod t5;
+pub mod transcribepsy;
 pub mod trocr;
 pub mod vgg;
 pub mod vit;
