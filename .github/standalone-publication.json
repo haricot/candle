@@ -1,0 +1,35 @@
+{
+  "source_run": 41731722946,
+  "campaign": "extended-avx2-disk-41731707417",
+  "candidate": "3cbf25687e6966b251e0e2af8404a1406899e77b",
+  "orchestrator": "53977e176cd918561d60ea2c8251a0e87dd55400",
+  "main": "cfcbd7186d13271843ce7eb41d25659bd0835850",
+  "compiler_image": "ghcr.io/haricot/candle/ci-cuda-sm61@sha256:a7d880d07156a00128141d97fb36044089ef23cd01c617ff1de3f304526fd235",
+  "artifacts": {
+    "build": {
+      "id": 13280076054,
+      "name": "extended-extended-avx2-disk-41731707417-build-once",
+      "sha256": "44f6468ce53613824d97a39849a5c76eae9d78e75b0a191583875b3ede889d76"
+    },
+    "cpu": {
+      "id": 13280900510,
+      "name": "extended-extended-avx2-disk-41731707417-cpu-execute",
+      "sha256": "6c12278bf79c6c2b23b2b73ecd09506ea95cfdb3ef336067d6fc7d799ec2b552"
+    },
+    "compile": {
+      "id": 13280330817,
+      "name": "extended-extended-avx2-disk-41731707417-cuda-compile",
+      "sha256": "93c506e7645cbbc8011828d4a9fb996aa9f4670a799cd93a247f2a6b8e4168d9"
+    },
+    "gpu": {
+      "id": 13324882461,
+      "name": "extended-extended-avx2-disk-41731707417-sm61",
+      "sha256": "7cdb86731c5003d751ee2c392d34bff935e56ad46bd0092b27acb96323bf710a"
+    },
+    "promotion": {
+      "id": 13324133652,
+      "name": "extended-extended-avx2-disk-41731707417-promotion",
+      "sha256": "1fcb62075efd6746479d292c3d83934b65e90f527224231bfa4e90cbc1126925"
+    }
+  }
+}

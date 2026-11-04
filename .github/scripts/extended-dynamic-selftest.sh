@@ -64,8 +64,8 @@ echo "DYNAMIC_EXTENDED_DUPLICATE=REJECTED"
 
 # A previously promoted standalone may have a different commit SHA but must
 # carry the identical, reviewed exact-delta patch. No arbitrary moved head passes.
-jq -e '.publication.update_canonical_feature_refs == false and
-  ([.features[] | select(.allow_promoted_equivalent_source == true) | .feature] | length) == 6 and
+jq -e '.publication.update_canonical_feature_refs == true and
+  ([.features[] | select(.allow_promoted_equivalent_source == true) | .feature] | length) == 7 and
   ([.features[] | select(.allow_promoted_equivalent_source == true) | .pin_source_sha] | all)' "$config" >/dev/null
 
 pin_repo="$scratch/pin-equivalence"

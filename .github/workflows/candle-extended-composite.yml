@@ -9,6 +9,8 @@ on:
       - .github/extended-sources.json
       - .github/scripts/candle-extended-assemble.sh
       - .github/scripts/candle-extended-pin-equivalence.sh
+      - .github/scripts/candle-standalone-source-pin.py
+      - .github/scripts/candle-standalone-source-pin-selftest.py
       - .github/scripts/extended-dynamic-selftest.sh
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
@@ -104,6 +106,8 @@ jobs:
         run: python3 -B .github/scripts/candle-build-profile-selftest.py
       - name: Validate dynamic source contract before assembly
         run: bash .github/scripts/extended-dynamic-selftest.sh
+      - name: Verify standalone rebase provenance and reviewed migrations
+        run: python3 -B .github/scripts/candle-standalone-source-pin-selftest.py
       - name: Validate hosted executable archive and replay contracts
         run: python3 .github/scripts/extended-build-once-selftest.py
       - name: Independently test CUDA link stub isolation for hosted CPU execution

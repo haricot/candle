@@ -45,14 +45,10 @@ git show "${CANDIDATE_SHA}:${MANIFEST_PATH}" > "$manifest" ||
 jq -e   --arg campaign "$CAMPAIGN"   --arg main "$BASE_SHA"   '.campaign == $campaign and .main_sha == $main and (.features | type == "array" and length > 0)'   "$manifest" >/dev/null ||
   fail "candidate manifest does not match campaign/base"
 
-# Keep the logical Legacy manifest identity required by runner v6 separate
-# from the reviewed stable Git ref. Extended retains its existing identity.
-# Extended preserves independently developed standalone branches. Only the
-# attested candidate is promoted to extended; Legacy retains its own policy.
 if [[ "$PROMOTION_KIND" == extended ]]; then
-  jq -e '.update_canonical_feature_refs == false' "$manifest" >/dev/null ||
-    fail "Extended candidate does not explicitly preserve standalone sources"
-  update_feature_refs=false
+  jq -e '(.update_canonical_feature_refs | type) == "boolean"' "$manifest" >/dev/null ||
+    fail "Extended candidate has no explicit standalone publication policy"
+  update_feature_refs="$(jq -r '.update_canonical_feature_refs' "$manifest")"
 else
   update_feature_refs=true
 fi
@@ -94,7 +90,7 @@ while IFS=$'\t' read -r feature target source prepared; do
 
   git fetch --no-tags origin     "+refs/heads/$target:refs/remotes/origin/promotion-feature-$idx"
 
-  ensure_archive "archive/promotion/$CAMPAIGN/before/$target" "$current"
+  ensure_archive "archive/promotion/$CAMPAIGN/before/$target" "$source"
 
   if [[ "$update_feature_refs" == false ]]; then
     [[ "$current" == "$source" ]] ||
@@ -103,6 +99,10 @@ while IFS=$'\t' read -r feature target source prepared; do
     verify_prepared+=("$source")
     verify_exact+=("true")
   else
+    git merge-base --is-ancestor "$BASE_SHA" "$prepared" ||
+      fail "prepared standalone $target does not include qualified main"
+    git merge-base --is-ancestor "$prepared" "$CANDIDATE_SHA" ||
+      fail "prepared standalone $target is not in the qualified integration"
     if [[ "$current" == "$prepared" ]]; then
       echo "FEATURE_ALREADY_PROMOTED=$target@$current" >> "$summary"
     elif [[ "$current" == "$source" ]]; then
@@ -130,7 +130,9 @@ current_integration="$(remote_head "$TARGET_BRANCH")"
 
 if [[ -n "$current_integration" ]]; then
   git fetch --no-tags origin     "+refs/heads/$TARGET_BRANCH:refs/remotes/origin/promotion-integration"
-  ensure_archive "archive/promotion/$CAMPAIGN/before/$TARGET_BRANCH" "$current_integration"
+  if [[ -n "$old_integration" ]]; then
+    ensure_archive "archive/promotion/$CAMPAIGN/before/$TARGET_BRANCH" "$old_integration"
+  fi
 fi
 
 ensure_archive   "archive/$PROMOTION_KIND/sm61-validated-$RUN_ID-$RUN_ATTEMPT"   "$CANDIDATE_SHA"

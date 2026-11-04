@@ -1,0 +1,58 @@
+name: Publish qualified Candle standalone sources
+on:
+  push:
+    branches: [ci/candle-standalone-policy, orch/extended-v1]
+    paths:
+      - '.github/campaign/standalone-publish.once'
+      - '.github/workflows/candle-standalone-publication.yml'
+      - '.github/scripts/candle-standalone-*-selftest.py'
+      - '.github/scripts/candle-standalone-source-pin.py'
+      - '.github/scripts/candle-publish-qualified-standalones.py'
+      - '.github/standalone-publication.json'
+permissions:
+  contents: read
+concurrency:
+  group: candle-standalone-publication
+  cancel-in-progress: false
+  queue: max
+jobs:
+  contracts:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -B .github/scripts/candle-standalone-publication-selftest.py
+      - run: python3 -B .github/scripts/candle-standalone-source-pin-selftest.py
+      - run: bash .github/scripts/extended-dynamic-selftest.sh
+      - run: bash -n .github/scripts/candle-promote-validated.sh
+  publish:
+    if: >-
+      github.ref == 'refs/heads/orch/extended-v1' &&
+      startsWith(github.event.head_commit.message, 'publish: qualified Candle standalones')
+    needs: contracts
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reuse immutable qualification and atomically publish the prepared standalones
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          python3 .github/scripts/candle-publish-qualified-standalones.py --output "$RUNNER_TEMP/standalone-publication"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: candle-standalone-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/standalone-publication/receipt.json
+          if-no-files-found: warn
+          retention-days: 90
