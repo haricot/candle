@@ -1,0 +1,6 @@
+publish-prepared-standalones-20261104
+source_run=41731722946
+source_attempt=1
+main=cfcbd7186d13271843ce7eb41d25659bd0835850
+extended=3cbf25687e6966b251e0e2af8404a1406899e77b
+Publish all 13 original isolated prepared sources; preserve archived predecessors and immutable reports; no CUDA rebuild, GPU execution, runner registration or Extended ref change.
