@@ -145,7 +145,8 @@
       "cpu_tests": "pockettts-native",
       "cuda_features": [
         "cuda"
-      ]
+      ],
+      "allow_promoted_equivalent_source": true
     }
   ],
   "publication": {
@@ -161,11 +162,11 @@
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
     "never_push_to_main": true,
-    "update_canonical_feature_refs": false,
+    "update_canonical_feature_refs": true,
     "archive_before_promote": true,
     "force_with_lease": true,
     "promotion_after_physical_sm61": true,
-    "standalone_source_policy": "preserve standalone refs; accept prior promoted snapshots only when their exact Git delta matches reviewed source"
+    "standalone_source_policy": "Publish each prepared standalone on current main after the integrated CPU/CUDA/physical gates; preserve its own reviewed delta and exact compatibility resolutions; archive original SHAs and promote atomically with leases."
   },
   "preparation_invariant": "Exact standalone delta except reviewed current-main compatibility (Zip 9.1.3 and ASD/Metal exports); exact source patch SHA256, conflict blobs and entire prepared Git tree are required.",
   "asd_invariant": "ASD-Core V3 remains runtime-data driven; legacy CUDA features must not reintroduce compiled ASD profile or architecture-specific ASD source ownership",
