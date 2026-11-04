@@ -267,12 +267,19 @@ print("EXTENDED_RUSTFFT_DEDUP=PASS " + "; ".join(audit))
 PY
 
 mkdir -p "$aggregate/candle-integration"
+# The public application is linked into ONE native executable. Install its
+# callable model entrypoints before committing the immutable candidate.
+python3 .github/scripts/install-candle-extended-cli.py "$aggregate"
 jq -s --argjson update_refs "$(jq -r '.publication.update_canonical_feature_refs' "$cfg")" --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"extended-multi",feature_count:length,main_sha:$main_sha,
     campaign:$campaign,strategy:$strategy,integration_target:"extended",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
     update_canonical_feature_refs:$update_refs,
     validation_state:"UNVALIDATED_CANDIDATE",features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/extended.json"
+jq --arg sha "$(sha256sum "$aggregate/candle-integration/extended-cli.json" | cut -d' ' -f1)" \
+  '.release_program={name:"candle-extended",source_receipt_sha256:$sha}' \
+  "$aggregate/candle-integration/extended.json" > "$aggregate/candle-integration/extended.json.new"
+mv "$aggregate/candle-integration/extended.json.new" "$aggregate/candle-integration/extended.json"
 cp "$aggregate/candle-integration/extended.json" "$report/extended.json"
 # Fail before publishing or starting expensive CUDA jobs if a reviewed capability
 # has been lost while copying metadata into the immutable candidate.
@@ -287,6 +294,10 @@ jq -e --slurpfile cfg "$cfg" '
   echo "::error::Extended manifest dropped or changed reviewed CUDA capabilities"; exit 3;
 }
 git -C "$aggregate" add Cargo.toml candle-transformers/Cargo.toml candle-integration/extended.json
+git -C "$aggregate" add candle-integration/extended-cli.json candle-examples/examples/candle-extended \
+  candle-examples/examples/quantized-qwen3/main.rs candle-examples/examples/embedding-gemma2/main.rs \
+  candle-examples/examples/nemotron_asr.rs candle-examples/examples/transcribepsy_tp3.rs \
+  candle-examples/examples/pockettts-sm61/main.rs
 git -C "$aggregate" diff --cached --check
 git -C "$aggregate" commit -m "integrate: lock ${#features[@]} Extended source and prepared SHAs"   > "$report/logs/manifest-commit.log" 2>&1
 

@@ -15,6 +15,9 @@ on:
       - .github/scripts/candle-extended-cpu.sh
       - .github/scripts/candle-extended-sm61.sh
       - .github/scripts/candle-extended-build-once.py
+      - .github/scripts/install-candle-extended-cli.py
+      - .github/scripts/candle-extended-cli-selftest.py
+      - .github/extended-cli/**
       - .github/scripts/candle-resolve-legacy-main.py
       - .github/scripts/legacy-main-selftest.py
       - .github/scripts/candle-build-profile-selftest.py
@@ -54,7 +57,7 @@ on:
         description: 'Rust CPU target: portable x86-64 or AVX2/FMA x86-64-v3'
         type: choice
         required: true
-        default: portable
+        default: avx2
         options: [portable, avx2]
       half_duplex_profile:
         description: 'Half Duplex: auto selects 4 clips, or 42 when native engine/kernel sources changed; audit adds FP64'
@@ -110,6 +113,8 @@ jobs:
         run: python3 -B .github/scripts/candle-standalone-source-pin-selftest.py
       - name: Validate hosted executable archive and replay contracts
         run: python3 .github/scripts/extended-build-once-selftest.py
+      - name: Verify the single native Candle Extended application contracts
+        run: python3 -B .github/scripts/candle-extended-cli-selftest.py
       - name: Independently test CUDA link stub isolation for hosted CPU execution
         run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
       - name: Prepare manifest-defined Extended candidate
@@ -146,7 +151,7 @@ jobs:
       CUDA_COMPUTE_CAP: '61'
       CARGO_INCREMENTAL: '0'
       CANDLE_CUDA_IMAGE: ${{ needs.cuda_image.outputs.image }}
-      CANDLE_CPU_PROFILE: ${{ inputs.cpu_profile || 'portable' }}
+      CANDLE_CPU_PROFILE: ${{ inputs.cpu_profile || 'avx2' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -296,7 +301,18 @@ jobs:
                 -- python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
                 cpu-qualify --bundle "$RUNNER_TEMP/extended-sm61-build-once" \
                 --report "$RUNNER_TEMP/extended-cpu-execute"
+              python3 "$GITHUB_WORKSPACE/.ci-tools/.github/scripts/candle-extended-build-once.py" \
+                export-release --bundle "$RUNNER_TEMP/extended-sm61-build-once" \
+                --out "$RUNNER_TEMP/candle-extended-release"
             '
+      - name: Upload ONE Candle Extended release executable
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-extended-${{ needs.prepare.outputs.campaign }}-${{ inputs.cpu_profile || 'avx2' }}
+          path: ${{ runner.temp }}/candle-extended-release/
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 30
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

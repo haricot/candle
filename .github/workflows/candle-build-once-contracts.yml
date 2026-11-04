@@ -1,7 +1,7 @@
 name: Candle release build and CPU target contracts
 on:
   push:
-    branches: [ci/candle-release-profile-extended, ci/candle-release-profile-legacy]
+    branches: [ci/candle-release-profile-extended, ci/candle-release-profile-legacy, ci/candle-single-program]
 permissions:
   contents: read
 concurrency:
@@ -29,3 +29,5 @@ jobs:
             fi
           done
           bash -n .github/scripts/candle-candidate-cuda-compile.sh
+      - name: Check single application source and release artifact contracts
+        run: python3 -B .github/scripts/candle-extended-cli-selftest.py

@@ -166,8 +166,24 @@ class BuildOnceTests(unittest.TestCase):
             module.load_bundle(self.repo, root)
 
     def test_all_original_gpu_gates_have_hosted_builds(self):
+        # The fixture represents a newly composed candidate with its CLI
+        # sources committed and hashed, rather than a historical test bundle.
+        cli_files = {}
+        for relative in module.CLI_FILES:
+            path = self.repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture callable model source\n")
+            cli_files[relative] = module.sha256(path)
+        receipt = self.repo / "candle-integration/extended-cli.json"
+        receipt.write_text(json.dumps({"schema": "candle-extended-cli-source-v1",
+                                      "program": "candle-extended", "files": cli_files}))
+        source = json.loads(self.source.read_text())
+        source["release_program"] = {"name": "candle-extended", "source_receipt_sha256": module.sha256(receipt)}
+        self.source.write_text(json.dumps(source))
         # Simulate compiler JSON without invoking CUDA on the CPU-only runner.
+        builds = []
         def fake_compile(_repo, _out, _name, _argv, _env, wanted=()):
+            builds.append((_name, _argv, _env.copy()))
             return {name: "/bin/true" for name in wanted}
 
         with mock.patch.object(module, "log_cargo", side_effect=fake_compile):
@@ -196,6 +212,17 @@ class BuildOnceTests(unittest.TestCase):
         self.assertEqual(parity["kind"], "nemotron-parity")
         self.assertEqual(cli["binaries"], parity["binaries"])
         self.assertTrue(cli["binaries"])
+        self.assertEqual(cli["argv"], ["nemotron-asr"])
+        release = built["release_program"]
+        self.assertEqual(release, cli["binaries"][0])
+        self.assertEqual(built["gates"]["pockettts_flowlm_mimi_cuda"]["binaries"], [release])
+        self.assertEqual(len([name for name, _, _ in builds if name == "candle_extended_release"]), 1)
+        command = next(argv for name, argv, _ in builds if name == "candle_extended_release")
+        self.assertIn("--release", command)
+        self.assertIn("candle-extended", command)
+        self.assertNotIn("nemotron_asr", [arg for _, argv, _ in builds for arg in argv])
+        os.environ["EXTENDED_BUILD_ONCE_MANIFEST_SHA256"] = module.sha256(self.repo / "built/manifest.json")
+        self.assertEqual(module.load_bundle(self.repo, self.repo / "built")["release_program"], release)
 
     def nemotron_bundle(self):
         root, manifest = self.make_bundle()
@@ -257,6 +284,21 @@ class BuildOnceTests(unittest.TestCase):
         with mock.patch.object(module, "exec_cmd", side_effect=RuntimeError("physical parity failed")):
             with self.assertRaisesRegex(RuntimeError, "physical parity failed"):
                 module.execute(args)
+
+    def test_real_model_parity_uses_the_single_application_subcommand(self):
+        root = self.nemotron_bundle()
+        manifest = json.loads((root / "manifest.json").read_text())
+        manifest["gates"]["nemotron_asr_cuda_real_parity"]["argv"] = ["nemotron-asr"]
+        self.write_manifest(root, manifest)
+        os.environ["EXTENDED_BUILD_ONCE_MANIFEST_SHA256"] = module.sha256(root / "manifest.json")
+        args = type("Args", (), {"bundle": str(root), "action": "run-gate",
+                                 "name": "nemotron_asr_cuda_real_parity",
+                                 "report": str(self.repo / "native-model-proof")})()
+        with mock.patch.object(module, "exec_cmd") as execute:
+            module.execute(args)
+        self.assertEqual(execute.call_count, 4)
+        for call in execute.call_args_list:
+            self.assertEqual(call.args[0][1:3], ["nemotron-asr", "--model-dir"])
 
     def test_legacy_archive_preserves_all_original_gpu_gates(self):
         os.environ["CANDLE_BUILD_SOURCE"] = "legacy"

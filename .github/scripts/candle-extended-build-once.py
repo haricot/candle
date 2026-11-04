@@ -22,6 +22,11 @@ import sys
 SCHEMA = 1
 FEATURE_RE = re.compile(r"^[a-z0-9_-]+$")
 CPU_TARGETS = {"portable": "x86-64", "avx2": "x86-64-v3"}
+CLI_FILES = frozenset("candle-examples/examples/" + name for name in (
+    "candle-extended/main.rs", "candle-extended/acoustic.rs", "quantized-qwen3/main.rs",
+    "embedding-gemma2/main.rs", "nemotron_asr.rs", "transcribepsy_tp3.rs",
+    "pockettts-sm61/main.rs",
+))
 # Linux names for the x86-64-v2/v3 additions. The kernel advertises AVX only
 # when the OS can preserve its register state; intersect all visible CPUs.
 AVX2_CPU_FLAGS = frozenset((
@@ -107,6 +112,25 @@ def load_source(repo):
     if not cuda or any(not FEATURE_RE.fullmatch(f) for f in cuda):
         fail("invalid CUDA feature list")
     return source, info, set(ids), ",".join(cuda)
+
+
+def verify_cli_source(repo, info):
+    receipt = repo / "candle-integration/extended-cli.json"
+    program = info.get("release_program", {})
+    if (receipt.is_symlink() or not receipt.is_file()
+            or program.get("name") != "candle-extended"
+            or program.get("source_receipt_sha256") != sha256(receipt)):
+        fail("single program source receipt mismatch")
+    data = json.loads(receipt.read_text())
+    if (data.get("schema") != "candle-extended-cli-source-v1"
+            or data.get("program") != "candle-extended"
+            or set(data.get("files", {})) != CLI_FILES):
+        fail("single program source set mismatch")
+    for relative, digest in data["files"].items():
+        path = repo / relative
+        if path.is_symlink() or not path.is_file() or sha256(path) != digest:
+            fail("single program source digest mismatch: " + relative)
+    return sha256(receipt)
 
 
 def environment(repo):
@@ -210,6 +234,17 @@ def build(args):
     env["CARGO_BUILD_JOBS"] = "2"
     env["CUDA_COMPUTE_CAP"] = "61"
     gates = {}
+    release_program = None
+    if os.environ.get("CANDLE_BUILD_SOURCE", "extended") != "legacy":
+        receipt_sha = verify_cli_source(repo, info)
+        env["CANDLE_EXTENDED_SOURCE_SHA"] = actual
+        env["CANDLE_EXTENDED_CPU_PROFILE"] = cpu_profile
+        raw = log_cargo(repo, out, "candle_extended_release",
+                        ["cargo", "build", "-p", "candle-examples", "--example", "candle-extended",
+                         "--release", "--locked", "--features", core], env, ["candle-extended"])
+        release_program = {**stage_binary(raw["candle-extended"], out),
+                           "name": "candle-extended", "build_profile": "release",
+                           "source_receipt_sha256": receipt_sha}
 
     def gate(name, kind, binaries=(), cwd=".", argv=()):
         if name in gates:
@@ -312,16 +347,15 @@ def build(args):
         example("transcribepsy_cuda_cli", "candle-examples", "transcribepsy_tp3",
                 ["--features", "cuda"], is_test=True)
     if "nemotron_asr_streaming_standalone" in features:
-        example("nemotron_asr_cuda_cli", "candle-examples", "nemotron_asr",
-                ["--features", "cuda,cudnn"], compile_only=True)
+        gate("nemotron_asr_cuda_cli", "hosted-check", [release_program], argv=["nemotron-asr"])
         # The original gate is `cargo build`, not an argument-free model run.
         # The separately mandatory parity gate executes this exact binary with
         # the read-only checkpoint/WAV, CPU reference and CUDA expectations.
         gate("nemotron_asr_cuda_real_parity", "nemotron-parity",
-             gates["nemotron_asr_cuda_cli"]["binaries"])
+             gates["nemotron_asr_cuda_cli"]["binaries"], argv=["nemotron-asr"])
     if "pockettts_sm61_standalone" in features:
-        example("pockettts_flowlm_mimi_cuda", "candle-examples", "pockettts-sm61",
-                ["--features", "cuda"], argv=["--device", "cuda"])
+        gate("pockettts_flowlm_mimi_cuda", "example", [release_program],
+             argv=["pockettts-check", "--device", "cuda"])
 
     manifest = {
         "schema": SCHEMA,
@@ -337,6 +371,8 @@ def build(args):
         "environment": environment(repo),
         "gates": gates,
     }
+    if release_program:
+        manifest["release_program"] = release_program
     (out / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
     (out / "manifest.sha256").write_text(sha256(out / "manifest.json") + "\n")
     print(f"EXTENDED_BUILD_ONCE=PASS gates={len(gates)} binaries={len(list((out/'bin').iterdir()))}")
@@ -411,7 +447,19 @@ def load_bundle(repo, root):
     if not isinstance(gates, dict) or not gates:
         fail("empty build gate manifest")
     referenced = set()
-    for name, record in gates.items():
+    release = manifest.get("release_program")
+    if info.get("release_program"):
+        receipt_sha = verify_cli_source(repo, info)
+        if (not release or release.get("name") != "candle-extended"
+                or release.get("build_profile") != "release"
+                or release.get("source_receipt_sha256") != receipt_sha):
+            fail("single release program provenance mismatch")
+    elif release:
+        fail("release program absent from immutable candidate")
+    records = list(gates.items())
+    if release:
+        records.append(("single_release_program", {"kind": "hosted-check", "cwd": ".", "binaries": [release]}))
+    for name, record in records:
         if not FEATURE_RE.fullmatch(name):
             fail("invalid gate name")
         if record.get("kind") not in {"hosted-check", "test", "example", "nemotron-parity"}:
@@ -432,6 +480,60 @@ def load_bundle(repo, root):
     if {p.name for p in (root / "bin").iterdir()} != referenced:
         fail("unreferenced or missing executable in archive")
     return manifest
+
+
+def release_smoke(repo, root, manifest, report):
+    release = manifest.get("release_program")
+    if not release:
+        return  # Historical bundles have only the original test executables.
+    binary = root / release["path"]
+    binary.chmod(0o755)
+    with binary.open("rb") as stream:
+        if stream.read(4) != b"\x7fELF":
+            fail("candle-extended must be a native ELF executable")
+    commands = ("qwen3", "embedding-gemma2", "nemotron-asr", "transcribepsy",
+                "firered-vad", "smart-turn", "pockettts-check")
+    report.mkdir(parents=True, exist_ok=True)
+    for name, argv in (("help", ["--help"]), ("version", ["--version"])):
+        exec_cmd([str(binary)] + argv, repo, str(report / (name + ".log")))
+    for name in commands:
+        exec_cmd([str(binary), name, "--help"], repo, str(report / (name + "-help.log")))
+    capabilities = json.loads(output([str(binary), "capabilities"], cwd=repo))
+    if (capabilities.get("program") != "candle-extended"
+            or capabilities.get("candidate") != manifest["candidate_sha"]
+            or capabilities.get("cpu_profile") != manifest["cpu_profile"]
+            or set(capabilities.get("commands", [])) != set(commands)
+            or not capabilities.get("cuda") or not capabilities.get("cudnn")
+            or not all(capabilities.get(key) for key in ("legacy_bf16", "legacy_fp8", "legacy_fp4"))
+            or (manifest["cpu_profile"] == "avx2" and not all(
+                capabilities.get(key) for key in ("avx2", "fma", "f16c")))):
+        fail("single release executable build capabilities mismatch")
+    (report / "capabilities.json").write_text(json.dumps(capabilities, indent=2, sort_keys=True) + "\n")
+
+
+def export_release(repo, root, manifest, destination):
+    release = manifest.get("release_program")
+    if not release:
+        fail("bundle has no single release executable")
+    if destination.exists():
+        fail("release artifact directory must be fresh")
+    destination.mkdir(parents=True)
+    binary = destination / "candle-extended"
+    shutil.copyfile(root / release["path"], binary)
+    binary.chmod(0o755)
+    if sha256(binary) != release["sha256"]:
+        fail("release artifact executable digest mismatch")
+    (destination / "candle-extended.sha256").write_text(release["sha256"] + "  candle-extended\n")
+    metadata = {key: manifest[key] for key in (
+        "candidate_sha", "campaign", "run_id", "run_attempt", "lock_sha256",
+        "source_manifest_sha256", "rustflags", "cpu_profile", "cuda_features", "environment")}
+    metadata.update(schema="candle-extended-release-v1", program="candle-extended",
+                    sha256=release["sha256"], build_profile="release",
+                    manifest_sha256=sha256(root / "manifest.json"),
+                    qualification="HOSTED_BUILD_GPU_VALIDATION_SEPARATE",
+                    requires="Linux x86-64, CUDA 12.9 and cuDNN 9.10 runtime libraries")
+    (destination / "release.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    print("CANDLE_EXTENDED_RELEASE=PASS program=candle-extended sha256=" + release["sha256"], flush=True)
 
 
 def exec_cmd(argv, cwd, log=None):
@@ -475,6 +577,7 @@ def cpu_qualify(repo, root, manifest, report):
         fail("CPU evidence output directory must be empty")
     if not plan:
         fail("no supported CPU contracts in the CUDA-built archive")
+    release_smoke(repo, root, manifest, report / "candle-extended")
     for name in plan:
         record = manifest["gates"].get(name)
         if not record or record["kind"] != "test" or not record["binaries"]:
@@ -492,7 +595,8 @@ def cpu_qualify(repo, root, manifest, report):
         path = root / pocket["binaries"][0]["path"]
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         log = report / "pockettts_cpu_preflight.log"
-        exec_cmd([str(path), "--device", "cpu"], repo, str(log))
+        prefix = ["pockettts-check"] if manifest.get("release_program") else []
+        exec_cmd([str(path)] + prefix + ["--device", "cpu"], repo, str(log))
         if "POCKETTTS_SM61_A1=PASS backend=cpu" not in log.read_text():
             fail("PocketTTS CPU preflight missing PASS marker")
         plan.append("pockettts_cpu_preflight")
@@ -509,6 +613,9 @@ def execute(args):
     repo = Path.cwd().resolve()
     root = Path(args.bundle).resolve()
     manifest = load_bundle(repo, root)
+    if args.action == "export-release":
+        export_release(repo, root, manifest, Path(args.out).resolve())
+        return
     if args.action == "verify":
         print(f"EXTENDED_BUILD_ONCE_VERIFIED=PASS gates={len(manifest['gates'])}")
         return
@@ -539,7 +646,7 @@ def execute(args):
         for language in ("fr-FR", "auto"):
             cpu = report / ("cpu-" + language)
             cuda = report / ("cuda-cudnn-" + language)
-            cmd = [binaries[0], "--model-dir", str(model), "--input", str(wav),
+            cmd = [binaries[0]] + record["argv"] + ["--model-dir", str(model), "--input", str(wav),
                    "--mode", "streaming", "--language", language, "--lookahead", "3"]
             exec_cmd(cmd + ["--device", "cpu", "--dtype", "f32", "--output", str(cpu)],
                      repo, str(report / (f"cpu-{language}.log")))
@@ -568,10 +675,12 @@ def main():
     cpu_parser = sub.add_parser("cpu-rustflags")
     cpu_parser.add_argument("--profile", choices=tuple(CPU_TARGETS),
                             default=os.environ.get("CANDLE_CPU_PROFILE", "portable"))
-    for name in ("verify", "run-gate", "cpu-qualify"):
+    for name in ("verify", "run-gate", "cpu-qualify", "export-release"):
         p = sub.add_parser(name)
         p.add_argument("--bundle", required=True)
         p.add_argument("--report")
+        if name == "export-release":
+            p.add_argument("--out", required=True)
         if name == "run-gate":
             p.add_argument("--name", required=True)
     args = parser.parse_args()
