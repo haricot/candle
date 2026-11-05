@@ -2,11 +2,13 @@ name: Nemotron 3.5 ASR standalone
 
 on:
   push:
-    branches: [nemotron_asr_streaming_standalone]
+    branches: [nemotron_asr_streaming_standalone, nemotron_asr_punctuation_s0]
     paths:
       - 'candle-transformers/src/models/nemotron3_5_asr/**'
       - 'candle-transformers/src/models/mod.rs'
       - 'candle-examples/examples/nemotron_asr.rs'
+      - 'candle-examples/examples/nemotron_asr/**'
+      - 'candle-transformers/src/models/xlm_roberta.rs'
       - 'candle-examples/Cargo.toml'
       - 'candle-transformers/Cargo.toml'
       - 'Cargo.toml'
@@ -35,9 +37,11 @@ jobs:
           toolchain: '1.99.0'
           components: rustfmt
       - name: Format new module
-        run: rustfmt --edition 2021 --check candle-transformers/src/models/nemotron3_5_asr/mod.rs candle-examples/examples/nemotron_asr.rs
+        run: rustfmt --edition 2021 --check candle-transformers/src/models/nemotron3_5_asr/mod.rs candle-transformers/src/models/xlm_roberta.rs candle-examples/examples/nemotron_asr.rs candle-examples/examples/nemotron_asr/punctuation.rs
       - name: Native model, decoder, frontend and stream contracts (no downloads)
         run: cargo test -p candle-transformers --lib nemotron3_5_asr
+      - name: Native transcription and punctuation unit tests (no weights)
+        run: cargo test -p candle-examples --example nemotron_asr
       - name: Native transcription CLI
         run: cargo build -p candle-examples --example nemotron_asr
       - name: Shell entry points
