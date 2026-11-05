@@ -222,18 +222,20 @@ fn main() -> Result<()> {
         let punctuation_device = match args.punctuation_device {
             Backend::Cpu => Device::Cpu,
             Backend::Cuda | Backend::CudaCudnn => {
-                if matches!(args.punctuation_device, Backend::CudaCudnn) && !cfg!(feature = "cudnn") {
+                if matches!(args.punctuation_device, Backend::CudaCudnn) && !cfg!(feature = "cudnn")
+                {
                     bail!("punctuation cuda-cudnn requires building with --features cuda,cudnn")
                 }
                 Device::new_cuda(args.cuda_device)
                     .context("punctuation CUDA requested; no CPU fallback")?
             }
         };
-        let model_dir = args.punctuation_model_dir.as_ref()
+        let model_dir = args
+            .punctuation_model_dir
+            .as_ref()
             .context("--automatic-punctuation requires --punctuation-model-dir")?;
         let punctuator = punctuation::Punctuator::load(model_dir, punctuation_device)?;
-        let (restored, elapsed) =
-            punctuator.restore(&raw_text, args.punctuation_min_confidence)?;
+        let (restored, elapsed) = punctuator.restore(&raw_text, args.punctuation_min_confidence)?;
         text = restored;
         punctuation_seconds = Some(elapsed.as_secs_f64());
     }
@@ -276,7 +278,11 @@ fn main() -> Result<()> {
             "decisions",
         ] {
             // Keep exact-decoder qualification independent of optional postprocessing.
-            let actual = if key == "text" { json!(raw_text) } else { result[key].clone() };
+            let actual = if key == "text" {
+                json!(raw_text)
+            } else {
+                result[key].clone()
+            };
             if expected.get(key).is_none() || expected[key] != actual {
                 differences.push(key);
             }
