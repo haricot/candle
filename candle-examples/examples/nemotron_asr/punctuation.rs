@@ -28,8 +28,8 @@ pub struct Punctuator {
 
 impl Punctuator {
     pub fn load(dir: &Path, device: Device) -> Result<Self> {
-        let config_bytes = std::fs::read(dir.join("config.json"))
-            .context("reading punctuation config.json")?;
+        let config_bytes =
+            std::fs::read(dir.join("config.json")).context("reading punctuation config.json")?;
         let config: XlmRobertaConfig = serde_json::from_slice(&config_bytes)
             .context("parsing XLM-RoBERTa punctuation config")?;
         let value: serde_json::Value = serde_json::from_slice(&config_bytes)?;
@@ -120,10 +120,16 @@ impl Punctuator {
             );
         }
         let input_ids = Tensor::from_vec(ids.to_vec(), (1, ids.len()), &self.device)?;
-        let attention_mask =
-            Tensor::from_vec(encoded.get_attention_mask().to_vec(), (1, ids.len()), &self.device)?;
-        let token_type_ids =
-            Tensor::from_vec(encoded.get_type_ids().to_vec(), (1, ids.len()), &self.device)?;
+        let attention_mask = Tensor::from_vec(
+            encoded.get_attention_mask().to_vec(),
+            (1, ids.len()),
+            &self.device,
+        )?;
+        let token_type_ids = Tensor::from_vec(
+            encoded.get_type_ids().to_vec(),
+            (1, ids.len()),
+            &self.device,
+        )?;
         let logits = self
             .model
             .forward(&input_ids, &attention_mask, &token_type_ids)?
@@ -186,7 +192,10 @@ fn render_punctuation(words: &[&str], marks: &[Option<char>]) -> String {
         }
         result.push_str(word);
         // Never duplicate explicit marks from the original ASR text.
-        if !matches!(word.chars().last(), Some('.' | ',' | '?' | '!' | ':' | ';' | '-')) {
+        if !matches!(
+            word.chars().last(),
+            Some('.' | ',' | '?' | '!' | ':' | ';' | '-')
+        ) {
             if let Some(mark) = mark {
                 result.push(*mark);
             }
