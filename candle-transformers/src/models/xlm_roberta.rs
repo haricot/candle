@@ -509,6 +509,37 @@ impl XLMRobertaForSequenceClassification {
     }
 }
 
+/// XLM-RoBERTa token classification (e.g. punctuation/capitalization recovery).
+/// Loads the standard Hugging Face `roberta.*` and `classifier.*` tensor names.
+pub struct XLMRobertaForTokenClassification {
+    roberta: XLMRobertaModel,
+    classifier: Linear,
+}
+
+impl XLMRobertaForTokenClassification {
+    pub fn new(num_labels: usize, cfg: &Config, vb: VarBuilder) -> Result<Self> {
+        let roberta = XLMRobertaModel::new(cfg, vb.pp("roberta"))?;
+        let classifier = linear(cfg.hidden_size, num_labels, vb.pp("classifier"))?;
+        Ok(Self {
+            roberta,
+            classifier,
+        })
+    }
+
+    /// Return logits for every input token: [batch, sequence, labels].
+    pub fn forward(
+        &self,
+        input_ids: &Tensor,
+        attention_mask: &Tensor,
+        token_type_ids: &Tensor,
+    ) -> Result<Tensor> {
+        let hidden_states =
+            self.roberta
+                .forward(input_ids, attention_mask, token_type_ids, None, None, None)?;
+        self.classifier.forward(&hidden_states)
+    }
+}
+
 fn prepare_4d_attention_mask(
     mask: &Tensor,
     dtype: DType,
