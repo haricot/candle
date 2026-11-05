@@ -1,4 +1,7 @@
 //! Native Nemotron 3.5 ASR: unchanged HF Safetensors, PCM WAV and Rust tokenization.
+//!
+//! Punctuation restoration is optional and does not alter the exact ASR tokens.
+mod punctuation;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 #[cfg(feature = "mkl")]
@@ -61,6 +64,18 @@ struct Args {
     /// Require identical tokens, text and frame decisions to a previous result.json.
     #[arg(long)]
     expect_result: Option<PathBuf>,
+    /// Restore punctuation after finalization using a separate local XLM-R model.
+    #[arg(long, requires = "punctuation_model_dir")]
+    automatic_punctuation: bool,
+    /// Local directory with config.json, tokenizer.json and model.safetensors.
+    #[arg(long)]
+    punctuation_model_dir: Option<PathBuf>,
+    /// Punctuation model runs on CPU by default, independently of ASR CUDA.
+    #[arg(long, value_enum, default_value = "cpu")]
+    punctuation_device: Backend,
+    /// Minimum model probability for inserting a punctuation mark.
+    #[arg(long, default_value_t = 0.55)]
+    punctuation_min_confidence: f32,
 }
 
 fn read_wav(path: &std::path::Path) -> Result<(Vec<f32>, usize)> {
@@ -196,11 +211,32 @@ fn main() -> Result<()> {
         }
     }
     let inference_seconds = start.elapsed().as_secs_f64();
-    let text = tokenizer
+    let raw_text = tokenizer
         .decode(&trace.tokens, true)
         .map_err(anyhow::Error::msg)?
         .trim()
         .to_owned();
+    let mut text = raw_text.clone();
+    let mut punctuation_seconds = None;
+    if args.automatic_punctuation {
+        let punctuation_device = match args.punctuation_device {
+            Backend::Cpu => Device::Cpu,
+            Backend::Cuda | Backend::CudaCudnn => {
+                if matches!(args.punctuation_device, Backend::CudaCudnn) && !cfg!(feature = "cudnn") {
+                    bail!("punctuation cuda-cudnn requires building with --features cuda,cudnn")
+                }
+                Device::new_cuda(args.cuda_device)
+                    .context("punctuation CUDA requested; no CPU fallback")?
+            }
+        };
+        let model_dir = args.punctuation_model_dir.as_ref()
+            .context("--automatic-punctuation requires --punctuation-model-dir")?;
+        let punctuator = punctuation::Punctuator::load(model_dir, punctuation_device)?;
+        let (restored, elapsed) =
+            punctuator.restore(&raw_text, args.punctuation_min_confidence)?;
+        text = restored;
+        punctuation_seconds = Some(elapsed.as_secs_f64());
+    }
     let mut result = json!({
         "model": MODEL_ID, "expected_model_revision": MODEL_REVISION,
         "device": format!("{device:?}"), "dtype": args.dtype,
@@ -213,6 +249,16 @@ fn main() -> Result<()> {
         "load_seconds": load_seconds, "inference_seconds": inference_seconds,
         "rtf": inference_seconds / (pcm.len() as f64 / rate as f64),
     });
+    if let Some(seconds) = punctuation_seconds {
+        result["raw_text"] = json!(raw_text);
+        result["punctuation"] = json!({
+            "enabled": true,
+            "model": punctuation::MODEL_ID,
+            "device": format!("{:?}", args.punctuation_device),
+            "seconds": seconds,
+            "minimum_confidence": args.punctuation_min_confidence,
+        });
+    }
     let mut differences = Vec::new();
     if let Some(expected) = &args.expect_result {
         let expected: serde_json::Value = serde_json::from_slice(&std::fs::read(expected)?)?;
@@ -229,7 +275,9 @@ fn main() -> Result<()> {
             "tokens",
             "decisions",
         ] {
-            if expected.get(key).is_none() || expected[key] != result[key] {
+            // Keep exact-decoder qualification independent of optional postprocessing.
+            let actual = if key == "text" { json!(raw_text) } else { result[key].clone() };
+            if expected.get(key).is_none() || expected[key] != actual {
                 differences.push(key);
             }
         }
