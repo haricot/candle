@@ -1,6 +1,7 @@
 //! Native Nemotron 3.5 ASR: unchanged HF Safetensors, PCM WAV and Rust tokenization.
 //!
 //! Punctuation restoration is optional and does not alter the exact ASR tokens.
+#[path = "nemotron_asr/punctuation.rs"]
 mod punctuation;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
