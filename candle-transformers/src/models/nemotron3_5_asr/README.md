@@ -51,6 +51,58 @@ language detection. `--lookahead` accepts 0, 3, 6 or 13 (default 3).
 example feeds packets without wall-clock pacing and prints the final transcript.
 The model API returns new tokens at every push for application/microphone integration.
 
+## Optional automatic punctuation (French-capable, post-final only)
+
+Nemotron's streaming RNN-T may produce words without a final period or question
+mark. The optional CLI flag `--automatic-punctuation` runs a **separate**
+XLM-RoBERTa token-classification model after the ASR final flush. This is
+independent of NVIDIA NIM/Riva's `--automatic-punctuation` server option.
+
+A supported external model is
+[FullStop multilingual SoNaR base](https://huggingface.co/oliverguhr/fullstop-punctuation-multilingual-sonar-base)
+(MIT, English/French/German/Italian/Dutch). It predicts `.`, `,`, `?`, `-`
+and `:` from text; it is not fine-tuned here. The published F32 safetensors
+are ~1.11 GB, so punctuation defaults to **CPU** to leave the SM61 GPU free
+for ASR. Loading/inference overhead has not yet been qualified on the target
+computer.
+
+Download the files once (never from inside the ASR process):
+
+```bash
+hf download oliverguhr/fullstop-punctuation-multilingual-sonar-base \
+  config.json tokenizer.json model.safetensors \
+  --local-dir "$HOME/tmp/nemotron-punctuation-model"
+```
+
+Build and run the optional mode:
+
+```bash
+cargo build --release -p candle-examples --example nemotron_asr
+./target/release/examples/nemotron_asr \
+  --model-dir "$NEMOTRON_MODEL_DIR" \
+  --input /absolute/path/question.wav --mode streaming \
+  --language fr-FR --device cuda-cudnn \
+  --automatic-punctuation \
+  --punctuation-model-dir "$HOME/tmp/nemotron-punctuation-model"
+```
+
+`text` contains the optional restored punctuation; `raw_text` contains
+the exact ASR output when the option is on. `tokens`, `decisions` and
+the existing exact-reference comparison always use the unchanged raw ASR
+result. Punctuation is only inserted if the separate model predicts it
+above the configurable `--punctuation-min-confidence` threshold (0.55 by
+default). A final `?` is **not guaranteed** for every interrogative utterance.
+Original ASR punctuation is not duplicated. Text is processed in bounded
+overlapping windows; very long individual words/windows are rejected rather
+than silently truncated.
+
+This standalone CLI demonstrates and exposes the optional mechanism, but
+**does not modify the separately built Myna Candle provider or its D-Bus
+client**. Myna should run this step on finalized utterances, retain the
+original token buffer for its incremental preedit, and expose the switch in
+its own service configuration. In continuous mode, punctuation should be
+applied per stable segment, not on every tentative token.
+
 ## CUDA, including the promoted SM61 backend
 
 The standalone branch adds the model without changing CUDA kernels. For a GPU
