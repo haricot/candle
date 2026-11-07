@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "component": "capability-dispatch",
+  "milestone": "S0-A-B",
+  "target_branch": "capability-dispatch-standalone",
+  "base": {
+    "repository": "haricot/candle",
+    "branch": "main",
+    "sha": "cfcbd7186d13271843ce7eb41d25659bd0835850",
+    "tree": "649e167bf7f6c083d5f32363191ca68fa9e3ace0"
+  },
+  "state": "scope_and_recovery_preparation_only",
+  "implementation_gate": {
+    "state": "pending_source_audit",
+    "repository": "haricot/adaptive-dispatch",
+    "reason": "Connected GitHub repository and content readers returned HTTP 404 on 2026-11-07; existence, visibility, source, default branch and license are not established."
+  },
+  "donors": [
+    {
+      "id": "asd-v3",
+      "repository": "haricot/candle",
+      "branch": "asd_core_v3_standalone",
+      "sha": "ffae6d8f72063197a690ab626660344846c38c84",
+      "disposition": "selective_contract_and_lifecycle_extraction",
+      "paths": [
+        "candle-core/src/conv/asd_exact_cuda.rs",
+        "candle-core/src/asd_runtime_extensions.rs",
+        "candle-core/src/cuda_backend/device/asd_modules.rs",
+        "candle-core/src/asd_fallback_store.rs",
+        "docs/asd_source_ownership.md"
+      ]
+    },
+    {
+      "id": "bf16-and-fp8-reference",
+      "repository": "haricot/candle",
+      "branch": "fp8_sm61_bf16_standalone",
+      "sha": "9cba2e898af3d25a89257f1f2ec5acece0404dcb",
+      "disposition": "bf16_calculation_donor_fp8_resource_design_only",
+      "paths": [
+        "candle-core/src/cuda_backend/mod.rs",
+        "candle-core/src/quantized/fp8_sm61_dispatch.rs"
+      ]
+    },
+    {
+      "id": "candle-d7-diagnostics",
+      "repository": "haricot/candle",
+      "branch": "d7-stateful-f16",
+      "sha": "5d166459144ed2b830f1d237286e851e654efb7b",
+      "disposition": "minimal_diagnostics_contract_only",
+      "paths": [
+        "candle-core/src/diagnostics.rs"
+      ]
+    },
+    {
+      "id": "flow-runtime-boundary",
+      "repository": "haricot/flow-adaptive-tuner",
+      "branch": "main",
+      "sha": "c3a33c7b41d4a01dfd861dee2cbe0e77f24cea78",
+      "disposition": "external_measurement_and_ownership_reference",
+      "paths": [
+        "README.md",
+        "docs/ARCHITECTURE.md",
+        "docs/MIGRATION.md",
+        "src/selection.rs"
+      ]
+    },
+    {
+      "id": "flow-d5",
+      "repository": "haricot/flow-adaptive-tuner",
+      "branch": "d5-generic-artifact-production",
+      "sha": "78857d193c1a8fddc443de91b4f4dece10f2b557",
+      "disposition": "external_producer_no_runtime_import",
+      "paths": [
+        "docs/ARTIFACTS_D5.md",
+        "tools/asd-artifacts.py"
+      ]
+    },
+    {
+      "id": "flow-d6b2",
+      "repository": "haricot/flow-adaptive-tuner",
+      "branch": "d6b2-authenticated-evidence-ood-guard",
+      "sha": "537d9678d9c4ad6ad6608b04ce3cae86180fb7d7",
+      "disposition": "evidence_and_abstention_design_only",
+      "paths": [
+        "docs/D6_B2_EVIDENCE_OOD.md"
+      ]
+    },
+    {
+      "id": "flow-d6b3",
+      "repository": "haricot/flow-adaptive-tuner",
+      "branch": "d6b3-real-evidence-replay-equal-budget",
+      "sha": "4aec331f56420350478448a1a81d56720180e9b2",
+      "disposition": "retrospective_protocol_design_only",
+      "paths": [
+        "docs/D6_B3_EQUAL_BUDGET_REPLAY.md"
+      ]
+    },
+    {
+      "id": "flow-d7",
+      "repository": "haricot/flow-adaptive-tuner",
+      "branch": "d7-engine-objective-abcd",
+      "sha": "578507ac9daf0798ee20342169edd8078b3f34de",
+      "disposition": "trace_and_engine_validation_reference",
+      "paths": [
+        "docs/D7_ENGINE.md",
+        "docs/D7_GENERIC_TRACE_CONTRACT.md",
+        "docs/D7_CPU_GPU.md",
+        "PROJECT_STATE.md"
+      ]
+    }
+  ],
+  "reference_integration": {
+    "repository": "haricot/mistral.rs",
+    "candidate": "f592ba9fabf70c6063cbfc5c8a685363a86d806a",
+    "campaign_run": 42380889678,
+    "scope": "Original Legacy V3 reference only; no qualification inheritance for Dispatch."
+  },
+  "current_allowed_paths": [
+    "dispatch-standalone/README.md",
+    "dispatch-standalone/recovery.md",
+    "dispatch-standalone/sources.json"
+  ],
+  "qualification": {
+    "implementation_present": false,
+    "cpu_checked": false,
+    "cuda_compiled": false,
+    "gpu_validated": false,
+    "models_executed": false,
+    "performance_qualified": false
+  }
+}
