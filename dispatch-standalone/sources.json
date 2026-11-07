@@ -9,11 +9,12 @@
     "sha": "cfcbd7186d13271843ce7eb41d25659bd0835850",
     "tree": "649e167bf7f6c083d5f32363191ca68fa9e3ace0"
   },
-  "state": "scope_and_recovery_preparation_only",
+  "state": "implemented_cpu_checked_cuda_qualification_pending",
   "implementation_gate": {
-    "state": "pending_source_audit",
+    "state": "source_audit_complete",
     "repository": "haricot/adaptive-dispatch",
-    "reason": "Connected GitHub repository and content readers returned HTTP 404 on 2026-11-07; existence, visibility, source, default branch and license are not established."
+    "sha": "0203aa56fd689b01838e19bf9f7e12887f78b17a",
+    "result": "Design observations only; no donor code or dependency copied. See adaptive-dispatch-audit.md."
   },
   "donors": [
     {
@@ -107,6 +108,26 @@
         "docs/D7_CPU_GPU.md",
         "PROJECT_STATE.md"
       ]
+    },
+    {
+      "id": "adaptive-dispatch",
+      "repository": "haricot/adaptive-dispatch",
+      "branch": "master",
+      "sha": "0203aa56fd689b01838e19bf9f7e12887f78b17a",
+      "disposition": "capability_provenance_and_workload_contract_design_only_no_code_copy",
+      "paths": [
+        "README.md",
+        "Cargo.toml",
+        "ir_caps/Cargo.toml",
+        "ir_caps/src/lib.rs",
+        "ir_caps/src/caps/hw.rs",
+        "ir_caps/src/caps/table.rs",
+        "ir_caps/src/caps/library.rs",
+        "ir_caps/src/compute_cap.rs",
+        "ir_caps/src/arch_metrics.rs",
+        "adapt_dsp/Cargo.toml",
+        "adapt_dsp/src/predictor.rs"
+      ]
     }
   ],
   "reference_integration": {
@@ -116,16 +137,42 @@
     "scope": "Original Legacy V3 reference only; no qualification inheritance for Dispatch."
   },
   "current_allowed_paths": [
+    ".github/workflows/capability-dispatch-standalone.yml",
+    "candle-core/examples/dispatch_bf16_linear.rs",
+    "candle-core/src/cuda_backend/mod.rs",
+    "candle-core/src/dispatch/linear.rs",
+    "candle-core/src/dispatch/mod.rs",
+    "candle-core/src/lib.rs",
+    "candle-core/tests/dispatch_bf16.rs",
+    "candle-nn/src/lib.rs",
+    "dispatch-standalone/Cargo.lock",
     "dispatch-standalone/README.md",
+    "dispatch-standalone/adaptive-dispatch-audit.md",
     "dispatch-standalone/recovery.md",
-    "dispatch-standalone/sources.json"
+    "dispatch-standalone/sources.json",
+    "dispatch-standalone/verify_scope.py"
   ],
   "qualification": {
-    "implementation_present": false,
-    "cpu_checked": false,
+    "implementation_present": true,
+    "cpu_checked": true,
     "cuda_compiled": false,
     "gpu_validated": false,
     "models_executed": false,
     "performance_qualified": false
+  },
+  "payload_sha256": {
+    ".github/workflows/capability-dispatch-standalone.yml": "ca9e2b138239c41e014193446c4993cc95b622688a01aa6d93e6acc51e6a843e",
+    "candle-core/examples/dispatch_bf16_linear.rs": "f4c6753971853d78825af4606d7b67c95743a35f5c7812c35c665196f8342189",
+    "candle-core/src/cuda_backend/mod.rs": "cf54e82137e6f6e10404424e19dea8f2e05154caab9fdbe3e822b7981813005c",
+    "candle-core/src/dispatch/linear.rs": "84b9ce18da020e013c0c6cc6f9084d702403045f4e59c9c781ddfc814de2885f",
+    "candle-core/src/dispatch/mod.rs": "d30a6e21f473798dc81c5fe19e6fff7fc6e1999bc88429768340ccc1560c51f8",
+    "candle-core/src/lib.rs": "ea74bdfa924243c51570d90d34259760029bb74b66e0c872e574d0848bf92f8c",
+    "candle-core/tests/dispatch_bf16.rs": "681f94eb2118bd14f379bb1e9b19c0ac540f076dd06837903531286fb22fc4fe",
+    "candle-nn/src/lib.rs": "4102b54869c9b2d5457af601a05d148204eba2e80e1fd0284c1c3d07f6160085",
+    "dispatch-standalone/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
+    "dispatch-standalone/README.md": "ada44f886a7a7f3b269f67925e5a966606e757bd8cd3eaec61663f698db985fa",
+    "dispatch-standalone/adaptive-dispatch-audit.md": "70c9cdedc957abce2fa639ce4441d94e7da5dbae2e4cb238183cf17f57bad47c",
+    "dispatch-standalone/recovery.md": "a030512b83743e8ff6b522244ebcd4e8bc498e91bd458df067f99b4a446350c4",
+    "dispatch-standalone/verify_scope.py": "e4a2e7b143fa483ec25c8943b54211ae3ea49bcf9554ceeb92f680bb78ae97e6"
   }
 }

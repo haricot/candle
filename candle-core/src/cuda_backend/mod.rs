@@ -2270,8 +2270,10 @@ impl BackendStorage for CudaStorage {
                 let rhs = &rhs.slice(rhs_l.start_offset()..);
                 let cfg = gemm_config(bf16::ONE, bf16::ZERO, (b, m, n, k), lhs_l, rhs_l)?;
                 let mut out = unsafe { dev.alloc::<bf16>(elem_count)? };
-                unsafe { gemm_strided_batched_bf16(&self.device.blas, cfg, rhs, lhs, &mut out) }
-                    .w()?;
+                unsafe {
+                    gemm_strided_batched_bf16(&self.device.blas, cfg, rhs, lhs, &mut out, false)
+                }
+                .w()?;
                 CudaStorageSlice::BF16(out)
             }
             (CudaStorageSlice::F16(lhs), CudaStorageSlice::F16(rhs)) => {
@@ -2288,8 +2290,10 @@ impl BackendStorage for CudaStorage {
                 let rhs = &rhs.slice(rhs_l.start_offset()..);
                 let cfg = gemm_config(1., 0., (b, m, n, k), lhs_l, rhs_l)?;
                 let mut out = unsafe { dev.alloc::<f32>(elem_count)? };
-                unsafe { gemm_strided_batched_f32(&self.device.blas, cfg, rhs, lhs, &mut out) }
-                    .w()?;
+                unsafe {
+                    gemm_strided_batched_f32(&self.device.blas, cfg, rhs, lhs, &mut out, false)
+                }
+                .w()?;
                 CudaStorageSlice::F32(out)
             }
             (CudaStorageSlice::F64(lhs), CudaStorageSlice::F64(rhs)) => {
@@ -2589,11 +2593,12 @@ unsafe fn gemm_strided_batched_f32(
     a: &cudarc::driver::CudaView<f32>,
     b: &cudarc::driver::CudaView<f32>,
     c: &mut CudaSlice<f32>,
+    strict_f32: bool,
 ) -> std::result::Result<(), cudarc::cublas::result::CublasError> {
     use cudarc::cublas::sys;
     use cudarc::driver::DevicePtrMut;
 
-    let compute_type = if gemm_reduced_precision_f32() {
+    let compute_type = if !strict_f32 && gemm_reduced_precision_f32() {
         sys::cublasComputeType_t::CUBLAS_COMPUTE_32F_FAST_TF32
     } else {
         sys::cublasComputeType_t::CUBLAS_COMPUTE_32F
@@ -2698,6 +2703,7 @@ unsafe fn gemm_strided_batched_bf16(
     a: &cudarc::driver::CudaView<bf16>,
     b: &cudarc::driver::CudaView<bf16>,
     c: &mut CudaSlice<bf16>,
+    strict_f32: bool,
 ) -> std::result::Result<(), cudarc::cublas::result::CublasError> {
     use cudarc::cublas::sys;
     use cudarc::driver::DevicePtrMut;
@@ -2706,7 +2712,7 @@ unsafe fn gemm_strided_batched_bf16(
     let beta_f32: f32 = cfg.gemm.beta.to_f32();
     // The type for alpha and beta depends on the computeType.
     // https://docs.nvidia.com/cuda/cublas/index.html#cublasgemmstridedbatchedex
-    let (compute_type, alpha, beta) = if gemm_reduced_precision_bf16() {
+    let (compute_type, alpha, beta) = if !strict_f32 && gemm_reduced_precision_bf16() {
         (
             sys::cublasComputeType_t::CUBLAS_COMPUTE_32F_FAST_16BF,
             (&alpha_f32) as *const f32 as *const _,
@@ -2749,4 +2755,45 @@ unsafe fn gemm_strided_batched_bf16(
         compute_type,
         sys::cublasGemmAlgo_t::CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
+}
+
+impl CudaStorage {
+    pub(crate) fn matmul_dispatch_f32_accum(
+        &self,
+        rhs: &Self,
+        dims: (usize, usize, usize, usize),
+        lhs_l: &Layout,
+        rhs_l: &Layout,
+    ) -> Result<Self> {
+        if self.device.id() != rhs.device.id() {
+            crate::bail!("Dispatch GEMM operands must share a CUDA device/context");
+        }
+        let (b, m, n, _) = dims;
+        let dev = &self.device;
+        let slice = match (&self.slice, &rhs.slice) {
+            (CudaStorageSlice::F32(lhs), CudaStorageSlice::F32(rhs)) => {
+                let lhs = lhs.slice(lhs_l.start_offset()..);
+                let rhs = rhs.slice(rhs_l.start_offset()..);
+                let cfg = gemm_config(1f32, 0f32, dims, lhs_l, rhs_l)?;
+                let mut out = unsafe { dev.alloc::<f32>(b * m * n)? };
+                unsafe { gemm_strided_batched_f32(&dev.blas, cfg, &rhs, &lhs, &mut out, true) }
+                    .w()?;
+                CudaStorageSlice::F32(out)
+            }
+            (CudaStorageSlice::BF16(lhs), CudaStorageSlice::BF16(rhs)) => {
+                let lhs = lhs.slice(lhs_l.start_offset()..);
+                let rhs = rhs.slice(rhs_l.start_offset()..);
+                let cfg = gemm_config(bf16::ONE, bf16::ZERO, dims, lhs_l, rhs_l)?;
+                let mut out = unsafe { dev.alloc::<bf16>(b * m * n)? };
+                unsafe { gemm_strided_batched_bf16(&dev.blas, cfg, &rhs, &lhs, &mut out, true) }
+                    .w()?;
+                CudaStorageSlice::BF16(out)
+            }
+            _ => crate::bail!("Dispatch GEMM requires matching F32 or BF16 storage"),
+        };
+        Ok(Self {
+            slice,
+            device: dev.clone(),
+        })
+    }
 }

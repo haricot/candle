@@ -5,13 +5,12 @@ Branch: `capability-dispatch-standalone`.
 Base: `haricot/candle:main` at
 `cfcbd7186d13271843ce7eb41d25659bd0835850` (Candle 0.11.1).
 
-Status: scope and source-recovery preparation only. No Dispatch runtime, BF16
-pilot, hardware qualification or performance result is implemented by this
-initial documentation commit. `haricot/adaptive-dispatch` must be inspected
-before fixing the selector API and choosing the final reusable implementation.
-The connected GitHub reader returned 404 for its repository, README and Cargo
-manifest on 2026-11-07; this does not distinguish a missing repository from
-insufficient access. No conclusion about its contents or license is possible.
+Status: S0 A+B is implemented and CPU-checked. CUDA compilation and physical
+qualification are separate gates; no GPU or performance result is claimed here.
+The adaptive-dispatch audit is complete at
+`0203aa56fd689b01838e19bf9f7e12887f78b17a`. The initial 404 was the GitHub
+installation's selected-repository scope, subsequently corrected by the user.
+See `adaptive-dispatch-audit.md` for the recovery decision.
 
 ## Objective
 
@@ -100,8 +99,8 @@ existing contracts inform extension design without activating those features.
 
 ## Acceptance sequence
 
-1. Complete the adaptive-dispatch source/license/API audit and record exact
-   revisions, recovered functions and disposition before selector implementation.
+1. Preserve the completed adaptive-dispatch audit and exact source pins as the
+   basis for the selector implementation and its explicit exclusions.
 2. Implement and check A against pinned main, with pure selection tests for
    incompatible providers, unavailable artifacts, resource admission, explicit
    provider requests and device/context/generation isolation. Simulated device
@@ -119,3 +118,74 @@ existing contracts inform extension design without activating those features.
 
 The assistant does not register/start the user's GPU runner or install/update
 the live ASD store. Physical execution remains an explicit user-run step.
+
+
+## Public S0 consumer
+
+```rust,ignore
+use candle_core::dispatch::{DispatchContext, ResourceBudget};
+let budget = ResourceBudget::from_available(available, reserved, headroom, workspace)?;
+let session = DispatchContext::new(&device, budget, None)?;
+let linear = session.prepare_bf16_linear(&weight, bias.as_ref(), max_rows)?;
+let output = linear.forward(&input)?;
+```
+
+`PreparedBf16Linear` implements Candle's `Module` and is also re-exported by
+`candle_nn`. Existing `Linear` construction and global precision settings retain
+upstream behavior. A prepared layer always takes a private compact weight/bias
+snapshot, so subsequent source-variable mutation does not update that layer.
+Reprepare to use new weights. Layer clones share the snapshot and admission;
+last-clone drop refunds its resident reservation.
+
+S0 supports eager CPU/CUDA inference. Each session binds an actual Candle
+Device (including its context/stream identity) and inspects it once. A pure
+`select_bf16_linear` function accepts declared facts for testing/planning, but
+those declarations cannot be injected into an executing session. The CUDA
+session resolves the needed conversion/copy/add modules during construction;
+incompatible compiled PTX is rejected by the actual CUDA loader. There is no
+process-global dispatch cache or profile authority in this milestone.
+
+`SelectionPolicy` is a cold-path preference hook. It receives only eligible
+providers, and even an explicit `RequireBackend` cannot bypass eligibility.
+The default order is native CUDA BF16, CUDA F32 accumulation, or CPU F32 on a
+CPU session; it never moves CUDA work to CPU. Unknown CUDA major versions use
+no assumed native-BF16 provider. This is an architectural planning rule, not
+physical qualification of every listed architecture.
+
+The numerical contract rounds GEMM to BF16 before adding BF16 bias, then
+rounds the final result to BF16. CUDA F32/BF16 GEMMs use explicit F32 compute
+without changing process-wide reduced-precision flags. All input activation
+views are logically normalized before GEMM. `max_rows` is an enforced bound.
+
+Budget admission shares permanent snapshot reservations across session/layer
+clones. Source tensors and retained outputs are external to that reservation.
+Workspace figures are conservative logical tensor-buffer estimates per call,
+not measured allocator peaks or aggregate concurrent-inference guarantees.
+The caller reserves backend-private memory and determines concurrency. CUDA
+graph capture, asynchronous workspace-pool admission and runtime ASD refresh
+are later contracts, not implied by this eager pilot.
+
+Use the reviewed dependency resolution and portable CPU flags:
+
+```sh
+cp dispatch-standalone/Cargo.lock Cargo.lock
+export RUSTFLAGS='-C target-cpu=x86-64'
+cargo check --locked -p candle-core -p candle-nn --no-default-features
+cargo test --locked -p candle-core --no-default-features --test dispatch_bf16
+cargo run --locked -p candle-core --no-default-features --example dispatch_bf16_linear
+```
+
+The branch CI checks CPU software contracts and compiles the CUDA consumer and
+hardware test for SM61 and SM80 without executing a GPU. Its pinned SDK is the
+already-published CUDA 12.9.2 / Rust 1.99.0 environment. Hosted compilation is
+not physical validation. The hardware contract remains explicitly ignored
+until the user runs it on an available physical GPU:
+
+```sh
+CUDA_COMPUTE_CAP=61 NVCC_CCBIN=gcc-14 RUSTFLAGS='-C target-cpu=x86-64' \
+  cargo test --locked -p candle-core --no-default-features --features cuda \
+  --test dispatch_bf16 cuda_physical_bf16_linear_contracts -- --ignored --nocapture
+```
+
+This command is a standalone correctness contract, not a complete model or
+performance campaign. No live ASD store or runner registration is involved.

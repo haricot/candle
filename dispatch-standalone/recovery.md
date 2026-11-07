@@ -18,7 +18,7 @@ The machine-readable revision pins and access state are in `sources.json`.
 | Flow D6-B2, `docs/D6_B2_EVIDENCE_OOD.md` | Bound raw evidence and abstention outside measured support | Offline search guidance; hashes are integrity checks, not runner attestation or runtime eligibility |
 | Flow D6-B3, `docs/D6_B3_EQUAL_BUDGET_REPLAY.md` | Blinded replay and declared comparison budgets | Retrospective/synthetic tests are not new kernel or engine performance evidence |
 | Flow D7, `docs/D7_ENGINE.md` and `docs/D7_GENERIC_TRACE_CONTRACT.md` | Coverage, untraced measurement, independent numerical qualification and semantic trace schema | Keep coverage/submission/completion distinct; no whole-engine gain inferred from a microbenchmark |
-| `haricot/adaptive-dispatch` | Pending source/API/license audit | Connected GitHub reader returned 404; no source reviewed, copied or selected |
+| `haricot/adaptive-dispatch` | Capability/observation/model separation and numerical workload descriptors | Audit complete at the pinned revision; design recovery only, no copied code or dependency |
 
 ## Concrete extraction hazards found in ASD V3
 
@@ -38,21 +38,14 @@ convolution semantics and F32 buffers. Preserve these persisted contracts;
 define a distinct versioned linear contract if/when an external BF16 provider
 is added. Reusing the loader does not establish buffer/scale/layout equivalence.
 
-## adaptive-dispatch audit to complete
+## adaptive-dispatch audit completed
 
-The repository URL supplied by the user is authoritative input, but its content
-is currently unavailable to the connected reader. Inspect its default branch
-and relevant development branches after access is available. Record:
+See `adaptive-dispatch-audit.md`. The repository is distinct from the historical
+adaptive-static-dispatch crate and the current ASD V3 convolution runtime.
+Its capability/model separation informs S0; its heuristic predictor and legacy
+capability mutation are deliberately outside the execution authority.
 
-- exact commit, license and dependency surface;
-- capability types, operation signatures and provider selection interfaces;
-- device/context/stream and generation scoping of caches;
-- resource accounting and immutable/mutable weight ownership;
-- optional profile integration and fallback semantics;
-- tests and the precise scope of any CPU/CUDA/performance evidence;
-- which existing types can be recovered directly, adapted or excluded.
-
-Do not infer repository contents from its name or conflate it with
-`flow-adaptive-tuner`, the historical `adaptive-static-dispatch` crate, or the
-ASD V3 convolution runtime. Keep the public selector API provisional until this
-audit resolves whether an existing core should be reused.
+The initial source-access gate is closed. No Cargo dependency, capability table,
+probabilistic model, test macro or CUDA source is copied from that repository.
+The S0 implementation is new Candle code using existing Candle tensor/back-end
+operations, with the reviewed BF16 conversion/accumulation semantics as reference.
