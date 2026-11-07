@@ -49,3 +49,14 @@ The initial source-access gate is closed. No Cargo dependency, capability table,
 probabilistic model, test macro or CUDA source is copied from that repository.
 The S0 implementation is new Candle code using existing Candle tensor/back-end
 operations, with the reviewed BF16 conversion/accumulation semantics as reference.
+
+
+## Minimum build guards recovered after hosted compilation
+
+The SM61 build at Dispatch commit df2e2d520f5ffe0d3e059166e0e903fd014c06fc
+failed on main's unguarded `SUM_OP(__half, sum_f16)` (scalar-half atomicAdd).
+Recover the existing donor's SM70 guard, retaining `fast_sum_f16`. Also recover
+the donor build policy that omits WMMA-only static objects below SM70.
+These changes involve `candle-kernels/src/reduce.cu` and `candle-kernels/build.rs`;
+they introduce no BF16 general arithmetic or MoE algorithm. New source bytes
+receive a fresh complete CPU/CUDA CI run.

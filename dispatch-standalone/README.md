@@ -189,3 +189,14 @@ CUDA_COMPUTE_CAP=61 NVCC_CCBIN=gcc-14 RUSTFLAGS='-C target-cpu=x86-64' \
 
 This command is a standalone correctness contract, not a complete model or
 performance campaign. No live ASD store or runner registration is involved.
+
+
+## Minimum pre-Volta compilation support
+
+The first hosted SM61 check exposed main's unguarded scalar-half atomic sum.
+The existing `fast_sum_f16` dispatcher remains available; the unused generic
+`sum_f16` entry is compiled only from SM70. Static WMMA MoE objects are omitted
+below SM70, following the donor build policy. No replacement MoE algorithm or
+MoE qualification is introduced. These two narrow guards enable compiling the
+dense pilot against main; they do not declare the full kernel collection
+qualified on pre-Volta hardware.

@@ -36,10 +36,12 @@
       "repository": "haricot/candle",
       "branch": "fp8_sm61_bf16_standalone",
       "sha": "9cba2e898af3d25a89257f1f2ec5acece0404dcb",
-      "disposition": "bf16_calculation_donor_fp8_resource_design_only",
+      "disposition": "bf16_calculation_and_minimal_prevolta_build_guards_fp8_resource_design_only",
       "paths": [
         "candle-core/src/cuda_backend/mod.rs",
-        "candle-core/src/quantized/fp8_sm61_dispatch.rs"
+        "candle-core/src/quantized/fp8_sm61_dispatch.rs",
+        "candle-kernels/build.rs",
+        "candle-kernels/src/reduce.cu"
       ]
     },
     {
@@ -144,6 +146,8 @@
     "candle-core/src/dispatch/mod.rs",
     "candle-core/src/lib.rs",
     "candle-core/tests/dispatch_bf16.rs",
+    "candle-kernels/build.rs",
+    "candle-kernels/src/reduce.cu",
     "candle-nn/src/lib.rs",
     "dispatch-standalone/Cargo.lock",
     "dispatch-standalone/README.md",
@@ -168,11 +172,13 @@
     "candle-core/src/dispatch/mod.rs": "d30a6e21f473798dc81c5fe19e6fff7fc6e1999bc88429768340ccc1560c51f8",
     "candle-core/src/lib.rs": "ea74bdfa924243c51570d90d34259760029bb74b66e0c872e574d0848bf92f8c",
     "candle-core/tests/dispatch_bf16.rs": "681f94eb2118bd14f379bb1e9b19c0ac540f076dd06837903531286fb22fc4fe",
+    "candle-kernels/build.rs": "74833c00738e34cc2cbec150187d73a7571905410e20c62e1c5296b55dadf59b",
+    "candle-kernels/src/reduce.cu": "ea0c73fbeecb1c1b5327ebf279ae8556047ad13fe9de5745c6086c3778f9de26",
     "candle-nn/src/lib.rs": "4102b54869c9b2d5457af601a05d148204eba2e80e1fd0284c1c3d07f6160085",
     "dispatch-standalone/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
-    "dispatch-standalone/README.md": "ada44f886a7a7f3b269f67925e5a966606e757bd8cd3eaec61663f698db985fa",
+    "dispatch-standalone/README.md": "d4a15f90c585ae05f95d69e8cedf3a7713bd7bfa95aed727aad213c5379da2ab",
     "dispatch-standalone/adaptive-dispatch-audit.md": "70c9cdedc957abce2fa639ce4441d94e7da5dbae2e4cb238183cf17f57bad47c",
-    "dispatch-standalone/recovery.md": "a030512b83743e8ff6b522244ebcd4e8bc498e91bd458df067f99b4a446350c4",
+    "dispatch-standalone/recovery.md": "cf60cd612f2c6d37e982046e2fcfff72da3a7f3fb4046a7103067b30183af9b8",
     "dispatch-standalone/verify_scope.py": "e4a2e7b143fa483ec25c8943b54211ae3ea49bcf9554ceeb92f680bb78ae97e6"
   }
 }
