@@ -71,3 +71,5 @@ jobs:
           cargo check --locked -p candle-core -p candle-nn --no-default-features --features cuda
           cargo test --locked -p candle-core --no-default-features --features cuda --test dispatch_bf16 --no-run
           cargo build --locked -p candle-core --no-default-features --features cuda --example dispatch_bf16_linear
+      - name: Verify generated dispatch entry points without a GPU
+        run: python3 dispatch-standalone/verify_ptx.py target

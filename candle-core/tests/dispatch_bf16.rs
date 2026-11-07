@@ -351,8 +351,21 @@ fn rejects_bad_shapes_dtypes_policy_and_row_limits() -> Result<()> {
 #[ignore = "requires a physical CUDA GPU; compile-only CI does not execute this test"]
 fn cuda_physical_bf16_linear_contracts() -> Result<()> {
     let device = Device::new_cuda(0)?;
-    layouts_and_range(&device)?;
     let first = DispatchContext::new(&device, generous(), None)?;
+    // Copy every BF16 bit pattern through a strided GPU view, including NaNs,
+    // signed zeros and subnormals. Storage support must not round via F16/F32.
+    let bits = (0..=u16::MAX).map(bf16::from_bits).collect::<Vec<_>>();
+    let source = Tensor::from_vec(bits.clone(), (256, 256), &Device::Cpu)?.to_device(&device)?;
+    let copied = source
+        .t()?
+        .force_contiguous()?
+        .to_device(&Device::Cpu)?
+        .flatten_all()?
+        .to_vec1::<bf16>()?;
+    for (i, value) in copied.iter().enumerate() {
+        assert_eq!(value.to_bits(), bits[(i % 256) * 256 + i / 256].to_bits());
+    }
+    layouts_and_range(&device)?;
     let second = Device::new_cuda_with_stream(0)?;
     let weight = bf(&[1., 2., 3., 4.], (2, 2), &device)?;
     let linear = first.prepare_bf16_linear(&weight, None, 1)?;

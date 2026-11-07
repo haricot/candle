@@ -7,6 +7,11 @@ Base: `haricot/candle:main` at
 
 Status: S0 A+B is implemented and CPU-checked. CUDA compilation and physical
 qualification are separate gates; no GPU or performance result is claimed here.
+Physical SM61 execution of `8bea3add` reported `CUDA_ERROR_NOT_FOUND` (six CPU
+tests passed, the hardware test failed). Source inspection found `ucopy_bf16`
+missing below SM80, although the layout fixtures require it. The repair adds
+bit-preserving pre-Ampere storage copying, not general BF16 arithmetic; fresh
+physical execution is still required.
 The adaptive-dispatch audit is complete at
 `0203aa56fd689b01838e19bf9f7e12887f78b17a`. The initial 404 was the GitHub
 installation's selected-repository scope, subsequently corrected by the user.
@@ -178,7 +183,9 @@ cargo run --locked -p candle-core --no-default-features --example dispatch_bf16_
 The branch CI checks CPU software contracts and compiles the CUDA consumer and
 hardware test for SM61 and SM80 without executing a GPU. Its pinned SDK is the
 already-published CUDA 12.9.2 / Rust 1.99.0 environment. Hosted compilation is
-not physical validation. The hardware contract remains explicitly ignored
+followed by checking the actual generated PTX entry points, including BF16
+storage copy on both targets. Symbol presence is not driver-loading or numerical
+validation. The hardware contract remains explicitly ignored
 until the user runs it on an available physical GPU:
 
 ```sh

@@ -60,3 +60,19 @@ the donor build policy that omits WMMA-only static objects below SM70.
 These changes involve `candle-kernels/src/reduce.cu` and `candle-kernels/build.rs`;
 they introduce no BF16 general arithmetic or MoE algorithm. New source bytes
 receive a fresh complete CPU/CUDA CI run.
+
+
+## BF16 layout support after physical SM61 failure
+
+The user executed all seven contracts at `8bea3add`: the six CPU contracts
+passed and the hardware contract failed with `CUDA_ERROR_NOT_FOUND`. No GPU
+PASS is recorded. Inspection found `ucopy_bf16` guarded by SM80 in upstream
+`unary.cu`, while `layouts_and_range` compacts a transposed BF16 weight tensor.
+The existing BF16/F32 cast fallbacks are already generated before SM80.
+
+Recover only the missing bit-preserving copy with the existing unary macro,
+leaving native BF16 arithmetic guards intact. Resolve this entry during every
+CUDA session's preparation, with symbol-specific error context. The physical
+contract now exercises all 65,536 BF16 bit patterns through a strided copy.
+Hosted checks inspect generated PTX declarations for all required pilot
+functions; these are static artifact checks, not physical execution evidence.

@@ -148,12 +148,14 @@
     "candle-core/tests/dispatch_bf16.rs",
     "candle-kernels/build.rs",
     "candle-kernels/src/reduce.cu",
+    "candle-kernels/src/unary.cu",
     "candle-nn/src/lib.rs",
     "dispatch-standalone/Cargo.lock",
     "dispatch-standalone/README.md",
     "dispatch-standalone/adaptive-dispatch-audit.md",
     "dispatch-standalone/recovery.md",
     "dispatch-standalone/sources.json",
+    "dispatch-standalone/verify_ptx.py",
     "dispatch-standalone/verify_scope.py"
   ],
   "qualification": {
@@ -162,23 +164,34 @@
     "cuda_compiled": false,
     "gpu_validated": false,
     "models_executed": false,
-    "performance_qualified": false
+    "performance_qualified": false,
+    "last_physical_attempt": {
+      "revision": "8bea3addd849d7546dd6e0ea76b0511d62903d31",
+      "target": "SM61",
+      "source": "user-reported console output",
+      "result": "FAIL",
+      "cpu_contracts_passed": 6,
+      "gpu_error": "CUDA_ERROR_NOT_FOUND: named symbol not found",
+      "repair_physical_validation": "PENDING"
+    }
   },
   "payload_sha256": {
-    ".github/workflows/capability-dispatch-standalone.yml": "ca9e2b138239c41e014193446c4993cc95b622688a01aa6d93e6acc51e6a843e",
+    ".github/workflows/capability-dispatch-standalone.yml": "d512eb072284ad832295e70aed17769b54a0d71188287494a0ce2b49d0190b7d",
     "candle-core/examples/dispatch_bf16_linear.rs": "f4c6753971853d78825af4606d7b67c95743a35f5c7812c35c665196f8342189",
     "candle-core/src/cuda_backend/mod.rs": "cf54e82137e6f6e10404424e19dea8f2e05154caab9fdbe3e822b7981813005c",
     "candle-core/src/dispatch/linear.rs": "84b9ce18da020e013c0c6cc6f9084d702403045f4e59c9c781ddfc814de2885f",
-    "candle-core/src/dispatch/mod.rs": "d30a6e21f473798dc81c5fe19e6fff7fc6e1999bc88429768340ccc1560c51f8",
+    "candle-core/src/dispatch/mod.rs": "5deaaf7020d7de5bb5c919c07eff51fe35de14f5dc4687c298bbc8f3ca84fce8",
     "candle-core/src/lib.rs": "ea74bdfa924243c51570d90d34259760029bb74b66e0c872e574d0848bf92f8c",
-    "candle-core/tests/dispatch_bf16.rs": "681f94eb2118bd14f379bb1e9b19c0ac540f076dd06837903531286fb22fc4fe",
+    "candle-core/tests/dispatch_bf16.rs": "e94f1386a919e9fab76e57eeaa54597e024d6ce8f5aaeeeed1dbc97f7949e751",
     "candle-kernels/build.rs": "74833c00738e34cc2cbec150187d73a7571905410e20c62e1c5296b55dadf59b",
     "candle-kernels/src/reduce.cu": "ea0c73fbeecb1c1b5327ebf279ae8556047ad13fe9de5745c6086c3778f9de26",
     "candle-nn/src/lib.rs": "4102b54869c9b2d5457af601a05d148204eba2e80e1fd0284c1c3d07f6160085",
     "dispatch-standalone/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
-    "dispatch-standalone/README.md": "d4a15f90c585ae05f95d69e8cedf3a7713bd7bfa95aed727aad213c5379da2ab",
+    "dispatch-standalone/README.md": "69a0a64aff51eeb9d9c1607537657e0196347e31afcdd76bfa181fd5ba91e593",
     "dispatch-standalone/adaptive-dispatch-audit.md": "70c9cdedc957abce2fa639ce4441d94e7da5dbae2e4cb238183cf17f57bad47c",
-    "dispatch-standalone/recovery.md": "cf60cd612f2c6d37e982046e2fcfff72da3a7f3fb4046a7103067b30183af9b8",
-    "dispatch-standalone/verify_scope.py": "e4a2e7b143fa483ec25c8943b54211ae3ea49bcf9554ceeb92f680bb78ae97e6"
+    "dispatch-standalone/recovery.md": "b453dc55186d1beba605e3530d34de4d820705f1f32fe82b0a5353374b0e0a58",
+    "dispatch-standalone/verify_scope.py": "e4a2e7b143fa483ec25c8943b54211ae3ea49bcf9554ceeb92f680bb78ae97e6",
+    "candle-kernels/src/unary.cu": "7533e9753dbbbce693111f75992ab17f3ef7ecb5147b453001df3ee1d90fc9af",
+    "dispatch-standalone/verify_ptx.py": "9e3e64fa2f855d874364c22432d99c0683c1d501d573bcfcc02556063c6aa130"
   }
 }

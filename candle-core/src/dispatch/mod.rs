@@ -296,12 +296,17 @@ impl DispatchContext {
         #[cfg(feature = "cuda")]
         if let Device::Cuda(cuda) = device {
             use crate::cuda_backend::kernels;
-            cuda.get_or_load_func("cast_bf16_f32", &kernels::CAST)?;
-            cuda.get_or_load_func("cast_f32_bf16", &kernels::CAST)?;
-            cuda.get_or_load_func("ucopy_f32", &kernels::UNARY)?;
-            cuda.get_or_load_func("badd_f32", &kernels::BINARY)?;
-            if caps.native_bf16_gemm() {
-                cuda.get_or_load_func("ucopy_bf16", &kernels::UNARY)?;
+            // BF16 views also need a raw copy when the software GEMM uses F32.
+            for (name, module) in [
+                ("cast_bf16_f32", &kernels::CAST),
+                ("cast_f32_bf16", &kernels::CAST),
+                ("ucopy_f32", &kernels::UNARY),
+                ("ucopy_bf16", &kernels::UNARY),
+                ("badd_f32", &kernels::BINARY),
+            ] {
+                cuda.get_or_load_func(name, module).map_err(|error| {
+                    error.context(format!("Dispatch requires CUDA symbol {name}"))
+                })?;
             }
         }
 
