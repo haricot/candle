@@ -127,7 +127,7 @@ jobs:
           CAMPAIGN: ${{ steps.assemble.outputs.campaign }}
           STRATEGY: exact-delta
           BASE_SHA_INPUT: ${{ steps.assemble.outputs.base_sha }}
-          PUBLISH: ${{ inputs.publish }}
+          PUBLISH: ${{ github.event_name == 'push' && 'true' || inputs.publish }}
           REUSE_EXTENDED_MANIFEST: ${{ runner.temp }}/candle-extended/extended.json
         run: bash .github/scripts/candle-legacy-assemble.sh
       - name: Bind Legacy and Extended to identical five standalone preparations
