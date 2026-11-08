@@ -1,3 +1,5 @@
+#![allow(clippy::chunks_exact_to_as_chunks)]
+
 //! ML framework for Rust
 //!
 //! ```rust
@@ -59,6 +61,7 @@ pub mod cpu_backend;
 pub mod cuda_backend;
 mod custom_op;
 mod device;
+pub mod dispatch;
 pub mod display;
 mod dtype;
 pub mod dummy_cuda_backend;

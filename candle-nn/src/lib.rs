@@ -45,6 +45,7 @@ pub mod varlen_attention {
 
 pub use activation::{prelu, Activation, PReLU};
 pub use batch_norm::{batch_norm, BatchNorm, BatchNormConfig};
+pub use candle::dispatch::PreparedBf16Linear;
 pub use conv::{
     conv1d, conv1d_no_bias, conv2d, conv2d_no_bias, conv_transpose1d, conv_transpose1d_no_bias,
     conv_transpose2d, conv_transpose2d_no_bias, Conv1d, Conv1dConfig, Conv2d, Conv2dConfig,

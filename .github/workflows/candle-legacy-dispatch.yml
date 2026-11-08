@@ -1,0 +1,54 @@
+name: Candle Legacy Dispatch integration
+on:
+  push:
+    branches:
+      - integration/candle-legacy-v3-dispatch-bf16
+      - integration/candle-legacy-v3-dispatch-fp8
+      - integration/candle-legacy-v3-dispatch-fp4
+      - candle-legacy-dispatch
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: legacy-dispatch-${{ github.ref }}
+  cancel-in-progress: false
+  queue: max
+env:
+  RUSTFLAGS: -C target-cpu=x86-64
+  CARGO_BUILD_JOBS: '2'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_DEV_OPT_LEVEL: '1'
+jobs:
+  cpu:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.99.0
+      - run: python3 legacy-dispatch/validate.py cpu
+  cuda-compile:
+    needs: cpu
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: ${{ fromJSON(github.ref_name == 'candle-legacy-dispatch' && '["61","80"]' || '["61"]') }}
+    container:
+      image: ghcr.io/haricot/mistral-ci-sm61@sha256:1ea7476aee23aed947918bb7159aaf82ae9f4e98caec19db1160768000354eee
+    env:
+      CUDA_COMPUTE_CAP: ${{ matrix.cc }}
+      NVCC_CCBIN: g++
+      LIBRARY_PATH: /usr/local/cuda/lib64/stubs
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 legacy-dispatch/validate.py cuda-compile

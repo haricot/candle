@@ -104,7 +104,7 @@ fast_sum(const size_t src_numel, const size_t el_to_sum_per_block,
 }
 
 // Specialized vectorized fast_sum for bf16: 8 elements per float4 load
-#if __CUDA_ARCH__ >= 800
+#if __CUDA_ARCH__ >= 800 || defined(CANDLE_CUDA_BF16_FALLBACK)
 __device__ void
 fast_sum_bf16_vec(const size_t src_numel, const size_t el_to_sum_per_block,
                   const size_t num_dims, const size_t *info,
@@ -755,7 +755,7 @@ fast_sum_small_impl(const size_t dst_el, const size_t el_to_sum_per_block,
   dst[gid] = sum;
 }
 
-#if __CUDA_ARCH__ >= 800
+#if __CUDA_ARCH__ >= 800 || defined(CANDLE_CUDA_BF16_FALLBACK)
 extern "C" __global__ void fast_sum_small_bf16(
     const size_t dst_el, const size_t el_to_sum_per_block,
     const size_t num_dims, const size_t *info, const __nv_bfloat16 *src,
@@ -853,7 +853,7 @@ extern "C" __global__ void fast_sum_small_f16(
 }
 #endif
 
-#if __CUDA_ARCH__ >= 800
+#if __CUDA_ARCH__ >= 800 || defined(CANDLE_CUDA_BF16_FALLBACK)
 SOFTMAX_OP(__nv_bfloat16, float, softmax_bf16)
 RMSNORM_OP(__nv_bfloat16, rmsnorm_bf16)
 LAYERNORM_OP(__nv_bfloat16, layernorm_bf16)
@@ -906,7 +906,12 @@ SOFTMAX_OP(__half, float, softmax_f16)
 RMSNORM_OP(__half, rmsnorm_f16)
 LAYERNORM_OP(__half, layernorm_f16)
 ROPE_OP(__half, rope_f16, rope_i_f16, rope_thd_f16)
+// Native scalar-half atomicAdd is unavailable before sm_70. The current
+// Candle reduction dispatcher uses fast_sum_f16, which remains available.
+// Do not expose the unsupported general sum_f16 entry point on Pascal.
+#if __CUDA_ARCH__ >= 700
 SUM_OP(__half, sum_f16)
+#endif
 FAST_OP(__half, fast_min_f16, fast_max_f16, fast_argmin_f16, fast_argmax_f16, fast_sum_f16)
 #endif
 
