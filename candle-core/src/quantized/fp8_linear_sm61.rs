@@ -10,7 +10,7 @@ use crate::cuda_backend::{
 };
 use crate::{CpuStorage, CudaDevice, CudaStorage, DType, Device, Layout, Result, Shape, Tensor};
 use crate::{CustomOp1, CustomOp2};
-use half::f16;
+use half::{bf16, f16};
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -293,8 +293,13 @@ impl Fp8Sm61Linear {
         self.resident_bytes
     }
     pub fn forward(&self, input: &Tensor) -> Result<Tensor> {
-        if input.dtype() != DType::F16 || input.dims().len() != 2 || input.dims()[1] != self.k {
-            crate::bail!("F8E input requires rank-2 FP16 [tokens,{}]", self.k)
+        if !matches!(input.dtype(), DType::F16 | DType::BF16)
+            || input.dims().len() != 2 || input.dims()[1] != self.k {
+            crate::bail!("F8E input requires rank-2 FP16 or BF16 [tokens,{}]", self.k)
+        }
+        if input.dtype() == DType::BF16
+            && !matches!(self.resident, ResidentWeights::Fp8 { .. }) {
+            crate::bail!("F8E BF16 activations require packed SIMT FP8 residency")
         }
         let m = input.dims()[0];
         if m == 0
@@ -314,7 +319,10 @@ impl Fp8Sm61Linear {
             ResidentWeights::F16 { weights } => {
                 input.apply_op2_no_bwd(weights, &ExpandedF16Op { linear: self })
             }
-            _ => input.apply_op1_no_bwd(&ForwardOp { linear: self }),
+            _ => input.apply_op1_no_bwd(&ForwardOp {
+                linear: self,
+                bf16_input: input.dtype() == DType::BF16,
+            }),
         }
     }
 
@@ -451,6 +459,7 @@ impl CustomOp2 for ExpandedF16Op<'_> {
 
 struct ForwardOp<'a> {
     linear: &'a Fp8Sm61Linear,
+    bf16_input: bool,
 }
 impl CustomOp1 for ForwardOp<'_> {
     fn name(&self) -> &'static str {
@@ -473,8 +482,18 @@ impl CustomOp1 for ForwardOp<'_> {
             crate::bail!("F8E requires contiguous zero-offset [tokens,k] input")
         }
         let m = layout.dims()[0];
-        let inp = storage.as_cuda_slice::<f16>()?;
-        if inp.len() != m * op.k {
+        let inp_f16 = if self.bf16_input {
+            None
+        } else {
+            Some(storage.as_cuda_slice::<f16>()?)
+        };
+        let inp_bf16 = if self.bf16_input {
+            Some(storage.as_cuda_slice::<bf16>()?)
+        } else {
+            None
+        };
+        if inp_f16.map_or(false, |inp| inp.len() != m * op.k)
+            || inp_bf16.map_or(false, |inp| inp.len() != m * op.k) {
             crate::bail!("F8E input underlying slice length mismatch")
         }
         let output = op.device.alloc_zeros::<f32>(m * op.n)?;
@@ -499,7 +518,9 @@ impl CustomOp1 for ForwardOp<'_> {
                     shared_mem_bytes: 0,
                 };
                 let mut qb = quant_func.builder();
-                qb.arg(inp);
+                qb.arg(inp_f16.ok_or_else(|| crate::Error::msg(
+                    "F8E DP4A requires F16 input"
+                ))?);
                 qb.arg(&quant);
                 qb.arg(&act_scales);
                 qb.arg(&mi);
@@ -528,10 +549,11 @@ impl CustomOp1 for ForwardOp<'_> {
                 unsafe { b.launch(cfg) }.w()?;
             }
             ResidentWeights::Fp8 { weights, scales } => {
-                let name = if m >= 4 {
-                    "fp8_sm61_w8a16_prefill4"
-                } else {
-                    "fp8_sm61_w8a16_gemv"
+                let name = match (self.bf16_input, m >= 4) {
+                    (true, true) => "fp8_sm61_w8abf16_prefill4",
+                    (true, false) => "fp8_sm61_w8abf16_gemv",
+                    (false, true) => "fp8_sm61_w8a16_prefill4",
+                    (false, false) => "fp8_sm61_w8a16_gemv",
                 };
                 let func = op
                     .device
@@ -554,7 +576,13 @@ impl CustomOp1 for ForwardOp<'_> {
                 let mut b = func.builder();
                 b.arg(weights);
                 b.arg(scales);
-                b.arg(inp);
+                if let Some(inp) = inp_bf16 {
+                    b.arg(inp);
+                } else {
+                    b.arg(inp_f16.ok_or_else(|| crate::Error::msg(
+                        "F8E SIMT missing input"
+                    ))?);
+                }
                 b.arg(&output);
                 b.arg(&mi);
                 b.arg(&ni);

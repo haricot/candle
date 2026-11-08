@@ -11,6 +11,8 @@ fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/cuda_utils.cuh");
     println!("cargo::rerun-if-changed=src/binary_op_macros.cuh");
     println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_LEGACY_FP8");
+    println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
+    println!("cargo::rerun-if-env-changed=NVCC_CCBIN");
 
     let compute_cap = cudaforge::detect_compute_cap()
         .map(|arch| arch.base())
@@ -22,6 +24,7 @@ fn main() -> Result<()> {
     let ptx_path = out_dir.join("ptx.rs");
     let mut builder = KernelBuilder::new()
         .source_dir("src") // Scan src/ for .cu files
+        .compute_cap(compute_cap)
         .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"]) // Exclude statically compiled kernels from ptx build
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
@@ -65,6 +68,7 @@ fn main() -> Result<()> {
 
     let mut moe_builder = KernelBuilder::default()
         .source_files(moe_sources)
+        .compute_cap(compute_cap)
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");

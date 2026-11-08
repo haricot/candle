@@ -196,3 +196,56 @@ extern "C" __global__ void fp8_sm61_dp4a_prefill8(
     }
     if(lane==0) for(int t=0;t<8;t++) if(base+t<m) out[(base+t)*n+row]=total[t];
 }
+
+
+// BF16 activations: exact IEEE bfloat16 to F32 widening via its bit pattern.
+// Pascal SM61 has no BF16 arithmetic instructions, so all math remains F32.
+// This path never narrows BF16 activations through F16.
+__device__ __forceinline__ float haricot_bf16_as_f32(uint16_t bits) {
+    return __uint_as_float(((uint32_t)bits) << 16);
+}
+extern "C" __global__ void fp8_sm61_w8abf16_gemv(
+    const uint8_t* __restrict__ w, const float* __restrict__ scales,
+    const uint16_t* __restrict__ x, float* __restrict__ out,
+    int m, int n, int k, int bn, int bk) {
+    const int row=blockIdx.x*4+threadIdx.x/32;
+    const int token=blockIdx.y;
+    const int lane=threadIdx.x%32;
+    if(row>=n || token>=m) return;
+    float acc=0.f;
+    for(int col=lane;col<k;col+=32) {
+        const float weight=haricot_e4m3fn_decode(w[(size_t)row*k+col]) *
+            haricot_scale(scales,row,col,bn,bk,k);
+        acc=fmaf(weight,haricot_bf16_as_f32(x[(size_t)token*k+col]),acc);
+    }
+    acc=haricot_reduce_warp_f32(acc);
+    if(lane==0) out[(size_t)token*n+row]=acc;
+}
+extern "C" __global__ void fp8_sm61_w8abf16_prefill4(
+    const uint8_t* __restrict__ w, const float* __restrict__ scales,
+    const uint16_t* __restrict__ x, float* __restrict__ out,
+    int m, int n, int k, int bn, int bk) {
+    const int row=blockIdx.x*4+threadIdx.x/32;
+    const int lane=threadIdx.x%32;
+    const int token_base=blockIdx.y*4;
+    if(row>=n) return;
+    float acc[4]={0.f,0.f,0.f,0.f};
+    for(int col=lane;col<k;col+=32) {
+        const float weight=haricot_e4m3fn_decode(w[(size_t)row*k+col]) *
+            haricot_scale(scales,row,col,bn,bk,k);
+        #pragma unroll
+        for(int t=0;t<4;t++) {
+            if(token_base+t<m) {
+                acc[t]=fmaf(weight,
+                    haricot_bf16_as_f32(x[(size_t)(token_base+t)*k+col]),acc[t]);
+            }
+        }
+    }
+    #pragma unroll
+    for(int t=0;t<4;t++) {
+        if(token_base+t<m) {
+            const float total=haricot_reduce_warp_f32(acc[t]);
+            if(lane==0) out[(size_t)(token_base+t)*n+row]=total;
+        }
+    }
+}

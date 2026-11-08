@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "branch": "fp8_legacy_standalone",
+  "base": "fa922939e36cdd3f84cfdbbd235f8ce2bcc8cc4b",
+  "main_base": "cfcbd7186d13271843ce7eb41d25659bd0835850",
+  "bf16_kernel_donor": "9cba2e898af3d25a89257f1f2ec5acece0404dcb",
+  "historical_gpu_reference_only": {
+    "repository": "haricot/mistral.rs",
+    "run_id": 42380889678,
+    "candidate": "f592ba9fabf70c6063cbfc5c8a685363a86d806a"
+  },
+  "qualification": {
+    "physical_gpu_validated": false,
+    "models_validated": false,
+    "performance_qualified": false,
+    "cuda_legacy_updated": false
+  },
+  "compile_targets": [
+    "61",
+    "70",
+    "75",
+    "80"
+  ],
+  "tests": [
+    "fp8_w8abf16",
+    "fp8_legacy_tests",
+    "fp8_sm61_f8_tests",
+    "fp8_r2_upstream_canary",
+    "fp8_r4c_dispatch_tests",
+    "fp8_r4c_loader_tests",
+    "fp8_r4d_native_tests"
+  ],
+  "required_ptx": [
+    "fp8_sm61_w8a16_gemv",
+    "fp8_sm61_w8a16_prefill4",
+    "fp8_sm61_w8abf16_gemv",
+    "fp8_sm61_w8abf16_prefill4"
+  ],
+  "payload_sha256": {
+    "candle-core/src/quantized/fp8_linear_sm61.rs": "9c700c6936e8e18e6f13e72486658bb72822b76e14a661f15d5b8ba707bd8022",
+    "candle-kernels/src/fp8_sm61_f8.cuh": "92ee4ef51ce098420aeceea97ea991320a8f9094ebe7d90f1b2deb12497e593c",
+    "candle-kernels/build.rs": "d6b242d35bbd9e152785f932a6adc0b5001617e766a8401c34f922ded50a22c5",
+    "candle-core/tests/fp8_w8abf16.rs": "21ac05704d9f77a793ac850ae7bb2bddd015935709e72da9846bec845d087fc8",
+    ".github/workflows/fp8-legacy-standalone.yml": "2d2f7ce826ab034ca9f00d25ed67b0682bdc0b24e17f955f32d05fc11ac23a86",
+    "fp8-legacy/README.md": "9a3472db770e151aec48c0555d76ebebdcf16af5766dc444458cd5d089a4b879",
+    "fp8-legacy/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
+    "fp8-legacy/validate.py": "3d86b9dfa351e4b6b3507e953f83bd5fc19462c5965d76695e268087f2263f85"
+  }
+}
