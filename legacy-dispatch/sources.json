@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "phase": "initial-source-integration",
+  "branch": "integration/candle-legacy-v3-dispatch-fp4",
+  "base": "cfcbd7186d13271843ce7eb41d25659bd0835850",
+  "formats": [
+    "fp4"
+  ],
+  "features": [
+    "cuda",
+    "cuda-legacy-fp4"
+  ],
+  "tests": [
+    "mxfp4_tests",
+    "fp4_e7c_contract",
+    "nvfp4_loader_tests"
+  ],
+  "physical_ignored_tests": [],
+  "sources": {
+    "fp4": "cfb06d4c14722a01a6cd39c10c093289d800e87e"
+  },
+  "bf16_pilot_source": null,
+  "fp8_bf16_kernel_source": null,
+  "mistral_fp8_contract_reference": null,
+  "historical_gpu_reference_only": {
+    "repository": "haricot/mistral.rs",
+    "run_id": 42380889678,
+    "candidate": "f592ba9fabf70c6063cbfc5c8a685363a86d806a"
+  },
+  "qualification": {
+    "gpu_validated": false,
+    "models_validated": false,
+    "performance_qualified": false,
+    "asd_adapter_connected": false,
+    "cross_format_shared_admission": false
+  },
+  "payload_sha256": {
+    ".github/workflows/candle-legacy-dispatch.yml": "18b0eeb429b5ac486f25baf4547bbc4199a96c89fc93d0a1285a536cf4df5b71",
+    "candle-core/Cargo.toml": "8116b899d8f6045edf4b5143127520f33fe496c327816017df7ed93f23721031",
+    "candle-core/src/quantized/cuda.rs": "74091167bcc7c2dc18ba3ebea86e9a91a7fa1a0219bef381d4c198b4b5c4994a",
+    "candle-core/src/quantized/fp4_e7c_runtime.rs": "6e01c89ca14018ab0c374860879e3cb9b59bb5007633d829024c153504c345e0",
+    "candle-core/src/quantized/ggml_file.rs": "783d3d46addedb6f58fcb797b7e24594f2b95941f1f68645d6c269acdfe53d1a",
+    "candle-core/src/quantized/k_quants.rs": "cf59dbba87c1e700c0cb0edc311c389baddbdfb559fc13f25aca64c9b4fd9b9c",
+    "candle-core/src/quantized/metal.rs": "a20b5a17e0397ebd2f458260ffdd62034ca36d28fae440c0040d4cd80a552eae",
+    "candle-core/src/quantized/mod.rs": "3122c54658bccaa61560418a39acfd43cd0c2e1aaec048e45ef3361b9db123b9",
+    "candle-core/src/quantized/nvfp4_arch_e6.rs": "ce63793b6ecbc1b2d869b937b1ae17debaf556935dc973eee4b2d5258af795db",
+    "candle-core/src/quantized/nvfp4_arch_e7.rs": "650491c063db7a7330862c47c3959de8b61833372b03de577b987da3bbe02775",
+    "candle-core/src/quantized/nvfp4_e7c_safetensors.rs": "7fb4b2f5fda6de593244227a1c5692d668d924e8a88b94407a4f00f872803a85",
+    "candle-core/tests/fp4_e7c_contract.rs": "75204a74f476387a164b3e30871fd58e9fcdb4312177b556256a822397d5d831",
+    "candle-core/tests/mxfp4_tests.rs": "0cebbdd2660ec766187263295c12fb6503cf5742317ae493c83f4237960a52bb",
+    "candle-core/tests/nvfp4_arch_e7b_glm_fullforward.rs": "201377ef4f5d6a5cec34ed024148ba41d065dc18c0cbc9e531bbe3644ca822ac",
+    "candle-core/tests/nvfp4_experiment.rs": "6a4f2662ebcd921279b0324b250a0fe8f5478b15abda73fc17050ef79bc6b778",
+    "candle-core/tests/nvfp4_loader_tests.rs": "dc951b9504e1dd61b68fcc9a328d37bb37064010c57fe5a5e8c730aa9ff4115d",
+    "candle-core/tests/quantized_tests.rs": "b6cf1e0c789270a7820d75e5caa84901bc522fcfe5f4ffe475b2f06738f85448",
+    "candle-examples/Cargo.toml": "4c16c34b9f6e08e20c260763b07033fd17085bd1ba360c7ef0e0e022d375d10e",
+    "candle-kernels/Cargo.toml": "7a5fa52af3e3654866c5ad63a7a39e30984e5117ea96b4b5158c7c129216f095",
+    "candle-kernels/build.rs": "d48143d5246ce8cf00c68157df7cb6c4ae5d4ddd9ac5481c48b8fdc447b228ba",
+    "candle-kernels/src/quantized.cu": "44c4cb52effc5ad56790c91221e2ed823c4a2a47182b8b687828b49d59aa5363",
+    "candle-kernels/src/reduce.cu": "e610852c2b2db24184e93cce28ad4c46d59c9842d1a1895022c81271d75538a5",
+    "candle-kernels/src/unary.cu": "68005591d0d650d330481c3d26de4e31a78baa9d25b708059958daf00adfeb0d",
+    "docs/cuda-legacy-fp4-sm61.md": "8cff3a0b7a441a569f7ab7e6b97e58532440fce4394ae2d13dfebd44f4b36d3b",
+    "docs/fp4-migration-aebc405d.md": "40e349b8236c3cf1d6625d5633f0b0b8e48fcd908aa43bf9b215a1b3375298a4",
+    "docs/fp4-sm61-closure-20261016.md": "12686ee6181cc7e3360e77401555b3635b4299c48eb006adf5648584d1d346d5",
+    "docs/nvfp4-e7c-modelopt-sm61.md": "8fe678cac1e1129fb7e8d2f6fd56d0af81185ce9055f148375bee79a26733571",
+    "legacy-dispatch/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
+    "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
+    "legacy-dispatch/validate.py": "df39cef1cab7c089f387faaf1dd2e2e5fdaa4c406b521c164d1f678d94ec51cd"
+  }
+}

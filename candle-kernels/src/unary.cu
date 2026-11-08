@@ -204,6 +204,9 @@ UNARY_OP(__nv_bfloat16, urelu_bf16, relu_fwd(x))
 UNARY_OP1(__nv_bfloat16, uelu_bf16, elu_fwd(x, param))
 UNARY_OP1(__nv_bfloat16, upowf_bf16, powg(x, param))
 UNARY_OP(__nv_bfloat16, usign_bf16, sign_(x))
+#else
+// Storage support is independent of native BF16 arithmetic.
+UNARY_OP(__nv_bfloat16, ucopy_bf16, x)
 #endif
 
 #if __CUDA_ARCH__ >= 890
