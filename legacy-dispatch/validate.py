@@ -11,14 +11,15 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 META = json.loads((ROOT / "legacy-dispatch/sources.json").read_text())
+GIT = ["git", "-c", f"safe.directory={ROOT}"]
 
 def run(args):
     print("+ " + " ".join(map(str, args)), flush=True)
     subprocess.run(list(map(str, args)), cwd=ROOT, check=True)
 
 def source_check():
-    run(["git", "merge-base", "--is-ancestor", META["base"], "HEAD"])
-    changed = subprocess.check_output(["git", "diff", "--name-only", META["base"]], cwd=ROOT, text=True).splitlines()
+    run(GIT + ["merge-base", "--is-ancestor", META["base"], "HEAD"])
+    changed = subprocess.check_output(GIT + ["diff", "--name-only", META["base"]], cwd=ROOT, text=True).splitlines()
     assert set(changed) <= set(META["payload_sha256"]) | {"legacy-dispatch/sources.json"}, "unexpected source delta"
     for name, digest in META["payload_sha256"].items():
         assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest, name

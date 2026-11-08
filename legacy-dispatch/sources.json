@@ -64,6 +64,6 @@
     "docs/nvfp4-e7c-modelopt-sm61.md": "8fe678cac1e1129fb7e8d2f6fd56d0af81185ce9055f148375bee79a26733571",
     "legacy-dispatch/Cargo.lock": "7f8847aa883ba65920aa3065a0e514a7c4ca440ba64e41bf9d60cf354e940d0c",
     "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
-    "legacy-dispatch/validate.py": "df39cef1cab7c089f387faaf1dd2e2e5fdaa4c406b521c164d1f678d94ec51cd"
+    "legacy-dispatch/validate.py": "10527b5ac8d3dee5c074d2960bad141346eaffd8ec91fff51b15a6ae0aa518fc"
   }
 }
