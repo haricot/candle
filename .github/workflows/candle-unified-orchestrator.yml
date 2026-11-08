@@ -55,13 +55,15 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          fetch-depth: 0
           persist-credentials: false
       - run: python3 -B .github/scripts/candle-unified-pair-verify.py --selftest
       - run: bash -n .github/scripts/candle-legacy-assemble.sh .github/scripts/candle-promote-validated.sh
       - run: python3 -B .github/scripts/legacy-main-selftest.py
 
   cuda_image:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-unified]')
+    needs: prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.published == 'true'
     uses: ./.github/workflows/candle-cuda-ci-image.yml
     permissions:
       contents: read
