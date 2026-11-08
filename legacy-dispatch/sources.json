@@ -76,6 +76,6 @@
     "docs/fp8-sm61-closure-20261016.md": "1faa0ece7bd493cde6cd3ee475d3311b0af48e7c3975860fe02fd42717f96bff",
     "legacy-dispatch/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
     "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
-    "legacy-dispatch/validate.py": "df39cef1cab7c089f387faaf1dd2e2e5fdaa4c406b521c164d1f678d94ec51cd"
+    "legacy-dispatch/validate.py": "10527b5ac8d3dee5c074d2960bad141346eaffd8ec91fff51b15a6ae0aa518fc"
   }
 }
