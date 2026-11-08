@@ -806,6 +806,7 @@ dependencies = [
  "rand_distr 0.5.1",
  "rayon",
  "safetensors",
+ "serde_json",
  "thiserror 2.0.21",
  "tokenizers",
  "yoke",
