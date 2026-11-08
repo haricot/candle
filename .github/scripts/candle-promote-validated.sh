@@ -45,6 +45,29 @@ git show "${CANDIDATE_SHA}:${MANIFEST_PATH}" > "$manifest" ||
 jq -e   --arg campaign "$CAMPAIGN"   --arg main "$BASE_SHA"   '.campaign == $campaign and .main_sha == $main and (.features | type == "array" and length > 0)'   "$manifest" >/dev/null ||
   fail "candidate manifest does not match campaign/base"
 
+# Unified mode: one Extended CUDA/SM61 archive proves both compositions.
+# Fetch and bind the independently assembled Legacy candidate BEFORE any push.
+if [[ -n "${LEGACY_CANDIDATE_SHA:-}" || -n "${LEGACY_CANDIDATE_REF:-}" ]]; then
+  [[ "${PROMOTION_KIND}" == extended && "${TARGET_BRANCH}" == extended ]] ||
+    fail "unified promotion must originate from the Extended candidate"
+  [[ "${LEGACY_CANDIDATE_SHA:-}" =~ ^[a-f0-9]{40}$ && -n "${LEGACY_CANDIDATE_REF:-}" ]] ||
+    fail "unified promotion needs both Legacy candidate SHA and ref"
+  git fetch --no-tags origin \
+    "+refs/heads/${LEGACY_CANDIDATE_REF}:refs/remotes/origin/promotion-legacy-candidate"
+  [[ "$(git rev-parse refs/remotes/origin/promotion-legacy-candidate)" == "$LEGACY_CANDIDATE_SHA" ]] ||
+    fail "Legacy candidate ref moved"
+  legacy_manifest="$report/legacy-manifest.json"
+  git show "${LEGACY_CANDIDATE_SHA}:candle-integration/legacy-cuda.json" > "$legacy_manifest" ||
+    fail "cannot read Legacy candidate manifest"
+  python3 -B .github/scripts/candle-unified-pair-verify.py \
+    --extended "$manifest" --legacy "$legacy_manifest" ||
+    fail "Legacy and Extended candidates do not share exact standalone preparations"
+  while IFS= read -r prepared; do
+    git merge-base --is-ancestor "$prepared" "$LEGACY_CANDIDATE_SHA" ||
+      fail "Legacy candidate does not contain shared prepared standalone $prepared"
+  done < <(jq -r '.features[].prepared_sha' "$legacy_manifest")
+fi
+
 if [[ "$PROMOTION_KIND" == extended ]]; then
   jq -e '(.update_canonical_feature_refs | type) == "boolean"' "$manifest" >/dev/null ||
     fail "Extended candidate has no explicit standalone publication policy"
@@ -151,6 +174,29 @@ else
   fail "integration ref $TARGET_BRANCH moved unexpectedly: current=${current_integration:-MISSING} expected=${old_integration:-MISSING}"
 fi
 
+# Archive and promote both final integration refs in the SAME atomic push.
+if [[ -n "${LEGACY_CANDIDATE_SHA:-}" ]]; then
+  old_legacy="$(jq -r '.old_integration_sha // empty' "$legacy_manifest")"
+  current_legacy="$(remote_head cuda_legacy)"
+  if [[ -n "$current_legacy" && -n "$old_legacy" ]]; then
+    ensure_archive "archive/promotion/$CAMPAIGN/before/cuda_legacy" "$old_legacy"
+  fi
+  ensure_archive "archive/legacy/sm61-validated-$RUN_ID-$RUN_ATTEMPT" "$LEGACY_CANDIDATE_SHA"
+  if [[ "$current_legacy" == "$LEGACY_CANDIDATE_SHA" ]]; then
+    echo "LEGACY_ALREADY_PROMOTED=cuda_legacy@$LEGACY_CANDIDATE_SHA" >> "$summary"
+  elif [[ -n "$old_legacy" && "$current_legacy" == "$old_legacy" ]]; then
+    promote_specs+=("$LEGACY_CANDIDATE_SHA:refs/heads/cuda_legacy")
+    lease_args+=("--force-with-lease=refs/heads/cuda_legacy:$old_legacy")
+    echo "LEGACY_PROMOTE=cuda_legacy:$old_legacy->$LEGACY_CANDIDATE_SHA" >> "$summary"
+  elif [[ -z "$old_legacy" && -z "$current_legacy" ]]; then
+    promote_specs+=("$LEGACY_CANDIDATE_SHA:refs/heads/cuda_legacy")
+    lease_args+=("--force-with-lease=refs/heads/cuda_legacy:")
+    echo "LEGACY_CREATE=cuda_legacy@$LEGACY_CANDIDATE_SHA" >> "$summary"
+  else
+    fail "Legacy integration ref moved unexpectedly: current=${current_legacy:-MISSING} expected=${old_legacy:-MISSING}"
+  fi
+fi
+
 if (("${#archive_specs[@]}" > 0)); then
   git push --atomic origin "${archive_specs[@]}"
 fi
@@ -178,6 +224,10 @@ done
 
 [[ "$(remote_head "$TARGET_BRANCH")" == "$CANDIDATE_SHA" ]] ||
   fail "integration ref $TARGET_BRANCH is not the validated candidate after promotion"
+if [[ -n "${LEGACY_CANDIDATE_SHA:-}" ]]; then
+  [[ "$(remote_head cuda_legacy)" == "$LEGACY_CANDIDATE_SHA" ]] ||
+    fail "Legacy integration ref does not match the Extended-qualified candidate"
+fi
 
 {
   echo "PROMOTION=PASS"
