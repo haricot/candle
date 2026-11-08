@@ -1,0 +1,14 @@
+{
+  "files": {
+    "candle-examples/examples/candle-extended/acoustic.rs": "c29a82713eb762d267474ae2e669734d89b3aa1733d3a44e358c1356df14affe",
+    "candle-examples/examples/candle-extended/main.rs": "4b7ef2ad3798469e97d8da91963b4b3aa319ae8c63b61f5976252ae802e173fd",
+    "candle-examples/examples/embedding-gemma2/main.rs": "94a4ab95fc74215a64e628b4c6a1fd4b2f86159c31af10f44e9d3ea9fc38d2ab",
+    "candle-examples/examples/nemotron_asr.rs": "74a870ffac4224e5c50c076eeec6ad6bf99c158aa36dd3b7c4433f1a695609dc",
+    "candle-examples/examples/pockettts-sm61/main.rs": "c013018e008f9e5a0105f6bbc602302d17e838372da452b7f9526a08badbaa30",
+    "candle-examples/examples/quantized-qwen3/main.rs": "c43c52cacf4731d45ab42ed7f7c237a45b5a334d8a6bdcf758f0420337876a52",
+    "candle-examples/examples/transcribepsy_tp3.rs": "629b5f856fedc167b07010345bf37538088aa6612fefdc6bd83eeb7584de3c96"
+  },
+  "installer_sha256": "13432e82eed2bf80f6211ef4c1a8ce03729137966408c20493f8973277aa7121",
+  "program": "candle-extended",
+  "schema": "candle-extended-cli-source-v1"
+}

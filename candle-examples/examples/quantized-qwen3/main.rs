@@ -155,10 +155,14 @@ fn format_size(size_in_bytes: usize) -> String {
 }
 
 fn main() -> anyhow::Result<()> {
+    run_from(std::env::args_os().collect())
+}
+
+pub(crate) fn run_from(argv: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
     use tracing_chrome::ChromeLayerBuilder;
     use tracing_subscriber::prelude::*;
 
-    let args = Args::parse();
+    let args = Args::parse_from(argv);
     let _guard = if args.tracing {
         let (chrome_layer, guard) = ChromeLayerBuilder::new().build();
         tracing_subscriber::registry().with(chrome_layer).init();
