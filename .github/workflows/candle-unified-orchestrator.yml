@@ -12,6 +12,7 @@ on:
       - .github/scripts/candle-unified-pair-verify.py
       - .github/scripts/candle-promote-validated.sh
       - .github/legacy-cuda-sources.json
+      - .github/extended-sources.json
   workflow_dispatch:
     inputs:
       campaign:
