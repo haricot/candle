@@ -11,7 +11,7 @@ umask 077
 cfg=.github/legacy-cuda-sources.json
 jq -e '
   .schema_version==1 and .kind=="legacy-cuda-main-exact-delta" and
-  .integration_target=="legacy-cuda" and
+  .integration_target=="legacy-cuda" and .promotion_target=="cuda_legacy" and
   [.features[].feature]==["bf16_candle","fp8_candle","fp4_candle",
     "cudnn_fallback_candle","moe_simt_f16_candle"] and
   all(.features[];
@@ -50,9 +50,25 @@ for feature in "${features[@]}"; do
   pinned[$feature]="$(git rev-parse "refs/remotes/origin/legacy-$feature")"
   oldtarget[$feature]="${pinned[$feature]}"
   git merge-base "$base" "${pinned[$feature]}" >/dev/null || exit 3
+  if [[ -n "${REUSE_EXTENDED_MANIFEST:-}" ]]; then
+    jq -e --arg feature "$feature" --arg source "${pinned[$feature]}" \
+      --arg review "${review[$feature]}" \
+      '.features[] | select(.feature == $feature) |
+       .source_sha == $source and .review_source_sha == $review' \
+      "$REUSE_EXTENDED_MANIFEST" >/dev/null || {
+      echo "::error::Extended prepared source changed: $feature"; exit 3;
+    }
+  fi
 done
 
-oldintegration="$(git ls-remote --heads origin refs/heads/legacy-cuda | cut -f1 || true)"
+if [[ -n "${REUSE_EXTENDED_MANIFEST:-}" ]]; then
+  jq -e --arg base "$base" --arg campaign "$CAMPAIGN" \
+    '.kind == "extended-multi" and .main_sha == $base and .campaign == $campaign' \
+    "$REUSE_EXTENDED_MANIFEST" >/dev/null || {
+    echo "::error::Extended manifest base or campaign mismatch"; exit 3;
+  }
+fi
+oldintegration="$(git ls-remote --heads origin refs/heads/cuda_legacy | cut -f1 || true)"
 : > "$report/sources.ndjson"
 
 for feature in "${features[@]}"; do
@@ -64,14 +80,31 @@ for feature in "${features[@]}"; do
   git diff --binary --full-index "$common" "$sha" > "$source_patch"
   source_patch_sha="$(sha256sum "$source_patch" | cut -d' ' -f1)"
 
-  if [[ "$STRATEGY" == exact-delta ]]; then
+  if [[ -n "${REUSE_EXTENDED_MANIFEST:-}" ]]; then
+    [[ "$STRATEGY" == exact-delta ]] || {
+      echo "::error::Shared preparation requires exact-delta"; exit 3;
+    }
+    reuse_sha="$(jq -r --arg feature "$feature" \
+      '.features[] | select(.feature == $feature) | .prepared_sha' \
+      "$REUSE_EXTENDED_MANIFEST")"
+    [[ "$reuse_sha" =~ ^[a-f0-9]{40}$ ]] || exit 3
+    git cat-file -e "$reuse_sha^{commit}" || {
+      echo "::error::Prepared Extended commit is unavailable: $feature=$reuse_sha"; exit 3;
+    }
+    git worktree add --detach "$work" "$reuse_sha" > "$report/logs/$feature-worktree.log" 2>&1
+    echo "Reused Extended prepared SHA $reuse_sha" > "$report/logs/$feature-update.log"
+  elif [[ "$STRATEGY" == exact-delta ]]; then
     git worktree add --detach "$work" "$base" > "$report/logs/$feature-worktree.log" 2>&1
     git -C "$work" config rerere.enabled false
     if ! git -C "$work" apply --3way --index "$source_patch" > "$report/logs/$feature-update.log" 2>&1; then
+      if python3 .github/scripts/candle-resolve-legacy-main.py resolve "$work" "$base" "$sha" "$source_patch"; then
+        echo "Replayed exact reviewed Legacy/Zip 9.1.3 migration" >> "$report/logs/$feature-update.log"
+      else
       git -C "$work" ls-files -u > "$report/conflicts/$feature-index.txt"
       git -C "$work" diff --name-only --diff-filter=U > "$report/conflicts/$feature-files.txt"
       git -C "$work" status --short > "$report/conflicts/$feature-status.txt"
       echo "::error::Exact feature delta conflicts with main for $feature"; exit 1
+      fi
     fi
     git -C "$work" diff --cached --check
     git -C "$work" diff --cached --quiet && {
@@ -91,9 +124,24 @@ for feature in "${features[@]}"; do
   git merge-base --is-ancestor "$base" "${prepared[$feature]}" || exit 3
   git diff --binary --full-index "$base" "${prepared[$feature]}" > "$prepared_patch"
   prepared_patch_sha="$(sha256sum "$prepared_patch" | cut -d' ' -f1)"
+  if [[ -n "${REUSE_EXTENDED_MANIFEST:-}" ]]; then
+    jq -e --arg feature "$feature" --arg prepared "${prepared[$feature]}" \
+      --arg source_patch "$source_patch_sha" --arg prepared_patch "$prepared_patch_sha" \
+      '.features[] | select(.feature == $feature) |
+       .prepared_sha == $prepared and
+       .source_patch_sha256 == $source_patch and
+       .prepared_patch_sha256 == $prepared_patch' \
+      "$REUSE_EXTENDED_MANIFEST" >/dev/null || {
+      echo "::error::Shared standalone preparation does not match Extended: $feature"; exit 3;
+    }
+  fi
   if [[ "$STRATEGY" == exact-delta ]] && ! cmp -s "$source_patch" "$prepared_patch"; then
+    if python3 .github/scripts/candle-resolve-legacy-main.py verify "$work" "$base" "$sha" "$source_patch"; then
+      echo "Reviewed migration preserves the exact source implementation and current upstream Zip API"
+    else
     diff -u "$source_patch" "$prepared_patch" > "$report/diffs/$feature-delta-mismatch.diff" || :
     echo "::error::Prepared $feature changed its exact standalone delta"; exit 3
+    fi
   fi
 
   jq -cn --arg feature "$feature"     --arg source_ref "${source_ref[$feature]}" --arg target_ref "$feature"     --arg source_sha "$sha" --arg review_source_sha "${review[$feature]}"     --arg old_target_sha "${oldtarget[$feature]}"     --arg prepared_sha "${prepared[$feature]}"     --arg preparation_ref "prepare/legacy/$CAMPAIGN/$feature"     --arg common_base_sha "$common"     --arg source_patch_sha256 "$source_patch_sha"     --arg prepared_patch_sha256 "$prepared_patch_sha"     '{feature:$feature,source_ref:$source_ref,target_ref:$target_ref,
@@ -149,7 +197,7 @@ done
 
 mkdir -p "$aggregate/candle-integration"
 jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRATEGY" --arg old_integration_sha "$oldintegration"   --arg config_sha256 "$(sha256sum "$cfg" | cut -d' ' -f1)"   '{schema_version:1,kind:"legacy-cuda-five",main_sha:$main_sha,
-    campaign:$campaign,strategy:$strategy,integration_target:"legacy-cuda",
+    campaign:$campaign,strategy:$strategy,integration_target:"legacy-cuda",promotion_target:"cuda_legacy",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
     validation_state:"UNVALIDATED_CANDIDATE",features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/legacy-cuda.json"
@@ -185,11 +233,17 @@ for feature in "${features[@]}"; do
   if git ls-remote --exit-code --heads origin "refs/heads/$temp" >/dev/null 2>&1; then
     echo "::error::Temporary ref already exists: $temp"; exit 3
   fi
-  refs+=("${prepared[$feature]}:refs/heads/$temp")
+  if [[ -z "${REUSE_EXTENDED_MANIFEST:-}" ]]; then
+    refs+=("${prepared[$feature]}:refs/heads/$temp")
+  else
+    [[ "$(git ls-remote --heads origin "refs/heads/prepare/extended/$CAMPAIGN/$feature" | cut -f1)" == "${prepared[$feature]}" ]] || {
+      echo "::error::Extended prepared ref missing or changed for $feature"; exit 3;
+    }
+  fi
 done
 refs+=("$sha:refs/heads/$target")
 git push --atomic origin "${refs[@]}" > "$report/logs/publish.log" 2>&1 || {
   echo "::error::Atomic temporary publish failed; stable refs untouched"; exit 3
 }
 echo "published=true" >> "$GITHUB_OUTPUT"
-echo "Published five prepared refs plus one immutable legacy-cuda candidate; stable refs untouched"   >> "$GITHUB_STEP_SUMMARY"
+echo "Published immutable legacy-cuda candidate with the exact Extended standalone preparations; stable refs untouched" >> "$GITHUB_STEP_SUMMARY"
