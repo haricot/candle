@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "phase": "initial-source-integration",
+  "branch": "integration/candle-legacy-v3-dispatch-fp8",
+  "base": "cfcbd7186d13271843ce7eb41d25659bd0835850",
+  "formats": [
+    "fp8"
+  ],
+  "features": [
+    "cuda",
+    "cuda-legacy-fp8"
+  ],
+  "tests": [
+    "fp8_activation_contracts",
+    "fp8_legacy_tests",
+    "fp8_sm61_f8_tests",
+    "fp8_r2_upstream_canary",
+    "fp8_r4c_dispatch_tests",
+    "fp8_r4c_loader_tests",
+    "fp8_r4d_native_tests"
+  ],
+  "physical_ignored_tests": [
+    [
+      "fp8_activation_contracts",
+      "physical_w8abf16_preserves_range_residency_and_prepared_dtype"
+    ]
+  ],
+  "sources": {
+    "fp8": "fa922939e36cdd3f84cfdbbd235f8ce2bcc8cc4b"
+  },
+  "bf16_pilot_source": null,
+  "fp8_bf16_kernel_source": "9cba2e898af3d25a89257f1f2ec5acece0404dcb",
+  "mistral_fp8_contract_reference": "bf6bee075f02980b117a8737e6fc977cad182899",
+  "historical_gpu_reference_only": {
+    "repository": "haricot/mistral.rs",
+    "run_id": 42380889678,
+    "candidate": "f592ba9fabf70c6063cbfc5c8a685363a86d806a"
+  },
+  "qualification": {
+    "gpu_validated": false,
+    "models_validated": false,
+    "performance_qualified": false,
+    "asd_adapter_connected": false,
+    "cross_format_shared_admission": false
+  },
+  "payload_sha256": {
+    ".github/workflows/candle-legacy-dispatch.yml": "18b0eeb429b5ac486f25baf4547bbc4199a96c89fc93d0a1285a536cf4df5b71",
+    "candle-core/Cargo.toml": "692b232a98d08e5369070614c34aba4def1cd6d1e25c4c601599fd4662e3bd31",
+    "candle-core/benches/benchmarks/mod.rs": "8053c02b8323cac7596de805a09f43486732e856793d46dc5f551ca5cbce3f48",
+    "candle-core/src/cuda_backend/mod.rs": "c442b104561c7b6eca95660bbbca9f241574f36a9536c9bcbd687b6529006b5a",
+    "candle-core/src/lib.rs": "6a6023725b7266a719d5f2a674e08a5f78a655ecc1855542aa534e65ea40f449",
+    "candle-core/src/quantized/fp8_linear_sm61.rs": "9d8e5f76b4d9e8876326dfa028051137e9674e9c90c6144c96c0121bf476c386",
+    "candle-core/src/quantized/fp8_sm61_dispatch.rs": "5f7325dc8ca37e596682fb3d5ad7de113139432ea9b86e0cb8805c476b4144c1",
+    "candle-core/src/quantized/fp8_sm61_format.rs": "f282fb450a4f41e6f7635207592638a7f3a63d744e729cfe54a4ebb089b2f90c",
+    "candle-core/src/quantized/fp8_sm61_loader.rs": "82a8ae17661a5d55bfa9a48304ce54baaa74daa16290de4520c54a695c4ee932",
+    "candle-core/src/quantized/mod.rs": "43af2989701e88bda470640829daad400f2e68596f48ad1bea61d3ce8a8add0a",
+    "candle-core/tests/fixtures/generic_shard_a.safetensors": "5ff169f6b11effa33a611b9e589cde335915aadf5eab01c25a1a82366da3965d",
+    "candle-core/tests/fixtures/generic_shard_b.safetensors": "7381971220f2e714d255d52ef0bd3d547a1da82c96e4809a48a5b215bf0d7fa7",
+    "candle-core/tests/fp8_activation_contracts.rs": "e1afd05d8a2cd5ed192f184b536c01c3707760812217ad8e6d74347c68452fe2",
+    "candle-core/tests/fp8_legacy_tests.rs": "88f66c5d55c1b5464ee44bc37513547a8311db3924799e059d6d6438f1c8dd7d",
+    "candle-core/tests/fp8_r2_upstream_canary.rs": "8127dd9f93ac2a900366969fd0ad863e4705e4bdbe5635bcca10e28fb84d767f",
+    "candle-core/tests/fp8_r4c_dispatch_tests.rs": "92333127829018c8b15ec0b5175602f041bd0798c48d9a4ceba424124004d646",
+    "candle-core/tests/fp8_r4c_loader_tests.rs": "361dc48b11bdff739bcaf1b2ef38aa9666f5e6341796ec88b9dd2f8aca10f1f4",
+    "candle-core/tests/fp8_r4d_native_tests.rs": "80ed469f6f2a43f45142f3657942ed674f0dff23a9f9c99926ced7b4b7e022c2",
+    "candle-core/tests/fp8_sm61_f8_tests.rs": "6149ae7db3712c4ae7599e0f403bc8a6686ad56f59cf23cb89f838978fafa8ed",
+    "candle-examples/Cargo.toml": "303fd91c19a0342e9635758ee2dc4a781e229604c6287913b0e7f15944b88e9b",
+    "candle-kernels/Cargo.toml": "64d03a0d8ecd2c2408022638cf65238104313e7062c043ba6441ffcccc8190fd",
+    "candle-kernels/build.rs": "d48143d5246ce8cf00c68157df7cb6c4ae5d4ddd9ac5481c48b8fdc447b228ba",
+    "candle-kernels/src/binary.cu": "9bfd8bf01209b612c74099dee186bf91e6af74850f1b19226c2256dc34c44c9d",
+    "candle-kernels/src/cast.cu": "d699d5dd3eb5fcdebd8e89a7cca13f22e451a443fa503277a0fbccc3548ac749",
+    "candle-kernels/src/cuda_utils.cuh": "422d9b12941a4bb321b9f19cc14daee7891c41a5040cb39be944ddb7061d5cf9",
+    "candle-kernels/src/fp8_sm61_f8.cuh": "92ee4ef51ce098420aeceea97ea991320a8f9094ebe7d90f1b2deb12497e593c",
+    "candle-kernels/src/quantized.cu": "8e820d9db6f2fc4c917d608b4608c509770d7f9a0eea020954ed96edb834b0d8",
+    "candle-kernels/src/reduce.cu": "e610852c2b2db24184e93cce28ad4c46d59c9842d1a1895022c81271d75538a5",
+    "candle-kernels/src/unary.cu": "40fc771e66fcfaf2423c3bde240f42edb6d52c49b3015f9d4183849ef20fa3bf",
+    "docs/fp8-sm61-closure-20261016.md": "1faa0ece7bd493cde6cd3ee475d3311b0af48e7c3975860fe02fd42717f96bff",
+    "legacy-dispatch/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
+    "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
+    "legacy-dispatch/validate.py": "df39cef1cab7c089f387faaf1dd2e2e5fdaa4c406b521c164d1f678d94ec51cd"
+  }
+}
