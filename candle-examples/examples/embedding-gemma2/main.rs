@@ -58,7 +58,11 @@ fn local_weights(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    run_from(std::env::args_os().collect())
+}
+
+pub(crate) fn run_from(argv: Vec<std::ffi::OsString>) -> Result<()> {
+    let args = Args::parse_from(argv);
     anyhow::ensure!([128, 256, 512, 768].contains(&args.dims), "dims must be 128,256,512,768");
     let (config_path, tokenizer_path, weights) = if let Some(local) = &args.local_dir {
         (local.join("config.json"), local.join("tokenizer.json"), local_weights(local)?)

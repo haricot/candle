@@ -101,7 +101,11 @@ fn preflight(device: &Device) -> Result<f32> {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    run_from(std::env::args_os().collect())
+}
+
+pub(crate) fn run_from(argv: Vec<std::ffi::OsString>) -> Result<()> {
+    let args: Vec<_> = argv.into_iter().skip(1).map(|a| a.into_string().map_err(|_| Error::Msg("non-UTF8 argument".into()))).collect::<Result<Vec<_>>>()?;
     let backend = match args.as_slice() {
         [] => "cpu",
         [flag, value] if flag == "--device" => value.as_str(),

@@ -247,7 +247,11 @@ fn execute(args: Args) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    execute(Args::parse())
+    run_from(std::env::args_os().collect())
+}
+
+pub(crate) fn run_from(argv: Vec<std::ffi::OsString>) -> Result<()> {
+    execute(Args::parse_from(argv))
 }
 
 #[cfg(test)]
