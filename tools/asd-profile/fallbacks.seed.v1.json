@@ -1,0 +1,75 @@
+{
+  "schema": "ASD-FALLBACK-SEED-V1",
+  "fallbacks": [
+    {
+      "decision_id": "ct1d-sm61-s32-g2-raw-exact",
+      "rank": 1,
+      "provider": "cudnn",
+      "implementation_id": "candle.cudnn.grouped-transpose.v1",
+      "protocol": "provider-evidence-v1",
+      "evidence_sha256": [
+        "1d86ff6da849ffc29dc30ec4eee69f9ab91330314d74221db5fd82bed11dc07b",
+        "7e2d4d08f2210b0418261df07921c2ef33b0738d157cfbc834f7c7746f20e367"
+      ],
+      "required_cudnn_version_raw": 91002,
+      "qualification": "exact_parity+stable_execution",
+      "note": "Rejected for promotion on performance, but qualified as a resilience fallback when the promoted raw artifact is unavailable."
+    },
+    {
+      "decision_id": "ct1d-sm61-s32-g4-raw-exact",
+      "rank": 1,
+      "provider": "cudnn",
+      "implementation_id": "candle.cudnn.grouped-transpose.v1",
+      "protocol": "provider-evidence-v2",
+      "evidence_sha256": [
+        "8258710d0fbae354bd4b95505e0caf03d13cdb73c7016c82c5bc53228c2c69c2",
+        "f190a815d690c2b9e665edf985c067dac0d97419c3d237558f87bf5581e9dd8f"
+      ],
+      "required_cudnn_version_raw": 91002,
+      "qualification": "exact_parity+stable_execution",
+      "note": "Two authoritative fallback-qualification replications passed exact parity and drift; cuDNN was rejected for promotion on performance but qualified for resilience."
+    },
+    {
+      "decision_id": "ct1d-sm61-s32-g8-raw-exact",
+      "rank": 1,
+      "provider": "cudnn",
+      "implementation_id": "candle.cudnn.grouped-transpose.v1",
+      "protocol": "provider-evidence-v2",
+      "evidence_sha256": [
+        "222dadb694d57ec7b8804bc8d473e31e3221de506a0ab3bb0286fc0a6d3406ac",
+        "321a768144fcb4fac18594027406faf21228f4b82363f2a3a0f5eae4ead509e8"
+      ],
+      "required_cudnn_version_raw": 91002,
+      "qualification": "exact_parity+stable_execution",
+      "note": "Two authoritative fallback-qualification replications passed exact parity and drift; cuDNN was rejected for promotion on performance but qualified for resilience."
+    },
+    {
+      "decision_id": "ct1d-sm61-s32-g16-raw-exact",
+      "rank": 1,
+      "provider": "cudnn",
+      "implementation_id": "candle.cudnn.grouped-transpose.v1",
+      "protocol": "provider-evidence-v2",
+      "evidence_sha256": [
+        "067b4c8db74e8e141351b2dcb99d7d2c4ea50a0cf88e0bdb76c246184abef669",
+        "cd5ad216396ddc17771514f5c101ff57c2d2e2b81d6de500c7b354511a36a5e3"
+      ],
+      "required_cudnn_version_raw": 91002,
+      "qualification": "exact_parity+stable_execution",
+      "note": "Two authoritative fallback-qualification replications passed exact parity and drift; cuDNN was rejected for promotion on performance but qualified for resilience."
+    },
+    {
+      "decision_id": "ct2d-sm61-s32-g16-raw-exact",
+      "rank": 1,
+      "provider": "cudnn",
+      "implementation_id": "candle.cudnn.grouped-transpose.v1",
+      "protocol": "provider-evidence-v2",
+      "evidence_sha256": [
+        "df2ed9fc798b5fd6d23b472490716fceb7bb4c7a7b3bba811f64be4490ee1dc7",
+        "6280177f23c89dd227cc61fabfd64e7e6a9736755bf26334932d4ff5ea6a51c7"
+      ],
+      "required_cudnn_version_raw": 91002,
+      "qualification": "exact_parity+stable_execution",
+      "note": "Two authoritative fallback-qualification replications passed exact parity and drift; cuDNN was rejected for promotion on performance but qualified for resilience."
+    }
+  ]
+}
