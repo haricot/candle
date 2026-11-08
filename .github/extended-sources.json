@@ -152,13 +152,13 @@
   "publication": {
     "type": "atomic",
     "publish_only_after": [
-      "all_independent_cpu_pass",
-      "combined_hosted_cpu_pass",
-      "combined_hosted_cuda_sm61_compiles",
-      "physical_sm61_extended_pass",
+      "shared_five_standalone_identity_pass",
+      "one_extended_hosted_cuda_sm61_archive_pass",
+      "cuda_built_cpu_execution_pass",
+      "physical_sm61_extended_all_legacy_gates_pass",
       "all_voice_model_contracts_and_cli_pass"
     ],
-    "hosted_validation_state": "PENDING_THIRTEEN_SOURCE_CPU_CUDA_AND_PHYSICAL_SM61",
+    "hosted_validation_state": "PENDING_UNIFIED_EXTENDED_PROOF",
     "physical_sm61_required_for_final_qualification": true,
     "update_integration_target": true,
     "never_push_to_main": true,
