@@ -123,6 +123,7 @@ pub mod rwkv_v7;
 pub mod segformer;
 pub mod segment_anything;
 pub mod siglip;
+pub mod smart_turn;
 pub mod smol;
 pub mod snac;
 pub mod stable_diffusion;
