@@ -99,7 +99,7 @@ __device__ T sign_(T t) {
 
 // Vectorized bf16 unary op — 8 elements per float4 load, promotes to f32 for computation.
 // FLOAT_FUNC: expression using xf (float) that produces the result float (e.g. xf / (1.0f + expf(-xf)))
-#if __CUDA_ARCH__ >= 800
+#if __CUDA_ARCH__ >= 800 || defined(CANDLE_CUDA_BF16_FALLBACK)
 #define UNARY_OP_BF16_VEC(FN_NAME, FLOAT_FUNC) \
 extern "C" __global__ void FN_NAME( \
     const size_t numel, \
@@ -204,6 +204,9 @@ UNARY_OP(__nv_bfloat16, urelu_bf16, relu_fwd(x))
 UNARY_OP1(__nv_bfloat16, uelu_bf16, elu_fwd(x, param))
 UNARY_OP1(__nv_bfloat16, upowf_bf16, powg(x, param))
 UNARY_OP(__nv_bfloat16, usign_bf16, sign_(x))
+#else
+// Storage support is independent of native BF16 arithmetic.
+UNARY_OP(__nv_bfloat16, ucopy_bf16, x)
 #endif
 
 #if __CUDA_ARCH__ >= 890

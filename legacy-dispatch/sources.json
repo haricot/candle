@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "phase": "initial-source-integration",
+  "branch": "integration/candle-legacy-v3-dispatch-bf16",
+  "base": "cfcbd7186d13271843ce7eb41d25659bd0835850",
+  "formats": [
+    "bf16"
+  ],
+  "features": [
+    "cuda",
+    "cuda-legacy-bf16"
+  ],
+  "tests": [
+    "dispatch_bf16",
+    "cuda_legacy_bf16_tests"
+  ],
+  "physical_ignored_tests": [
+    [
+      "dispatch_bf16",
+      "cuda_physical_bf16_linear_contracts"
+    ]
+  ],
+  "sources": {
+    "bf16": "7b12ade47bc32083b17cab454c48ed0fff7961ae"
+  },
+  "bf16_pilot_source": "8b88bef6bb8496baca452092c558fc391c2b517d",
+  "fp8_bf16_kernel_source": null,
+  "mistral_fp8_contract_reference": null,
+  "historical_gpu_reference_only": {
+    "repository": "haricot/mistral.rs",
+    "run_id": 42380889678,
+    "candidate": "f592ba9fabf70c6063cbfc5c8a685363a86d806a"
+  },
+  "qualification": {
+    "gpu_validated": false,
+    "models_validated": false,
+    "performance_qualified": false,
+    "asd_adapter_connected": false,
+    "cross_format_shared_admission": false
+  },
+  "payload_sha256": {
+    ".github/workflows/candle-legacy-dispatch.yml": "18b0eeb429b5ac486f25baf4547bbc4199a96c89fc93d0a1285a536cf4df5b71",
+    "candle-core/Cargo.toml": "9397ed58961f38bd39dc700bec7b97882538eea7f77fcf210b68858a1f910751",
+    "candle-core/examples/dispatch_bf16_linear.rs": "f4c6753971853d78825af4606d7b67c95743a35f5c7812c35c665196f8342189",
+    "candle-core/src/cuda_backend/mod.rs": "1e84710f9bda170627db17a61daf1d811d4af937f4aed451fa8eb8f738b5049b",
+    "candle-core/src/dispatch/linear.rs": "84b9ce18da020e013c0c6cc6f9084d702403045f4e59c9c781ddfc814de2885f",
+    "candle-core/src/dispatch/mod.rs": "5deaaf7020d7de5bb5c919c07eff51fe35de14f5dc4687c298bbc8f3ca84fce8",
+    "candle-core/src/lib.rs": "ea74bdfa924243c51570d90d34259760029bb74b66e0c872e574d0848bf92f8c",
+    "candle-core/tests/cuda_legacy_bf16_tests.rs": "bc2fbc44f8687774d29d8b6e906a69bc28bd6b7e05ba6094d9f6dc76ce6f9f2a",
+    "candle-core/tests/dispatch_bf16.rs": "e94f1386a919e9fab76e57eeaa54597e024d6ce8f5aaeeeed1dbc97f7949e751",
+    "candle-examples/Cargo.toml": "7a00eaf22d0b3f2958beb21c2028c513bbef9ba12a41233f0ead0e4c77a073cf",
+    "candle-kernels/Cargo.toml": "e4714cd5cccc0ba11cf23410d3130bc44700b3e13e0d876a4240f2ce9d5f72da",
+    "candle-kernels/build.rs": "d48143d5246ce8cf00c68157df7cb6c4ae5d4ddd9ac5481c48b8fdc447b228ba",
+    "candle-kernels/src/affine.cu": "18800875dd5e9d5aff276f3b1422d05395574da5a86813ef984037c3b5f9731f",
+    "candle-kernels/src/binary.cu": "a3cb27d368701ee10720f75b8315da6d98e2e8e5cd4dc3043732f3da2492ff0b",
+    "candle-kernels/src/cast.cu": "a9d6bc5399a83d025ce95fe02d006a032f2b837cb3d815cb61f1249aaa658a1a",
+    "candle-kernels/src/compatibility.cuh": "394d2304b0de80bb2998b43fe5c94fbaee9cfca302edff9296d9393558db0bc6",
+    "candle-kernels/src/conv.cu": "993f236537448b9070579342eba2d5c1f310decfd7bfb0843f44206802fc3ee2",
+    "candle-kernels/src/cuda_utils.cuh": "ff6fa9d2bed80a2fabc6e93cae52bd7d50b9855a10190ffe58d8e82a7e08de25",
+    "candle-kernels/src/fill.cu": "50f42628c6b8d63b0f20af7510a5c0566efb3175e69a64be99a0d13bb62ed954",
+    "candle-kernels/src/indexing.cu": "9bdcad53a7a6092e9d51be4d701d61f08b0da3ba759d6a076be920bc4c63ed3c",
+    "candle-kernels/src/reduce.cu": "e0fd72cab9ca5aa6a2a04b8c9d60b07a19a6709a17b874cbaaeb1108bb12ebc0",
+    "candle-kernels/src/sort.cu": "73ab3570c1b3a6afaad4f0c40655a3afd032b8e3309a08fcd8b880a1bab0acd4",
+    "candle-kernels/src/ternary.cu": "b87730d2da75676bc9f54a7f13257d0a94a57db5c8a10e92a185d1c8492ff29f",
+    "candle-kernels/src/unary.cu": "eac2af250a6d22f96b8bc9f686721f549447f66c5f82b182eb8c9d90b3126471",
+    "candle-nn/src/lib.rs": "4102b54869c9b2d5457af601a05d148204eba2e80e1fd0284c1c3d07f6160085",
+    "docs/bf16-sm61-closure-20261016.md": "210cbaa80fcbc1157661d9fbe23086234b0484270c9a1576e3dad2986e0cee7a",
+    "legacy-dispatch/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
+    "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
+    "legacy-dispatch/validate.py": "df39cef1cab7c089f387faaf1dd2e2e5fdaa4c406b521c164d1f678d94ec51cd"
+  }
+}
