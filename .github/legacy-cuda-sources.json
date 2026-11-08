@@ -59,12 +59,12 @@
   "publication": {
     "type": "atomic",
     "publish_only_after": [
-      "five_independent_cpu_pass",
-      "combined_hosted_cpu_pass",
-      "combined_hosted_cuda_sm61_compiles",
-      "physical_sm61_legacy_pass"
+      "shared_extended_standalone_sha_and_patch_identity_pass",
+      "one_extended_hosted_cuda_sm61_archive_pass",
+      "cuda_built_cpu_execution_pass",
+      "physical_sm61_extended_all_legacy_gates_pass"
     ],
-    "hosted_validation_state": "HOSTED_CI_PASSED_GPU_PENDING",
+    "hosted_validation_state": "PENDING_UNIFIED_EXTENDED_PROOF",
     "physical_sm61_required_for_final_qualification": true,
     "update_canonical_feature_refs": true,
     "update_integration_target": true,
