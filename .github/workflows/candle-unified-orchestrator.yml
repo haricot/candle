@@ -2,17 +2,10 @@ name: Candle Unified — Extended-Qualified Legacy and Standalone
 # base-sync-main: c68b24997319b8d76e5a4e775dab197c7f26322a
 
 on:
-  # A branch push only checks the orchestrator's own safety contracts.
-  # It never starts an expensive CUDA compilation or promotes refs.
+  # Explicit run trigger: a push commit with [run-unified] in its message.
+  # Ordinary branch pushes run only the static contracts.
   push:
     branches: [orch/unified-candle-v1]
-    paths:
-      - .github/workflows/candle-unified-orchestrator.yml
-      - .github/scripts/candle-legacy-assemble.sh
-      - .github/scripts/candle-unified-pair-verify.py
-      - .github/scripts/candle-promote-validated.sh
-      - .github/legacy-cuda-sources.json
-      - .github/extended-sources.json
   workflow_dispatch:
     inputs:
       campaign:
@@ -68,14 +61,14 @@ jobs:
       - run: python3 -B .github/scripts/legacy-main-selftest.py
 
   cuda_image:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-unified]')
     uses: ./.github/workflows/candle-cuda-ci-image.yml
     permissions:
       contents: read
       packages: write
 
   prepare:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-unified]')
     needs: validate_orchestrator
     runs-on: ubuntu-26.04
     timeout-minutes: 120
