@@ -69,3 +69,10 @@ follow-on work; callers must partition memory between the current per-format
 planners. The built-in paths work without ASD. Flow remains the producer of
 measured/qualified profiles and external kernels; adding a linear external ABI
 requires an explicit new runtime contract. No live ASD store is modified here.
+
+## BF16 API naming
+
+The BF16 pilot's execution enum is now `Bf16LinearBackend`. `LinearBackend`
+remains a deprecated compatibility alias. This format branch keeps the BF16
+provider independent; the format-neutral contract and provider adapters are
+assembled above it on `candle-legacy-dispatch`.

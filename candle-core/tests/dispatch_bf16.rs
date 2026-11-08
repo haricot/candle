@@ -31,13 +31,13 @@ fn capability_eligibility_precedes_policy_and_never_moves_cuda_to_cpu() -> Resul
             architecture: Architecture::Cuda { major, minor },
         };
         let decision = select_bf16_linear(spec(), caps, inventory, generous(), None)?;
-        assert_eq!(decision.backend, LinearBackend::CudaF32);
+        assert_eq!(decision.backend, Bf16LinearBackend::CudaF32);
         assert!(select_bf16_linear(
             spec(),
             caps,
             inventory,
             generous(),
-            Some(&RequireBackend(LinearBackend::CudaBf16))
+            Some(&RequireBackend(Bf16LinearBackend::CudaBf16))
         )
         .is_err());
         assert!(select_bf16_linear(
@@ -45,7 +45,7 @@ fn capability_eligibility_precedes_policy_and_never_moves_cuda_to_cpu() -> Resul
             caps,
             inventory,
             generous(),
-            Some(&RequireBackend(LinearBackend::CpuF32))
+            Some(&RequireBackend(Bf16LinearBackend::CpuF32))
         )
         .is_err());
         assert!(!caps.native_bf16_gemm());
@@ -56,7 +56,7 @@ fn capability_eligibility_precedes_policy_and_never_moves_cuda_to_cpu() -> Resul
         };
         assert_eq!(
             select_bf16_linear(spec(), caps, inventory, generous(), None)?.backend,
-            LinearBackend::CudaBf16
+            Bf16LinearBackend::CudaBf16
         );
         assert_eq!(
             select_bf16_linear(
@@ -64,10 +64,10 @@ fn capability_eligibility_precedes_policy_and_never_moves_cuda_to_cpu() -> Resul
                 caps,
                 inventory,
                 generous(),
-                Some(&RequireBackend(LinearBackend::CudaF32))
+                Some(&RequireBackend(Bf16LinearBackend::CudaF32))
             )?
             .backend,
-            LinearBackend::CudaF32
+            Bf16LinearBackend::CudaF32
         );
     }
     Ok(())
@@ -84,7 +84,7 @@ fn unavailable_providers_and_resource_limits_are_explained() -> Result<()> {
         cuda_bf16: false,
     };
     let decision = select_bf16_linear(spec(), caps, inventory, generous(), None)?;
-    assert_eq!(decision.backend, LinearBackend::CudaF32);
+    assert_eq!(decision.backend, Bf16LinearBackend::CudaF32);
     assert_eq!(
         decision.candidates[0].rejection,
         Some(RejectionReason::ProviderUnavailable)
@@ -141,7 +141,7 @@ fn unavailable_providers_and_resource_limits_are_explained() -> Result<()> {
         max_rows: i32::MAX as usize,
         bias: true
     }
-    .memory(LinearBackend::CpuF32)
+    .memory(Bf16LinearBackend::CpuF32)
     .is_err());
     Ok(())
 }
@@ -339,7 +339,7 @@ fn rejects_bad_shapes_dtypes_policy_and_row_limits() -> Result<()> {
     let forced = DispatchContext::new(
         &Device::Cpu,
         generous(),
-        Some(Arc::new(RequireBackend(LinearBackend::CudaF32))),
+        Some(Arc::new(RequireBackend(Bf16LinearBackend::CudaF32))),
     )?;
     assert!(forced.prepare_bf16_linear(&w, None, 1).is_err());
     assert_eq!(forced.reserved_resident_bytes(), 0);

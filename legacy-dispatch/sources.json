@@ -43,11 +43,11 @@
     "candle-core/Cargo.toml": "9397ed58961f38bd39dc700bec7b97882538eea7f77fcf210b68858a1f910751",
     "candle-core/examples/dispatch_bf16_linear.rs": "f4c6753971853d78825af4606d7b67c95743a35f5c7812c35c665196f8342189",
     "candle-core/src/cuda_backend/mod.rs": "1e84710f9bda170627db17a61daf1d811d4af937f4aed451fa8eb8f738b5049b",
-    "candle-core/src/dispatch/linear.rs": "84b9ce18da020e013c0c6cc6f9084d702403045f4e59c9c781ddfc814de2885f",
-    "candle-core/src/dispatch/mod.rs": "5deaaf7020d7de5bb5c919c07eff51fe35de14f5dc4687c298bbc8f3ca84fce8",
+    "candle-core/src/dispatch/linear.rs": "e8ea38dd88fe43962221854d7f3b1beeb404de05d324f71dd6354f57f471db0a",
+    "candle-core/src/dispatch/mod.rs": "75104fcced84770b84406421d3a2efc335611067ebdb9a998edc9cb5590d572b",
     "candle-core/src/lib.rs": "ea74bdfa924243c51570d90d34259760029bb74b66e0c872e574d0848bf92f8c",
     "candle-core/tests/cuda_legacy_bf16_tests.rs": "bc2fbc44f8687774d29d8b6e906a69bc28bd6b7e05ba6094d9f6dc76ce6f9f2a",
-    "candle-core/tests/dispatch_bf16.rs": "e94f1386a919e9fab76e57eeaa54597e024d6ce8f5aaeeeed1dbc97f7949e751",
+    "candle-core/tests/dispatch_bf16.rs": "a505dc78e205d106a775bc2a061eb8aa1dce83c092f6024e2034d3eba27fa844",
     "candle-examples/Cargo.toml": "7a00eaf22d0b3f2958beb21c2028c513bbef9ba12a41233f0ead0e4c77a073cf",
     "candle-kernels/Cargo.toml": "e4714cd5cccc0ba11cf23410d3130bc44700b3e13e0d876a4240f2ce9d5f72da",
     "candle-kernels/build.rs": "d48143d5246ce8cf00c68157df7cb6c4ae5d4ddd9ac5481c48b8fdc447b228ba",
@@ -66,7 +66,8 @@
     "candle-nn/src/lib.rs": "4102b54869c9b2d5457af601a05d148204eba2e80e1fd0284c1c3d07f6160085",
     "docs/bf16-sm61-closure-20261016.md": "210cbaa80fcbc1157661d9fbe23086234b0484270c9a1576e3dad2986e0cee7a",
     "legacy-dispatch/Cargo.lock": "f78e49205ee5fcc71f47fc7b57401d438279d05f3065c8ea3d699b6807f531ce",
-    "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
+    "legacy-dispatch/README.md": "a15db37d5fb4a48970077ae1e5d7f26c27db50b08d45102666b3a50994d08f8d",
     "legacy-dispatch/validate.py": "10527b5ac8d3dee5c074d2960bad141346eaffd8ec91fff51b15a6ae0aa518fc"
-  }
+  },
+  "bf16_backend_api": "Bf16LinearBackend"
 }
