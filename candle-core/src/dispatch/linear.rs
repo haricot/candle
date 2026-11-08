@@ -60,7 +60,7 @@ impl PreparedBf16Linear {
             bytes: decision.memory.resident_bytes,
         };
         drop(used);
-        let dtype = if decision.backend == LinearBackend::CudaBf16 {
+        let dtype = if decision.backend == Bf16LinearBackend::CudaBf16 {
             DType::BF16
         } else {
             DType::F32
@@ -125,9 +125,9 @@ impl PreparedBf16Linear {
         .reshape((rows, spec.in_features))?;
         let weight = prepared.weight.t()?;
         let output = match prepared.decision.backend {
-            LinearBackend::CpuF32 => input.matmul(&weight)?,
+            Bf16LinearBackend::CpuF32 => input.matmul(&weight)?,
             #[cfg(feature = "cuda")]
-            LinearBackend::CudaBf16 | LinearBackend::CudaF32 => {
+            Bf16LinearBackend::CudaBf16 | Bf16LinearBackend::CudaF32 => {
                 input.apply_op2_no_bwd(&weight, &StrictGemm)?
             }
             #[cfg(not(feature = "cuda"))]

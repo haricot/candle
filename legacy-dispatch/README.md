@@ -61,11 +61,57 @@ remain distinct subsequent gates.
 
 ## ASD and remaining scope
 
-This initial integration connects the BF16 provider/pilot and preserves FP8 R4D
-residence dispatch plus FP4 E7C typed selection. It does not pretend that the
-BF16 `SelectionPolicy` is already a format-neutral ASD adapter. Shared
-cross-format admission and the final generic policy contract remain explicit
-follow-on work; callers must partition memory between the current per-format
-planners. The built-in paths work without ASD. Flow remains the producer of
+This integration connects the BF16 provider/pilot and preserves FP8 R4D
+residence dispatch plus FP4 E7C typed selection. S1 adds the format-neutral
+planning/preference contract and execution facade described below. The BF16
+`SelectionPolicy` remains specific to BF16. Shared cross-format admission and
+the connection to an actual ASD policy remain follow-on work; callers must
+partition memory between layers and the current per-format planners. The built-in paths work without ASD. Flow remains the producer of
 measured/qualified profiles and external kernels; adding a linear external ABI
 requires an explicit new runtime contract. No live ASD store is modified here.
+
+## Common linear contract (S1)
+
+`dispatch::Bf16LinearBackend` is the explicit name of the BF16 pilot's execution
+choices. The old `LinearBackend` is a deprecated compatibility alias. Other S0
+planning types and `SelectionPolicy` still describe BF16; they are not the
+format-neutral extension interface.
+
+`dispatch::contract` separates weight encoding, activation dtype, accumulation,
+output dtype, bias rounding, approximation permission and input layout. A
+`LinearProvider` reports its implementation ID, device kind, constraints and
+logical memory needs. `select_linear` rejects incompatible candidates and
+resource excesses before calling `LinearPreference`. A preference cannot add a
+candidate, cross from CUDA to CPU, change a numerical contract or bypass a budget.
+IDs are extensible: a future F16 provider does not require a new BF16 enum variant.
+These are planning declarations, not hardware execution evidence.
+
+`dispatch::providers::PreparedLinear` rebuilds availability from the compiled
+providers, inspects the actual device, validates the payload through the existing
+constructors, and checks input/output contracts at execution. It offers rank-two
+linear execution through the existing providers:
+
+| Common adapter | Contract | Current architecture scope |
+| --- | --- | --- |
+| BF16 | BF16 weights/activations/output, F32 accumulation; optional BF16 GEMM rounding before bias | Existing BF16 selector's CPU/CUDA rules |
+| Packed FP8 | E4M3FN weights, F16 or BF16 activations, F32 accumulation/output | SM61 only in this adapter |
+| ModelOpt NVFP4 | E2M1 weights + E4M3FN block-16 scales and global multiplier; F16 activations, F32 accumulation/output | SM61 only in this adapter |
+
+The common contract can express F16 weights and GGUF MXFP4, but currently reports
+no eligible built-in adapter for those requests. Existing MXFP4, FP8 measured
+F16-expansion and explicitly approximate DP4A APIs remain available separately.
+They need adapters with their own numeric/resource contracts before a common
+preference can select them. Broadening the packed-provider architecture scope
+requires corresponding provider validation; `< SM80` alone is not eligibility.
+
+Each `PreparedLinear::prepare` receives a dedicated per-layer memory partition.
+There is no common resident ledger yet: callers must partition budgets across
+layers/formats and reserve source tensors, retained outputs, preparation peaks
+and backend/allocator overhead separately. The existing BF16 `DispatchContext`
+continues to offer shared admission for its own directly prepared BF16 layers.
+No ASD store, external kernel ABI or tuning producer is connected by S1.
+
+The `dispatch_linear_contract` tests exercise extension with an independent F16
+planning fixture, eligibility before preference, dtype/format/layout separation,
+resource rejection, CPU execution parity and the manually run SM61 facade test.
+The fixture does not advertise an executable F16 provider.

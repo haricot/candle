@@ -1,5 +1,8 @@
 //! Prepared inference dispatch. Hardware eligibility is separate from policy preference.
 
+pub mod contract;
+pub mod providers;
+
 mod linear;
 pub use linear::PreparedBf16Linear;
 
@@ -46,12 +49,17 @@ impl DeviceCapabilities {
     }
 }
 
+/// Execution choices for the BF16 prepared-linear contract only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum LinearBackend {
+pub enum Bf16LinearBackend {
     CpuF32,
     CudaF32,
     CudaBf16,
 }
+
+/// Compatibility name for the original BF16 pilot.
+#[deprecated(note = "use Bf16LinearBackend; this enum describes BF16 providers only")]
+pub type LinearBackend = Bf16LinearBackend;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinearSpec {
@@ -75,7 +83,7 @@ impl LinearSpec {
         Ok(())
     }
 
-    pub fn memory(self, backend: LinearBackend) -> Result<LinearMemory> {
+    pub fn memory(self, backend: Bf16LinearBackend) -> Result<LinearMemory> {
         self.validate()?;
         let checked = || -> Option<LinearMemory> {
             let weights = self.in_features.checked_mul(self.out_features)?;
@@ -85,7 +93,7 @@ impl LinearSpec {
                 0
             })?;
             let resident_bytes = weights
-                .checked_mul(if backend == LinearBackend::CudaBf16 {
+                .checked_mul(if backend == Bf16LinearBackend::CudaBf16 {
                     2
                 } else {
                     4
@@ -164,38 +172,38 @@ pub enum RejectionReason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CandidateAssessment {
-    pub backend: LinearBackend,
+    pub backend: Bf16LinearBackend,
     pub rejection: Option<RejectionReason>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinearDecision {
-    pub backend: LinearBackend,
+    pub backend: Bf16LinearBackend,
     pub candidates: Vec<CandidateAssessment>,
     pub memory: LinearMemory,
     pub policy_selected: bool,
 }
 
-/// A preference among eligible providers, evaluated only while preparing a layer.
+/// BF16-only S0 preference, evaluated only while preparing a BF16 layer.
 pub trait SelectionPolicy: Send + Sync {
     fn select(
         &self,
         spec: &LinearSpec,
         caps: &DeviceCapabilities,
-        eligible: &[LinearBackend],
-    ) -> Option<LinearBackend>;
+        eligible: &[Bf16LinearBackend],
+    ) -> Option<Bf16LinearBackend>;
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct RequireBackend(pub LinearBackend);
+pub struct RequireBackend(pub Bf16LinearBackend);
 
 impl SelectionPolicy for RequireBackend {
     fn select(
         &self,
         _: &LinearSpec,
         _: &DeviceCapabilities,
-        _: &[LinearBackend],
-    ) -> Option<LinearBackend> {
+        _: &[Bf16LinearBackend],
+    ) -> Option<Bf16LinearBackend> {
         Some(self.0)
     }
 }
@@ -219,23 +227,23 @@ pub fn select_bf16_linear(
     let mut candidates = Vec::new();
     let mut eligible = Vec::new();
     for backend in [
-        LinearBackend::CudaBf16,
-        LinearBackend::CudaF32,
-        LinearBackend::CpuF32,
+        Bf16LinearBackend::CudaBf16,
+        Bf16LinearBackend::CudaF32,
+        Bf16LinearBackend::CpuF32,
     ] {
         let memory = spec.memory(backend)?;
         let available = match backend {
-            LinearBackend::CpuF32 => inventory.cpu_f32,
-            LinearBackend::CudaF32 => inventory.cuda_f32,
-            LinearBackend::CudaBf16 => inventory.cuda_bf16,
+            Bf16LinearBackend::CpuF32 => inventory.cpu_f32,
+            Bf16LinearBackend::CudaF32 => inventory.cuda_f32,
+            Bf16LinearBackend::CudaBf16 => inventory.cuda_bf16,
         };
         let device_matches = match backend {
-            LinearBackend::CpuF32 => caps.architecture == Architecture::Cpu,
+            Bf16LinearBackend::CpuF32 => caps.architecture == Architecture::Cpu,
             _ => matches!(caps.architecture, Architecture::Cuda { .. }),
         };
         let rejection = if !device_matches {
             Some(RejectionReason::DeviceKind)
-        } else if backend == LinearBackend::CudaBf16 && !caps.native_bf16_gemm() {
+        } else if backend == Bf16LinearBackend::CudaBf16 && !caps.native_bf16_gemm() {
             Some(RejectionReason::NativeBf16Unavailable)
         } else if !available {
             Some(RejectionReason::ProviderUnavailable)

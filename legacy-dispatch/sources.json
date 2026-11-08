@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "phase": "initial-source-integration",
+  "phase": "common-linear-contract-s1",
   "branch": "candle-legacy-dispatch",
   "base": "cfcbd7186d13271843ce7eb41d25659bd0835850",
   "formats": [
@@ -27,7 +27,8 @@
     "mxfp4_tests",
     "fp4_e7c_contract",
     "nvfp4_loader_tests",
-    "legacy_dispatch_coexistence"
+    "legacy_dispatch_coexistence",
+    "dispatch_linear_contract"
   ],
   "physical_ignored_tests": [
     [
@@ -41,6 +42,10 @@
     [
       "legacy_dispatch_coexistence",
       "physical_three_formats_share_one_cuda_device"
+    ],
+    [
+      "dispatch_linear_contract",
+      "physical_common_facade_keeps_three_numeric_contracts"
     ]
   ],
   "sources": {
@@ -61,7 +66,8 @@
     "models_validated": false,
     "performance_qualified": false,
     "asd_adapter_connected": false,
-    "cross_format_shared_admission": false
+    "cross_format_shared_admission": false,
+    "common_contract_connected": true
   },
   "payload_sha256": {
     ".github/workflows/candle-legacy-dispatch.yml": "18b0eeb429b5ac486f25baf4547bbc4199a96c89fc93d0a1285a536cf4df5b71",
@@ -69,8 +75,10 @@
     "candle-core/benches/benchmarks/mod.rs": "8053c02b8323cac7596de805a09f43486732e856793d46dc5f551ca5cbce3f48",
     "candle-core/examples/dispatch_bf16_linear.rs": "f4c6753971853d78825af4606d7b67c95743a35f5c7812c35c665196f8342189",
     "candle-core/src/cuda_backend/mod.rs": "790e317e21035164186bd24a3b7783438e60c0f35569b3ad716b2bef9d60dfeb",
-    "candle-core/src/dispatch/linear.rs": "84b9ce18da020e013c0c6cc6f9084d702403045f4e59c9c781ddfc814de2885f",
-    "candle-core/src/dispatch/mod.rs": "5deaaf7020d7de5bb5c919c07eff51fe35de14f5dc4687c298bbc8f3ca84fce8",
+    "candle-core/src/dispatch/contract.rs": "b18415cbcdda20a051a8e0e4845bb6726d6ef671d49e42288aa3de820f97ea4a",
+    "candle-core/src/dispatch/linear.rs": "e8ea38dd88fe43962221854d7f3b1beeb404de05d324f71dd6354f57f471db0a",
+    "candle-core/src/dispatch/mod.rs": "bf47c1c0a7c21a71ec28502b336c808cce93ef4b8dcccb5dbac4bff312664e22",
+    "candle-core/src/dispatch/providers.rs": "83669639287d908e9b58fc7504ce9949e51344d13849da6a04a416beeda48c79",
     "candle-core/src/lib.rs": "74b8c25f41576bb36295c0e9a39b5afaa02da6809d6157acbf218df0b857d2f4",
     "candle-core/src/quantized/cuda.rs": "74091167bcc7c2dc18ba3ebea86e9a91a7fa1a0219bef381d4c198b4b5c4994a",
     "candle-core/src/quantized/fp4_e7c_runtime.rs": "6e01c89ca14018ab0c374860879e3cb9b59bb5007633d829024c153504c345e0",
@@ -86,7 +94,8 @@
     "candle-core/src/quantized/nvfp4_arch_e7.rs": "650491c063db7a7330862c47c3959de8b61833372b03de577b987da3bbe02775",
     "candle-core/src/quantized/nvfp4_e7c_safetensors.rs": "7fb4b2f5fda6de593244227a1c5692d668d924e8a88b94407a4f00f872803a85",
     "candle-core/tests/cuda_legacy_bf16_tests.rs": "bc2fbc44f8687774d29d8b6e906a69bc28bd6b7e05ba6094d9f6dc76ce6f9f2a",
-    "candle-core/tests/dispatch_bf16.rs": "e94f1386a919e9fab76e57eeaa54597e024d6ce8f5aaeeeed1dbc97f7949e751",
+    "candle-core/tests/dispatch_bf16.rs": "a505dc78e205d106a775bc2a061eb8aa1dce83c092f6024e2034d3eba27fa844",
+    "candle-core/tests/dispatch_linear_contract.rs": "a2c035ff397f545997c97247901cdb358251e3e15a05dd28ccfae5d6b99334bf",
     "candle-core/tests/fixtures/generic_shard_a.safetensors": "5ff169f6b11effa33a611b9e589cde335915aadf5eab01c25a1a82366da3965d",
     "candle-core/tests/fixtures/generic_shard_b.safetensors": "7381971220f2e714d255d52ef0bd3d547a1da82c96e4809a48a5b215bf0d7fa7",
     "candle-core/tests/fp4_e7c_contract.rs": "75204a74f476387a164b3e30871fd58e9fcdb4312177b556256a822397d5d831",
@@ -128,11 +137,11 @@
     "docs/fp8-sm61-closure-20261016.md": "1faa0ece7bd493cde6cd3ee475d3311b0af48e7c3975860fe02fd42717f96bff",
     "docs/nvfp4-e7c-modelopt-sm61.md": "8fe678cac1e1129fb7e8d2f6fd56d0af81185ce9055f148375bee79a26733571",
     "legacy-dispatch/Cargo.lock": "7f8847aa883ba65920aa3065a0e514a7c4ca440ba64e41bf9d60cf354e940d0c",
-    "legacy-dispatch/README.md": "a2d183414bff198447dceb4503a4d1d0650c0a803ed79c9ff0e3d0805efac178",
+    "legacy-dispatch/README.md": "8462965fe2f116ba344f99078f37f744d26af16b101f2a3ea5cffa5acd765cc1",
     "legacy-dispatch/validate.py": "10527b5ac8d3dee5c074d2960bad141346eaffd8ec91fff51b15a6ae0aa518fc"
   },
   "integration_heads": {
-    "bf16": "7bb9bcbcbe5c824fc3d6e0959e6ad5b445a19356",
+    "bf16": "a10993e954a419926df978dc538659fdaf125282",
     "fp8": "e1e6325a6bf4569d9b52ebd3c334e5ae30c486df",
     "fp4": "e0028b4255c42cf2a671aea1eebc3269124f7cff"
   },
@@ -141,5 +150,11 @@
     "One shared CUDA build policy; no WMMA objects below SM70",
     "Separate BF16/FP8 kernel preprocessor guards",
     "Retained both FP8 kernel header and MXFP4/NVFP4 kernels"
+  ],
+  "bf16_backend_api": "Bf16LinearBackend",
+  "common_linear_adapters": [
+    "bf16",
+    "fp8-packed",
+    "nvfp4-w4a16"
   ]
 }
