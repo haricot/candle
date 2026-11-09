@@ -58,6 +58,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: python3 -B .github/scripts/candle-unified-pair-verify.py --selftest
+      - run: python3 -B .github/scripts/candle-unified-retention-selftest.py
       - run: bash -n .github/scripts/candle-legacy-assemble.sh .github/scripts/candle-promote-validated.sh
       - run: python3 -B .github/scripts/legacy-main-selftest.py
 
@@ -400,10 +401,15 @@ jobs:
     name: Promote Extended-qualified Legacy, Extended and standalone refs
     needs: [prepare, cpu_execute, physical_sm61]
     if: needs.cpu_execute.result == 'success' && needs.physical_sm61.result == 'success' && needs.prepare.outputs.published == 'true' && inputs.promote == true
+    concurrency:
+      group: candle-unified-stable-ref-writer
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: write
+      pull-requests: read
     env:
       CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
       CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
@@ -427,6 +433,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/candle-promote-validated.sh
+      - name: R3 — keep one previous state and prune verified temporary refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B .github/scripts/candle-unified-retention.py \
+            --report-dir "$RUNNER_TEMP/candle-promotion" --apply
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
