@@ -1,0 +1,82 @@
+name: Nemotron 3.5 ASR standalone
+
+on:
+  push:
+    branches: [nemotron_asr_streaming_standalone]
+    paths:
+      - 'candle-transformers/src/models/nemotron3_5_asr/**'
+      - 'candle-transformers/src/models/mod.rs'
+      - 'candle-examples/examples/nemotron_asr.rs'
+      - 'candle-examples/Cargo.toml'
+      - 'candle-transformers/Cargo.toml'
+      - 'Cargo.toml'
+      - 'tools/nemotron_asr_streaming/**'
+      - '.github/workflows/nemotron-asr-streaming.yml'
+  workflow_dispatch:
+    inputs:
+      full_reference:
+        description: 'Run the optional real-model CPU F32 reference campaign (downloads weights and public audio)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  native-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RAYON_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt
+      - name: Format new module
+        run: rustfmt --edition 2021 --check candle-transformers/src/models/nemotron3_5_asr/mod.rs candle-examples/examples/nemotron_asr.rs
+      - name: Native model, decoder, frontend and stream contracts (no downloads)
+        run: cargo test -p candle-transformers --lib nemotron3_5_asr
+      - name: Native transcription CLI
+        run: cargo build -p candle-examples --example nemotron_asr
+      - name: Shell entry points
+        run: for script in tools/nemotron_asr_streaming/*.sh; do bash -n "$script"; done
+
+  full-reference:
+    # Expensive real-model CPU qualification is opt-in: manual dispatch or one
+    # explicitly marked push. Ordinary pushes and all local GPU runners stay free.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.full_reference) ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[nemotron-full-reference]'))
+    needs: native-model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RAYON_NUM_THREADS: '2'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reference dependencies only
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'transformers @ https://github.com/huggingface/transformers/archive/944e22eb226890dec60299386579275a66b3b44d.tar.gz' librosa soundfile numpy pyarrow
+      - name: Unchanged official model
+        run: bash tools/nemotron_asr_streaming/download-model.sh "$RUNNER_TEMP/nemotron-model"
+      - name: Eight real-model CPU cases
+        run: NEMOTRON_REFERENCE_PYTHON=python bash tools/nemotron_asr_streaming/qualify-reference.sh "$RUNNER_TEMP/nemotron-model" "$RUNNER_TEMP/nemotron-reference"
+      - name: Public numerical metrics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nemotron-cpu-reference-metrics
+          path: ${{ runner.temp }}/nemotron-reference/metrics-*.json
+          if-no-files-found: ignore
