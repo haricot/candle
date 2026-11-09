@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   audit:
-    if: github.ref == 'refs/heads/mirror_orch'
+    if: github.ref == 'refs/heads/orch/unified-candle-v1'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     outputs:

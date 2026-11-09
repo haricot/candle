@@ -48,7 +48,7 @@ concurrency:
 
 jobs:
   cpu:
-    if: github.ref == 'refs/heads/mirror_orch'
+    if: github.ref == 'refs/heads/orch/unified-candle-v1'
     name: CPU / ${{ inputs.branch }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60

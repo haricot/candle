@@ -1,7 +1,7 @@
 name: Candle CUDA 12.9.2 Ubuntu 26.04 container smoke
 on:
   pull_request:
-    branches: [mirror_orch]
+    branches: [orch/unified-candle-v1]
     paths:
       - .github/container/Containerfile.cuda1292-ubuntu2604
       - .github/workflows/candle-candidate-ci.yml

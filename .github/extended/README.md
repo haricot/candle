@@ -8,7 +8,7 @@ Foundation: `cuda_asd_runner_v2@ac983d16750a136a8563def01926ee83a7831d22` (six-f
 | `wham_lite_candle` | Import manifest only; source ZIP needed | `26f66481b0d82077092113866d70ffeb0214cfbb` |
 | `motionbricks_candle` | Import manifest only; extract runtime from historical WHAM ZIP | `bd59f206698d3a8108570343a31d82edb6343fb5` |
 
-Run the opt-in `.github/workflows/candle-asd-extended.yml` on `mirror_orch` with `feature`, the EXACT live feature-branch `candidate_sha`, and `validation=audit|cpu|cpu_cuda`.
+Run the opt-in `.github/workflows/candle-asd-extended.yml` on `orch/unified-candle-v1` with `feature`, the EXACT live feature-branch `candidate_sha`, and `validation=audit|cpu|cpu_cuda`.
 
 For RTMPose, CPU and CUDA steps check **compilation only**. Historical performance and numerical parity refer to the donor's previous Candle revision and must be verified afresh with external model weights/ROI fixtures before any physical GPU campaign or promotion. The CPU step creates an ephemeral Cargo.lock and uploads it; pin a committed lock before demanding a fully reproducible release.
 
