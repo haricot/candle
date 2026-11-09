@@ -1,0 +1,62 @@
+diff --git a/candle-core/src/stateful.rs b/candle-core/src/stateful.rs
+--- a/candle-core/src/stateful.rs
++++ b/candle-core/src/stateful.rs
+@@ -3,13 +3,11 @@
+ 
+ pub const SHORTCONV_F16_ABI: &str = "asd.xswyn.f16.k3.v1";
+ 
+-// The ASD V3 bridge is activated only after the verified Unified composition.
+-// The main-based standalone remains portable and runs the tensor reference.
+-#[cfg(any())]
++#[cfg(feature = "cuda")]
+ mod cuda;
+-#[cfg(any())]
++#[cfg(all(feature = "cuda", feature = "d7-trace"))]
+ mod validation;
+-#[cfg(any())]
++#[cfg(all(feature = "cuda", feature = "d7-trace"))]
+ pub use validation::validate_f16_candidate;
+ 
+ pub fn causal_depthwise_conv1d_step(
+@@ -38,22 +36,16 @@
+             .text("state_contract", "immutable_input_and_next_state")
+             .number("kernel", k as u64)
+     });
+-    #[cfg(any())]
++    #[cfg(feature = "cuda")]
+     if let Some((output, next)) = cuda::try_step(x, state, weight)? {
+         trace_next(state, &next, &output);
+         return Ok((output, next));
+     }
++    #[cfg(not(feature = "cuda"))]
+     crate::diagnostics::event("asd.decision", || {
+         crate::diagnostics::Payload::new()
+             .boolean("selected", false)
+-            .text(
+-                "reason",
+-                if x.device().is_cuda() {
+-                    "main_reference_only"
+-                } else {
+-                    "unsupported_device"
+-                },
+-            )
++            .text("reason", "unsupported_device")
+     });
+     let (output, next) = causal_depthwise_conv1d_step_reference(x, state, weight)?;
+     trace_next(state, &next, &output);
+diff --git a/candle-core/examples/d7_shortconv_f16_validate.rs b/candle-core/examples/d7_shortconv_f16_validate.rs
+--- a/candle-core/examples/d7_shortconv_f16_validate.rs
++++ b/candle-core/examples/d7_shortconv_f16_validate.rs
+@@ -1,9 +1,10 @@
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    #[cfg(any())]
++    #[cfg(all(feature = "cuda", feature = "d7-trace"))]
+     {
+         let out =
+             std::path::PathBuf::from(std::env::args().nth(1).ok_or("missing output directory")?);
+         candle_core::stateful::validate_f16_candidate(&out)
+     }
+-    Err("stateful candidate needs the reviewed Unified ASD V3 composition".into())
++    #[cfg(not(all(feature = "cuda", feature = "d7-trace")))]
++    Err("candidate validation requires cuda and d7-trace".into())
+ }
