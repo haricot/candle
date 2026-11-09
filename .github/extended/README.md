@@ -8,10 +8,16 @@ Foundation: `cuda_asd_runner_v2@ac983d16750a136a8563def01926ee83a7831d22` (six-f
 | `wham_lite_candle` | Import manifest only; source ZIP needed | `26f66481b0d82077092113866d70ffeb0214cfbb` |
 | `motionbricks_candle` | Import manifest only; extract runtime from historical WHAM ZIP | `bd59f206698d3a8108570343a31d82edb6343fb5` |
 
-Run the opt-in `.github/workflows/candle-asd-extended.yml` on `orch/unified-candle-v1` with `feature`, the EXACT live feature-branch `candidate_sha`, and `validation=audit|cpu|cpu_cuda`.
+The historical opt-in `candle-asd-extended.yml` workflow has been retired from
+the Unified default branch in R3.2. Do not mistake these old candidate SHAs for
+qualified Unified sources. New ASD integrations must first be added to the
+manifest-driven Extended/Unified composition, then pass its independent CPU,
+CUDA, and physical SM61 gates before promotion.
 
-For RTMPose, CPU and CUDA steps check **compilation only**. Historical performance and numerical parity refer to the donor's previous Candle revision and must be verified afresh with external model weights/ROI fixtures before any physical GPU campaign or promotion. The CPU step creates an ephemeral Cargo.lock and uploads it; pin a committed lock before demanding a fully reproducible release.
+For RTMPose, the retired CPU and CUDA steps checked **compilation only**. Historical performance and numerical parity refer to the donor's previous Candle revision and must be verified afresh with external model weights/ROI fixtures before any physical GPU campaign or promotion. The old CPU step created an ephemeral Cargo.lock and uploaded it; pin a committed lock before demanding a fully reproducible release.
 
-For WHAM/MotionBricks, `audit` reports `SOURCE_REQUIRED`. CPU/CUDA builds fail closed until actual source trees are imported and their independent adapters configured. Historical motion-level CPU/CUDA parity and 42 Conv1D intermediate events do not prove isolated operator parity or performance.
+For WHAM/MotionBricks, the retired `audit` reported `SOURCE_REQUIRED`. CPU/CUDA builds must continue to fail closed until actual source trees are imported and their independent adapters configured. Historical motion-level CPU/CUDA parity and 42 Conv1D intermediate events do not prove isolated operator parity or performance.
 
-This workflow never launches a physical self-hosted GPU runner, promotes any branch, or triggers cleanup. Add an extension manifest and a separate explicit GPU gate only when the independently imported components pass.
+The old isolated compilation checks never constituted physical GPU qualification.
+Preserve the historical evidence, and add a manifest and explicit end-to-end
+qualification only after the imported components pass.

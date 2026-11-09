@@ -4,8 +4,8 @@ on:
     branches: [orch/unified-candle-v1]
     paths:
       - .github/container/Containerfile.cuda1292-ubuntu2604
-      - .github/workflows/candle-candidate-ci.yml
-      - .github/scripts/candle-candidate-cuda-compile.sh
+      - .github/workflows/candle-cuda-ci-image.yml
+      - .github/scripts/ci-cuda-image-selftest.py
       - .github/workflows/candle-cuda1292-container-smoke.yml
 permissions:
   contents: read

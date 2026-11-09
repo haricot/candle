@@ -1,9 +1,8 @@
 # Haricot Candle — active GitHub Actions workflows
 
 This directory contains orchestration workflows on `orch/unified-candle-v1`.
-The repository's default branch is `mirror_orch`; the branches intentionally
-expose different workflow inventories. Legacy and Extended retain independent
-paths while Unified validates the shared preparations once.
+This is the repository's default branch. Legacy and Extended retain independent
+qualification paths while Unified validates the shared preparations once.
 
 ## Current CUDA/SM61 qualification
 
@@ -12,7 +11,7 @@ paths while Unified validates the shared preparations once.
 | `candle-extended-composite.yml` | **Current Extended**: dynamic standalone sources; hosted `cpu_cuda_compile`; binary-only `cpu_execute`; physical `SM61 Extended runtime`; validated promotion | Push to `orch/extended-v1` (selected paths), or `workflow_dispatch` |
 | `candle-legacy-cuda.yml` | Separate CUDA legacy qualification | `orch/legacy-cuda-v1` |
 | `candle-unified-orchestrator.yml` | **Unified R3**: one Extended-qualified Legacy/Extended pair and automatic SHA-guarded post-promotion retention | `orch/unified-candle-v1`, explicit dispatch with `promote: true` |
-| `candle-asd-extended.yml` | Isolated ASD candidates and CPU/CUDA compilation | Explicit dispatch |
+| `candle-cuda-ci-image.yml` | Cached, fingerprinted CUDA 12.9.2/SM61 build environment | Reusable workflow and explicit image dispatch |
 
 The Extended workflow does **not** require the older six-feature integration
 workflow. It is driven by `.github/extended-sources.json`, not a fixed number
@@ -21,14 +20,13 @@ but its formal proof runs separately in `haricot/haricot-verify`.
 
 ## Additional workflows retained
 
-- `candle-sync.yml`: synchronize and prepare legacy candidates.
-- `candle-candidate-ci.yml`: independent candidate CPU/CUDA qualification.
-- `candle-gpu-ci.yml`: independent GPU qualification.
-- `candle-promote.yml`: explicitly requested promotions outside Extended.
-- `candle-cleanup.yml`: auditable, opt-in branch cleanup; **not** an automatic
-  campaign and not a replacement for Unified's post-promotion retention.
-- `candle-sm61-hygiene.yml` (on `mirror_orch`): explicit historical hygiene;
-  its old request manifest must not be reused without a new SHA audit.
+- `candle-sync.yml`: **manual preparation only** of detached legacy candidates,
+  without dispatching CPU, CUDA, SM61 GPU or promotion. These candidates are
+  unqualified until they pass a separately reviewed qualification route.
+- `candle-cleanup.yml`: manual, SHA-leased cleanup of legacy `sync/` and
+  `rebase/` refs, dry-run by default and explicit confirmation for deletion.
+  It is **not** an automatic campaign and cannot be replaced by Unified R3
+  retention of `prepare/` / `integration/` refs.
 - `candle-cuda1292-container-smoke.yml`: CUDA container smoke tests on PRs.
 - `maturin.yml`, `python.yml`, `rust-ci.yml`:
   upstream-related build and package CI.
@@ -50,8 +48,8 @@ history are **not** deleted automatically. See
 ## Retired orchestration files
 
 These workflows were superseded or bound to one-time historical evidence.
-Their files were removed from `orch/extended-v1` without deleting Git branches,
-artifacts, prior runs, or the historical revisions that contain them:
+These earlier files were removed from `orch/extended-v1` without deleting Git
+branches, artifacts, prior runs, or the historical revisions that contain them:
 
 - `candle-six-gpu-drift-resume.yml`
 - `candle-six-temporary-cleanup.yml`
@@ -64,13 +62,29 @@ artifacts, prior runs, or the historical revisions that contain them:
 - `candle-integration-gpu-handoff.yml`
 - `candle-integration-promote.yml`
 
+**Unified R3.2** additionally removes the following seven redundant workflows
+from the default branch (without deleting source branches or historical runs):
+
+- `candle-build-once-contracts.yml`
+- `candle-hosted-disk-contracts.yml`
+- `candle-standalone-publication.yml`
+- `candle-candidate-ci.yml`
+- `candle-gpu-ci.yml`
+- `candle-promote.yml`
+- `candle-asd-extended.yml`
+
+The old publishing and validation workflow files may still exist on other
+long-lived refs, notably `orch/extended-v1` and `ci/*`. Removing them from the
+default branch does **not** remove those copies or deactivate their push events.
+Review those refs separately before any cross-branch retirement.
+
 GitHub Actions may still display **historical** workflow runs after the YAML
 files are removed. Their history is preserved intentionally.
 
 For the local Pascal runner, start a `candle/extended` one-shot session only
 when the physical `SM61 Extended runtime` job is queued.
 
-R3.1 moves workflow-dispatch authority to `orch/unified-candle-v1` and retires
-the completed R2-only workflow and historical cleanup push trigger. The GitHub
-default-branch setting changes separately, after the migration gates in
-`docs/CANDLE-UNIFIED-R3-1-DEFAULT-BRANCH-MIGRATION.md` are satisfied.
+R3.1 migrated workflow-dispatch authority to `orch/unified-candle-v1` and
+retired the completed R2-only workflow. R3.2 narrows the default-branch workflow
+inventory to **11** files while preserving the manual legacy cleanup.
+See `docs/CANDLE-UNIFIED-R3-2-WORKFLOW-RETIREMENT.md` for safety boundaries.
