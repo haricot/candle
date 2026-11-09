@@ -1,4 +1,4 @@
-# Candle Sync — prepare and dispatch immutable candidate CI; GPU execution and promotion remain separate.
+# Candle Sync — legacy detached preparation only. Qualification/promotion is owned by Unified.
 name: Candle Sync
 
 on:
@@ -32,19 +32,10 @@ on:
         default: merge
         options: [merge, rebase]
       auto_fmt:
-        description: Run rustfmt and commit formatting on temporary candidates before validation
+        description: Run rustfmt and commit formatting on temporary candidates
         required: true
         type: boolean
         default: true
-      validation:
-        description: How to validate prepared candidates
-        required: true
-        type: choice
-        default: cpu_cuda
-        options:
-          - cpu_cuda
-          - cpu
-          - prepare_only
       campaign:
         description: Optional unique campaign ID (letters, numbers, hyphens, underscores)
         required: false
@@ -65,7 +56,6 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
-      actions: write
     outputs:
       campaign: ${{ steps.prepare.outputs.campaign }}
     steps:
@@ -75,7 +65,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install the same rustfmt toolchain as Candidate CI
+      - name: Install rustfmt for temporary candidate preparation
         if: inputs.auto_fmt
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
@@ -307,16 +297,15 @@ jobs:
             candidate_sha="$(git rev-parse HEAD)"
             if [[ "${candidate_sha}" == "${source_sha}" && -n "${SOURCE_REF}" ]]; then
               # The already-rebased source is unchanged by merge/format.
-              # Validate its exact SHA directly; do not create a redundant sync ref.
+              # No redundant sync ref is needed; later qualification is separate.
               record "${branch}" "${source_sha}" "REUSED_SOURCE" "${SOURCE_REF}" "${source_sha}" \
-                "No code or rustfmt changes; validate the existing candidate ref" "${fmt_status}"
+                "No code or rustfmt changes; source remains unqualified" "${fmt_status}"
               echo "::endgroup::"
               continue
             fi
             if [[ "${candidate_sha}" == "${source_sha}" && -z "${SOURCE_REF}" ]]; then
               if [[ "$branch" == fp8_candle || "$branch" == fp4_candle ]]; then
-                # Exact standalone ref is supported by Candidate CI. No
-                # redundant temporary branch is needed if already current.
+                # Avoid creating a redundant temporary ref if already current.
                 record "$branch" "$source_sha" "REUSED_SOURCE" "$source_ref" "$source_sha"                   "Standalone ref already contains the selected upstream SHA" "$fmt_status"
               else
                 record "$branch" "$source_sha" "UP_TO_DATE" "" ""                   "Source already contains the selected upstream SHA" "$fmt_status"
@@ -327,7 +316,7 @@ jobs:
 
             # The push creates a new ref only; it never updates a public feature branch.
             if git push origin "${candidate_sha}:refs/heads/${candidate}" >>"${log}" 2>&1; then
-              record "${branch}" "${source_sha}" "CHECKS_PENDING" "${candidate}" "${candidate_sha}" "Candidate published for independent read-only CI" "${fmt_status}"
+              record "${branch}" "${source_sha}" "PREPARED_UNQUALIFIED" "${candidate}" "${candidate_sha}" "Candidate prepared; no CPU/CUDA/GPU qualification or promotion started" "${fmt_status}"
             else
               record "${branch}" "${source_sha}" "PUSH_FAILED" "" "" "See branch log"
             fi
@@ -344,47 +333,9 @@ jobs:
             cat "${report}/report.md"
             echo
             echo "Update strategy: ${UPDATE_STRATEGY}; FP8/FP4 source: *_standalone." 
-          echo "Candidates are verified by Candle Candidate CI on exact commit SHAs."
+            echo "Preparation only: candidates are NOT qualified; no CPU/CUDA/GPU jobs or promotion are dispatched."
             echo "CUDA compilation is not GPU execution. No public feature branch was modified."
           } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Dispatch independent candidate CI on exact SHAs
-        if: inputs.validation != 'prepare_only'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CAMPAIGN: ${{ steps.prepare.outputs.campaign }}
-          VALIDATION_MODE: ${{ inputs.validation }}
-        run: |
-          set -uo pipefail
-          report="$RUNNER_TEMP/candle-sync-report"
-          : > "$report/dispatch.ndjson"
-          : > "$report/dispatch.log"
-          failures=0
-          # Explicit workflow_dispatch works for GITHUB_TOKEN-created candidates,
-          # unlike on:push. Do not start CI for conflicted branches.
-          while read -r branch candidate sha upstream_sha; do
-            [[ -n "$sha" ]] || continue
-            if gh workflow run candle-candidate-ci.yml --repo "$GITHUB_REPOSITORY" --ref orch/unified-candle-v1 \
-              -f "branch=$branch" -f "campaign=$CAMPAIGN" \
-              -f "candidate_ref=$candidate" -f "candidate_sha=$sha" \
-              -f "upstream_sha=$upstream_sha" -f "validation=$VALIDATION_MODE" \
-              >> "$report/dispatch.log" 2>&1; then
-              state=DISPATCHED
-            else
-              state=DISPATCH_FAILED
-              failures=$((failures+1))
-              echo "::error::Candidate CI dispatch failed for $branch ($sha)"
-            fi
-            jq -cn --arg branch "$branch" --arg candidate "$candidate" \
-              --arg sha "$sha" --arg state "$state" --arg validation "$VALIDATION_MODE" \
-              '{branch:$branch,candidate:$candidate,sha:$sha,status:$state,
-                validation:$validation}' >> "$report/dispatch.ndjson"
-            echo "$branch: $state ($sha)" >> "$GITHUB_STEP_SUMMARY"
-          done < <(jq -r '.branches[] | select(.candidate_sha != null) |
-            [.branch,.candidate,.candidate_sha,.upstream_sha] | @tsv' "$report/report.json")
-          echo "See Candle Candidate CI for the separate CPU/CUDA results." >> "$GITHUB_STEP_SUMMARY"
-          ((failures == 0))
 
       - name: Upload preparation report and conflict evidence
         if: always()
