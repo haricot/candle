@@ -58,6 +58,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: python3 -B .github/scripts/candle-unified-pair-verify.py --selftest
+      - run: python3 -B .github/scripts/candle-unified-source-summary.py --selftest
       - run: python3 -B .github/scripts/candle-unified-retention-selftest.py
       - run: python3 -B .github/scripts/candle-sts-preservation-selftest.py
       - run: bash -n .github/scripts/candle-legacy-assemble.sh .github/scripts/candle-promote-validated.sh .github/scripts/candle-resolve-extended-sts.sh .github/scripts/candle-compose-sts-asd-v3.sh
@@ -111,7 +112,7 @@ jobs:
         run: python3 -B .github/scripts/candle-extended-cli-selftest.py
       - name: Independently test CUDA link stub isolation for hosted CPU execution
         run: python3 .github/scripts/candle-cpu-cuda-link-stub-selftest.py
-      - name: Prepare manifest-defined Extended candidate
+      - name: Prepare Extended from all configured standalone sources
         id: assemble
         shell: bash
         env:
@@ -122,7 +123,7 @@ jobs:
           PUBLISH: ${{ github.event_name == 'push' && 'true' || inputs.publish }}
           HALF_DUPLEX_PROFILE_REQUESTED: ${{ inputs.half_duplex_profile || 'auto' }}
         run: bash .github/scripts/candle-extended-assemble.sh
-      - name: Prepare five-feature Legacy from the EXACT Extended prepared commits
+      - name: Prepare cuda_legacy from five shared Extended sources (subset)
         id: assemble_legacy
         shell: bash
         env:
@@ -133,11 +134,18 @@ jobs:
           PUBLISH: ${{ github.event_name == 'push' && 'true' || inputs.publish }}
           REUSE_EXTENDED_MANIFEST: ${{ runner.temp }}/candle-extended/extended.json
         run: bash .github/scripts/candle-legacy-assemble.sh
-      - name: Bind Legacy and Extended to identical five standalone preparations
+      - name: Verify cuda_legacy's five sources match their Extended preparations
         run: |
           python3 -B .github/scripts/candle-unified-pair-verify.py \
             --extended "$RUNNER_TEMP/candle-extended/extended.json" \
             --legacy "$RUNNER_TEMP/candle-legacy-cuda/legacy-cuda.json"
+      - name: Summarize ALL standalone sources (Extended and Legacy subset)
+        run: |
+          python3 -B .github/scripts/candle-unified-source-summary.py \
+            --config .github/extended-sources.json \
+            --extended "$RUNNER_TEMP/candle-extended/extended.json" \
+            --legacy "$RUNNER_TEMP/candle-legacy-cuda/legacy-cuda.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
