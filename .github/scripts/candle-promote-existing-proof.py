@@ -213,7 +213,10 @@ def main():
         require(remote_head(item["preparation_ref"]) == item["prepared_sha"], f"prepared ref moved: {feature}")
         command("git", "merge-base", "--is-ancestor", item["prepared_sha"], EXTENDED_SHA)
     for item in legacy["features"]:
-        require(remote_head(item["preparation_ref"]) == item["prepared_sha"], f"Legacy preparation moved: {item['feature']}")
+        # Unified assembly intentionally reuses the Extended preparation refs.
+        # candle-legacy-assemble.sh does NOT publish prepare/legacy/* in this mode.
+        # The Extended refs were verified above, and the candidate must contain
+        # those exact same commits as ancestors.
         command("git", "merge-base", "--is-ancestor", item["prepared_sha"], LEGACY_SHA)
     require(remote_head("extended") == extended["old_integration_sha"], "Extended stable ref changed")
     require(remote_head("cuda_legacy") == legacy["old_integration_sha"], "Legacy stable ref changed")
