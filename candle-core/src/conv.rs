@@ -13,7 +13,7 @@ mod grouped_transpose_cuda;
 #[cfg(feature = "cudnn")]
 mod grouped_transpose_cudnn;
 #[cfg(feature = "cuda")]
-mod grouped_transpose_dispatch;
+pub(crate) mod grouped_transpose_dispatch;
 #[cfg(feature = "metal")]
 mod grouped_transpose_metal;
 mod grouped_transpose_native;

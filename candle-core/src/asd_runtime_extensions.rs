@@ -163,7 +163,12 @@ fn op_code(op: &str) -> Result<u8> {
         "conv2d" => 2,
         "conv_transpose1d" => 3,
         "conv_transpose2d" => 4,
-        _ => return Err(Error::Msg(format!("runtime ASD unsupported operation {op:?}"))),
+        "causal_depthwise_conv1d_step" => 5,
+        _ => {
+            return Err(Error::Msg(format!(
+                "runtime ASD unsupported operation {op:?}"
+            )))
+        }
     })
 }
 
@@ -173,16 +178,23 @@ fn call_op_code(op: ExactOperation) -> u8 {
         ExactOperation::Conv2d => 2,
         ExactOperation::ConvTranspose1d => 3,
         ExactOperation::ConvTranspose2d => 4,
+        ExactOperation::CausalDepthwiseConv1dStep => 5,
     }
 }
 
 fn key_from_signature(fields: &BTreeMap<String, String>) -> Result<ExactKey> {
-    if fields.get("dtype").map(String::as_str) != Some("f32")
+    let op = op_code(
+        fields
+            .get("op")
+            .ok_or_else(|| Error::Msg("runtime ASD decision missing op".into()))?,
+    )?;
+    let dtype = if op == 5 { "f16" } else { "f32" };
+    if fields.get("dtype").map(String::as_str) != Some(dtype)
         || fields.get("input_layout").map(String::as_str) != Some("contiguous_zero_offset")
         || fields.get("weight_layout").map(String::as_str) != Some("contiguous_zero_offset")
     {
         return Err(Error::Msg(
-            "runtime ASD exact decisions require f32 contiguous_zero_offset".into(),
+            "runtime ASD exact decision dtype/layout does not match its operation ABI".into(),
         ));
     }
 
@@ -197,7 +209,9 @@ fn key_from_signature(fields: &BTreeMap<String, String>) -> Result<ExactKey> {
             .ok_or_else(|| Error::Msg("runtime ASD decision missing weight_shape".into()))?,
     )?;
     if spatial.is_empty() || spatial.len() > 2 || weight.len() < 3 || weight.len() > 4 {
-        return Err(Error::Msg("runtime ASD decision has invalid tensor rank".into()));
+        return Err(Error::Msg(
+            "runtime ASD decision has invalid tensor rank".into(),
+        ));
     }
 
     let output_padding = match fields.get("output_padding").map(String::as_str) {
@@ -205,15 +219,15 @@ fn key_from_signature(fields: &BTreeMap<String, String>) -> Result<ExactKey> {
         Some(value) => value
             .parse::<usize>()
             .map_err(|err| Error::Msg(format!("invalid output_padding: {err}")))?,
-        None => return Err(Error::Msg("runtime ASD decision missing output_padding".into())),
+        None => {
+            return Err(Error::Msg(
+                "runtime ASD decision missing output_padding".into(),
+            ))
+        }
     };
 
-    Ok(ExactKey {
-        op: op_code(
-            fields
-                .get("op")
-                .ok_or_else(|| Error::Msg("runtime ASD decision missing op".into()))?,
-        )?,
+    let key = ExactKey {
+        op,
         dim: parse_usize(fields, "dim")? as u8,
         batch: parse_usize(fields, "batch")?,
         c_in: parse_usize(fields, "c_in")?,
@@ -231,11 +245,41 @@ fn key_from_signature(fields: &BTreeMap<String, String>) -> Result<ExactKey> {
         padding: parse_usize(fields, "padding")?,
         output_padding,
         dilation: parse_usize(fields, "dilation")?,
-    })
+    };
+    if op == 5 && !stateful_key_valid(&key) {
+        return Err(Error::Msg(
+            "stateful F16 ABI requires x[B,C,1], state[B,C,3], weight[C,1,3]".into(),
+        ));
+    }
+    Ok(key)
+}
+
+fn stateful_key_valid(key: &ExactKey) -> bool {
+    key.dim == 1
+        && key.batch > 0
+        && key.c_in > 0
+        && key.c_out == key.c_in
+        && key.spatial0 == 1
+        && key.spatial1 == 0
+        && key.weight_rank == 3
+        && key.weight0 == key.c_in
+        && key.weight1 == 1
+        && key.weight2 == 3
+        && key.kernel == 3
+        && key.groups == key.c_in
+        && key.stride == 1
+        && key.padding == 0
+        && key.output_padding == 0
+        && key.dilation == 1
 }
 
 fn key_from_call(call: ExactOperationCall) -> Option<ExactKey> {
-    if call.dtype != "f32"
+    let dtype = if call.op == ExactOperation::CausalDepthwiseConv1dStep {
+        "f16"
+    } else {
+        "f32"
+    };
+    if call.dtype != dtype
         || !call.input_contiguous
         || call.input_start_offset != 0
         || !call.weight_contiguous
@@ -342,10 +386,7 @@ enum ProfileWireKind {
     Extension,
 }
 
-fn profile_identity(
-    kind: &ProfileWireKind,
-    fields: &BTreeMap<String, String>,
-) -> Result<String> {
+fn profile_identity(kind: &ProfileWireKind, fields: &BTreeMap<String, String>) -> Result<String> {
     match kind {
         ProfileWireKind::Full => match (fields.get("profile_id"), fields.get("policy_id")) {
             (Some(profile), None) => Ok(profile.clone()),
@@ -362,10 +403,7 @@ fn profile_identity(
     }
 }
 
-fn validate_target(
-    kind: &ProfileWireKind,
-    fields: &BTreeMap<String, String>,
-) -> Result<String> {
+fn validate_target(kind: &ProfileWireKind, fields: &BTreeMap<String, String>) -> Result<String> {
     let architecture = fields
         .get("target.architecture")
         .ok_or_else(|| Error::Msg("runtime ASD profile missing target.architecture".into()))?;
@@ -411,6 +449,21 @@ fn validate_target(
 }
 
 fn parse_profile_source(source: &str) -> Result<Option<Arc<RuntimeProfile>>> {
+    parse_profile_source_with_candidates(
+        source,
+        matches!(
+            std::env::var("CANDLE_ASD_ALLOW_STATEFUL_CANDIDATE")
+                .ok()
+                .as_deref(),
+            Some("1")
+        ),
+    )
+}
+
+fn parse_profile_source_with_candidates(
+    source: &str,
+    allow_candidates: bool,
+) -> Result<Option<Arc<RuntimeProfile>>> {
     let mut lines = source.lines();
     let header = lines
         .next()
@@ -463,7 +516,7 @@ fn parse_profile_source(source: &str) -> Result<Option<Arc<RuntimeProfile>>> {
 
         let id = parts[1];
         let state = parts[2];
-        if state != "promoted" {
+        if state != "promoted" && !(state == "candidate" && allow_candidates) {
             continue;
         }
 
@@ -503,6 +556,11 @@ fn parse_profile_source(source: &str) -> Result<Option<Arc<RuntimeProfile>>> {
         };
 
         let key = key_from_signature(&signature)?;
+        if state == "candidate" && (key.op != 5 || provider != RuntimeExecutionProvider::RawCuda) {
+            return Err(Error::Msg(
+                "experimental candidate opt-in only permits stateful F16 raw CUDA".into(),
+            ));
+        }
         let canonical = canonical_decision(
             id,
             state,
@@ -636,7 +694,6 @@ pub(crate) fn lookup_exact(
     Ok(result)
 }
 
-
 pub(crate) fn refresh() {
     *cache().write().unwrap() = CacheState::Unresolved;
     PROFILE_MODE.store(0, Ordering::Release);
@@ -663,7 +720,10 @@ mod tests {
         let matched = profile.decisions.values().next().unwrap();
         assert_eq!(&*matched.profile_id, "test-runtime");
         assert_eq!(&*matched.decision_id, "runtime-s33");
-        assert_eq!(matched.execution_provider, RuntimeExecutionProvider::RawCuda);
+        assert_eq!(
+            matched.execution_provider,
+            RuntimeExecutionProvider::RawCuda
+        );
     }
 
     #[test]
@@ -674,5 +734,36 @@ mod tests {
             "b".repeat(64),
         );
         assert!(parse_profile_source(&source).unwrap().is_some());
+    }
+
+    #[test]
+    fn stateful_candidate_needs_explicit_opt_in_and_exact_f16_contract() {
+        let signature = "op=causal_depthwise_conv1d_step,dim=1,batch=1,c_in=2048,c_out=2048,spatial=1,weight_shape=2048x1x3,groups=2048,kernel=3,stride=1,padding=0,output_padding=0,dilation=1,dtype=f16,input_layout=contiguous_zero_offset,weight_layout=contiguous_zero_offset";
+        let source = format!("{PROFILE_HEADER_V3}\nprofile_id=stateful-test\ntarget.vendor=nvidia\ntarget.architecture=sm{}\ntarget.scope=device\ntarget.sm={}\ntarget.gpu_uuid=GPU-test\ndecision|stateful|candidate|raw_cuda|{signature}|impl=stateful-test|evidence={}|min_integrated_speedup_x=none\n", candle_kernels::CUDA_BUILD_COMPUTE_CAP, candle_kernels::CUDA_BUILD_COMPUTE_CAP, "a".repeat(64));
+        let disabled = parse_profile_source_with_candidates(&source, false).unwrap();
+        assert!(disabled.is_none());
+        let enabled = parse_profile_source_with_candidates(&source, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(enabled.decisions.len(), 1);
+        assert_eq!(
+            &*enabled.decisions.values().next().unwrap().state,
+            "candidate"
+        );
+        assert!(parse_profile_source_with_candidates(
+            &source.replace("dtype=f16", "dtype=f32"),
+            true
+        )
+        .is_err());
+        assert!(parse_profile_source_with_candidates(
+            &source.replace("kernel=3", "kernel=4"),
+            true
+        )
+        .is_err());
+        assert!(parse_profile_source_with_candidates(
+            &source.replace("|raw_cuda|", "|cudnn|"),
+            true
+        )
+        .is_err());
     }
 }

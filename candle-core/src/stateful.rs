@@ -3,13 +3,11 @@ use crate::{Result, Tensor, D};
 
 pub const SHORTCONV_F16_ABI: &str = "asd.xswyn.f16.k3.v1";
 
-// The ASD V3 bridge is activated only after the verified Unified composition.
-// The main-based standalone remains portable and runs the tensor reference.
-#[cfg(any())]
+#[cfg(feature = "cuda")]
 mod cuda;
-#[cfg(any())]
+#[cfg(all(feature = "cuda", feature = "d7-trace"))]
 mod validation;
-#[cfg(any())]
+#[cfg(all(feature = "cuda", feature = "d7-trace"))]
 pub use validation::validate_f16_candidate;
 
 pub fn causal_depthwise_conv1d_step(
@@ -38,22 +36,16 @@ pub fn causal_depthwise_conv1d_step(
             .text("state_contract", "immutable_input_and_next_state")
             .number("kernel", k as u64)
     });
-    #[cfg(any())]
+    #[cfg(feature = "cuda")]
     if let Some((output, next)) = cuda::try_step(x, state, weight)? {
         trace_next(state, &next, &output);
         return Ok((output, next));
     }
+    #[cfg(not(feature = "cuda"))]
     crate::diagnostics::event("asd.decision", || {
         crate::diagnostics::Payload::new()
             .boolean("selected", false)
-            .text(
-                "reason",
-                if x.device().is_cuda() {
-                    "main_reference_only"
-                } else {
-                    "unsupported_device"
-                },
-            )
+            .text("reason", "unsupported_device")
     });
     let (output, next) = causal_depthwise_conv1d_step_reference(x, state, weight)?;
     trace_next(state, &next, &output);
