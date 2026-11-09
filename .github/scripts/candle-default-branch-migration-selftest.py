@@ -110,6 +110,16 @@ class DefaultBranchMigration(unittest.TestCase):
             f"branches: [{UNIFIED}]", workflow("candle-cuda1292-container-smoke.yml")
         )
 
+    def test_secret_scan_new_branch_starts_at_default_not_full_history(self) -> None:
+        text = workflow("trufflehog.yml")
+        self.assertIn("fetch-depth: 0", text)
+        self.assertIn("github.event.before != '0000000000000000000000000000000000000000'", text)
+        self.assertIn("format('origin/{0}', github.event.repository.default_branch)", text)
+        self.assertIn("head: ${{ github.sha }}", text)
+        self.assertIn("trufflesecurity/trufflehog@", text)
+        self.assertNotIn("continue-on-error", text)
+        self.assertNotIn("--results=verified", text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -62,3 +62,17 @@ safe replacement procedure.
 
 The repository's branch/default setting is unchanged in R3.2. Review and merge
 this change through an explicit PR; do not delete additional branches here.
+
+## R3.2 follow-up: secret scan on first branch push
+
+PR #33's initial branch-creation push had a zero `before` SHA. The upstream
+TruffleHog action interpreted that as a full-history scan (22 MB), reported
+one **unverified** GitHub finding, no verified secrets, and exited 183. The
+earlier default-branch push checks scanned commit deltas and passed.
+
+The unchanged TruffleHog engine still fails on findings. Its workflow now
+passes an explicit Git range: `before -> github.sha` for ordinary pushes, and
+`origin/<default branch> -> github.sha` for first pushes. It does not add a
+detector exclusion or change `--fail`. The one historical unverified finding
+is **not** thereby declared harmless: triage a dedicated historical scan
+separately before treating it as a false positive or a credential exposure.
