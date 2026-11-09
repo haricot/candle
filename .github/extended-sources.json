@@ -147,6 +147,18 @@
         "cuda"
       ],
       "allow_promoted_equivalent_source": true
+    },
+    {
+      "feature": "semantic_trace_stateful",
+      "source_ref": "semantic-trace-stateful-main-standalone",
+      "target_ref": "semantic-trace-stateful-main-standalone",
+      "review_source_sha": "3a83aba5191540da7d3f27ee6cec89d0f5ea50e3",
+      "pin_source_sha": true,
+      "cpu_tests": "sts-semantic-stateful",
+      "cuda_features": ["cuda"],
+      "allow_promoted_equivalent_source": true,
+      "depends_on": ["asd_core_v3_standalone"],
+      "qualification_state": "EXPERIMENTAL_SM61_UNQUALIFIED"
     }
   ],
   "publication": {
