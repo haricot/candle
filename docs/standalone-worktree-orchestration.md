@@ -5,7 +5,7 @@ The old six-feature `candle-integration.yml` and physical SM61 promotion are fro
 ## Ref ownership
 
 - **Source-of-truth (immutable to automation):** `fp8_candle_standalone` and `fp4_candle_standalone`, both descended from fork `main`.
-- **Orchestrator:** `mirror_orch` contains the workflow and script, not a second code baseline. The hosted job fetches **fork main** at an exact full SHA, pins each standalone source SHA, and uses `git worktree add --detach` for per-feature preparation.
+- **Orchestrator:** `orch/unified-candle-v1` contains the maintained workflows, not a second code baseline. The hosted job fetches **fork main** at an exact full SHA, pins each standalone source SHA, and uses `git worktree add --detach` for per-feature preparation.
 - **Preparation strategy:** `merge` by default for traceability; optional `rebase --rebase-merges --onto <pinned-main> <merge-base>` acts **only** on a detached worktree.
 - **Integration:** a separate detached worktree starts at the pinned `main` commit and merges exact FP8 then FP4 prepared SHAs. Every input and SHA is recorded in `candle-integration/standalone-sources.json`.
 - **Output:** at most **one** new remote integration ref per successful campaign: `integration/standalone-<campaign>-fp8-fp4`. No temporary per-feature branches need to be pushed by this end-to-end path. Feature diffs, SHA manifest and conflicts are retained as a workflow artifact.

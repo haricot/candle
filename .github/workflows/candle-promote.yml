@@ -70,7 +70,7 @@ concurrency:
 
 jobs:
   promote:
-    if: github.ref == 'refs/heads/mirror_orch'
+    if: github.ref == 'refs/heads/orch/unified-candle-v1'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -138,7 +138,7 @@ jobs:
 
           run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}")"
           jq -e '.name == "Candle Candidate CI" and .conclusion == "success" and
-            .head_branch == "mirror_orch"' <<< "${run}" > /dev/null || {
+            .head_branch == "orch/unified-candle-v1"' <<< "${run}" > /dev/null || {
             echo "::error::The supplied CI run is not a successful Candidate CI"; exit 3;
           }
           jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}/jobs?per_page=100")"
@@ -170,7 +170,7 @@ jobs:
           # Hosted CUDA compilation is not GPU runtime evidence.
           gpu_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GPU_RUN_ID}")"
           jq -e '.name=="Candle GPU CI" and .conclusion=="success"
-            and .head_branch=="mirror_orch" and .event=="workflow_dispatch"' \
+            and .head_branch=="orch/unified-candle-v1" and .event=="workflow_dispatch"' \
             <<< "${gpu_run}" > /dev/null || {
             echo "::error::GPU run must be a successful independent GPU CI dispatch"; exit 3;
           }
@@ -245,7 +245,7 @@ jobs:
           echo "Backup tag: ${backup}; promotion tag: ${proof}" \
             >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${CLEAN_TEMP}" == true ]]; then
-            gh workflow run candle-cleanup.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+            gh workflow run candle-cleanup.yml --repo "${GITHUB_REPOSITORY}" --ref orch/unified-candle-v1 \
               -f "scope=${TARGET}" -f "dry_run=false" -f "archive_orphans=true" \
               -f "confirmation=DELETE_TEMP_REFS"
             echo "Triggered guarded cleanup for ${TARGET}" >> "${GITHUB_STEP_SUMMARY}"

@@ -35,7 +35,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   preflight:
-    if: github.ref == 'refs/heads/mirror_orch'
+    if: github.ref == 'refs/heads/orch/unified-candle-v1'
     runs-on: ubuntu-26.04
     outputs:
       lock_sha256: ${{ steps.check.outputs.lock_sha256 }}
@@ -69,7 +69,7 @@ jobs:
           [[ "$(git rev-parse refs/remotes/origin/gpu-candidate)" == "${SHA}" ]] || exit 3
           git merge-base --is-ancestor "${UP}" "${SHA}" || exit 3
           run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI}")"
-          jq -e '.name=="Candle Candidate CI" and .conclusion=="success" and .head_branch=="mirror_orch"' <<< "${run}" >/dev/null
+          jq -e '.name=="Candle Candidate CI" and .conclusion=="success" and .head_branch=="orch/unified-candle-v1"' <<< "${run}" >/dev/null
           jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI}/jobs?per_page=100")"
           jq -e --arg b "${B}" '
             any(.jobs[]; .name==("CPU / "+$b) and .conclusion=="success") and
@@ -271,7 +271,7 @@ jobs:
             echo "Functional branch already equals tested GPU SHA; no promotion required" >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
-          gh workflow run candle-promote.yml --repo "${GITHUB_REPOSITORY}" --ref mirror_orch \
+          gh workflow run candle-promote.yml --repo "${GITHUB_REPOSITORY}" --ref orch/unified-candle-v1 \
             -f "branch=${TARGET}" -f "candidate_ref=${CANDIDATE_REF}" \
             -f "candidate_sha=${CANDIDATE_SHA}" -f "expected_source_sha=${old}" \
             -f "upstream_sha=${UPSTREAM_SHA}" -f "campaign=${CAMPAIGN}" \

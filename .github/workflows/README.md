@@ -54,3 +54,8 @@ files are removed. Their history is preserved intentionally.
 
 For the local Pascal runner, start a `candle/extended` one-shot session only
 when the physical `SM61 Extended runtime` job is queued.
+
+R3.1 moves workflow-dispatch authority to `orch/unified-candle-v1` and retires
+the completed R2-only workflow and historical cleanup push trigger. The GitHub
+default-branch setting changes separately, after the migration gates in
+`docs/CANDLE-UNIFIED-R3-1-DEFAULT-BRANCH-MIGRATION.md` are satisfied.

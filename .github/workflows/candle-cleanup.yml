@@ -1,11 +1,8 @@
 # Branch hygiene after explicit, evidence-backed promotion. Always dry-run first.
 name: Candle Cleanup
 on:
-  # Audited one-shot cleanup request: preview before applying. The request is
-  # a Git-tracked manifest; all refs are rechecked against promotion tags.
-  push:
-    branches: [mirror_orch]
-    paths: [.github/cleanup-request.json]
+  # Explicit legacy sync/rebase cleanup only. Completed historical push
+  # requests must never be reactivated by moving the default branch.
   workflow_dispatch:
     inputs:
       scope:
@@ -49,7 +46,7 @@ concurrency:
 
 jobs:
   cleanup:
-    if: github.ref == 'refs/heads/mirror_orch'
+    if: github.ref == 'refs/heads/orch/unified-candle-v1'
     runs-on: ubuntu-26.04
     timeout-minutes: 35
     permissions:
@@ -73,34 +70,6 @@ jobs:
           CONFIRM: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == push ]]; then
-            request=.github/cleanup-request.json
-            test -s "${request}" || exit 3
-            [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]] || exit 3
-            jq -e '
-              .schema_version==1 and
-              .promoted_sha=="ac983d16750a136a8563def01926ee83a7831d22" and
-              .gpu_run_id==36338057224 and
-              .promotion_run_id==36341268024 and
-              .scope=="all" and .skip_unpromoted==true and
-              .archive_orphans==true and
-              ((.phase=="preview" and .dry_run==true and .confirmation=="PREVIEW_TEMP_REFS") or
-               (.phase=="apply" and .dry_run==false and .confirmation=="DELETE_TEMP_REFS") or
-               (.phase=="finalize" and .dry_run==false and .confirmation=="DELETE_TEMP_REFS" and
-                .approved_apply_run_id==36341444643))
-            ' "${request}" >/dev/null || {
-              echo "::error::Cleanup request not bound to the reviewed GPU promotion"; exit 3
-            }
-            SCOPE=all
-            SKIP_UNPROMOTED=true
-            ARCHIVE_ORPHANS=true
-            DRY_RUN="$(jq -r .dry_run "${request}")"
-            CONFIRM="$(jq -r .confirmation "${request}")"
-            promoted="$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v2 | cut -f1)"
-            [[ "${promoted}" == ac983d16750a136a8563def01926ee83a7831d22 ]] || {
-              echo "::error::Validated permanent branch changed after promotion"; exit 3
-            }
-          fi
           report="${RUNNER_TEMP}/candle-cleanup"
           mkdir -p "${report}"
           : > "${report}/ref-results.ndjson"
@@ -240,59 +209,11 @@ jobs:
             > "${report}/summary.json"
           cat "${report}/summary.json" >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Remove redundant integrated candidate only after archived cleanup proof
-        if: success() && github.event_name == 'push'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          jq -e '.phase=="finalize"' .github/cleanup-request.json >/dev/null || exit 0
-          sha=ac983d16750a136a8563def01926ee83a7831d22
-          prior=36341444643
-          validated_gpu=36338057224
-          ref=integration/cuda_asd_runner_v2-candidate
-          branch="refs/heads/$ref"
-          permanent="$(git ls-remote --heads origin refs/heads/cuda_asd_runner_v2 | cut -f1)"
-          candidate="$(git ls-remote --heads origin "$branch" | cut -f1)"
-          [[ "$permanent" == "$sha" && "$candidate" == "$sha" ]] || {
-            echo "::error::Cannot close candidate: SHA changed or permanent ref missing"; exit 3;
-          }
-          short="$(printf %s "$sha" | cut -c1-12)"
-          proof_tag="refs/tags/promoted/cuda_asd_runner_v2/$short-$validated_gpu"
-          peeled="$(git ls-remote --tags origin "$proof_tag^{}" | cut -f1)"
-          [[ "$peeled" == "$sha" ]] || {
-            echo "::error::Annotated permanent promotion tag does not match tested SHA"; exit 3;
-          }
-          prior_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prior")"
-          jq -e '.name=="Candle Cleanup" and .conclusion=="success" and .head_branch=="mirror_orch"' \
-            <<< "$prior_run" >/dev/null || exit 3
-          gh run download "$prior" --repo "$GITHUB_REPOSITORY" \
-            --name "candle-cleanup-all-$prior" --dir "$RUNNER_TEMP/verified-apply"
-          jq -e '.scope=="all" and .dry_run==false and .matched==20 and .removed==20 and .skipped==0' \
-            "$RUNNER_TEMP/verified-apply/summary.json" >/dev/null || {
-            echo "::error::Cleanup manifest does not attest the 20 reviewed deletions"; exit 3;
-          }
-          # Keep the active BF16 PR and all BF16 sync refs untouched.
-          owner="$(printf %s "$GITHUB_REPOSITORY" | cut -d/ -f1)"
-          prs="$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" \
-            -f state=open -f "head=$owner:$ref" --jq length)"
-          [[ "$prs" == 0 ]] || {
-            echo "::error::Integrated candidate is head of an open PR"; exit 3;
-          }
-          gh auth setup-git
-          git push --force-with-lease="$branch:$sha" origin ":$branch"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-            echo "::error::Redundant candidate ref still exists"; exit 3
-          fi
-          echo "CLEANED: permanent cuda_asd_runner_v2=$sha; promotion tag retained; removed $ref" \
-            >> "$GITHUB_STEP_SUMMARY"
-
       - name: Preserve cleanup manifest
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7, Node 24
         with:
-          name: candle-cleanup-${{ github.event_name == 'push' && 'all' || inputs.scope }}-${{ github.run_id }}
+          name: candle-cleanup-${{ inputs.scope }}-${{ github.run_id }}
           path: ${{ runner.temp }}/candle-cleanup/
           if-no-files-found: warn
           retention-days: 90
