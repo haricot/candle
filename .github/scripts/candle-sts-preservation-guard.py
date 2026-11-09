@@ -17,6 +17,14 @@ STS_FILES = (
     "candle-core/src/stateful/validation.rs",
 )
 
+# One reviewed documentation-only migration: the earlier Extended-based STS
+# integration is replaced by the 14th main-based source composition. All
+# executable STS blobs must remain identical; arbitrary docs changes still fail.
+REVIEWED_DOC_MIGRATION = (
+    "2348fc9f7ee2da2b52ff378558489060b388d433",
+    "169a340c19b13017b3c5a434248a88385d8e3ad5",
+)
+
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -49,6 +57,8 @@ def check(repo: Path, existing: str, candidate: str) -> str:
         if prior is None or later is None:
             changes.append(f"missing {path}")
         elif prior != later:
+            if path == STS_FILES[0] and (prior, later) == REVIEWED_DOC_MIGRATION:
+                continue
             changes.append(f"changed {path}")
     if changes:
         raise RuntimeError(

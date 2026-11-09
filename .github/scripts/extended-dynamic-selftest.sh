@@ -15,9 +15,9 @@ for script in \
   bash -n "$script"
 done
 
-# Exercise the earlier compositions and the current twelve-source voice set.
+# Exercise historical feature sets and the current 14-source STS composition.
 # production assembler. Validate source uniqueness and candidate parity.
-for count in 6 7 8 9 12; do
+for count in 6 7 8 9 12 13 14; do
   jq --argjson count "$count" '.features |= .[:$count]' "$config" > "$scratch/config.json"
   jq -e --argjson count "$count" '
     .schema_version == 1 and .kind == "extended-main-exact-delta" and
@@ -30,7 +30,8 @@ for count in 6 7 8 9 12; do
       (.review_source_sha | test("^[a-f0-9]{40}$")) and
       (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
         "embedding-gemma2-native","moe-selection","lean4-contracts","half-duplex-native",
-        "fireredvad-native","smart-turn-native","transcribepsy-native","nemotron-asr-native"] | index($tests) != null))
+        "fireredvad-native","smart-turn-native","transcribepsy-native","nemotron-asr-native",
+        "pockettts-native","sts-semantic-stateful"] | index($tests) != null))
   ' "$scratch/config.json" >/dev/null
   jq --argjson count "$count" '
     {schema_version:1,kind:"extended-multi",integration_target:"extended",
@@ -65,7 +66,7 @@ echo "DYNAMIC_EXTENDED_DUPLICATE=REJECTED"
 # A previously promoted standalone may have a different commit SHA but must
 # carry the identical, reviewed exact-delta patch. No arbitrary moved head passes.
 jq -e '.publication.update_canonical_feature_refs == true and
-  ([.features[] | select(.allow_promoted_equivalent_source == true) | .feature] | length) == 7 and
+  ([.features[] | select(.allow_promoted_equivalent_source == true) | .feature] | length) == 8 and
   ([.features[] | select(.allow_promoted_equivalent_source == true) | .pin_source_sha] | all)' "$config" >/dev/null
 
 pin_repo="$scratch/pin-equivalence"

@@ -126,6 +126,17 @@ if [[ "$MODE" == integrated ]]; then
       tail -n 120 "$report/grouped-tests.log"; exit 1;
     }
   fi
+  if has_feature semantic_trace_stateful; then
+    cargo test -p candle-core --features d7-trace --locked --test d7_diagnostics > "$report/sts-diagnostics.log" 2>&1 || {
+      tail -n 120 "$report/sts-diagnostics.log"; exit 1;
+    }
+    cargo run -p candle-core --features d7-trace --locked --example d7_shortconv_validate -- cpu "$report/sts-reference" > "$report/sts-reference.log" 2>&1 || {
+      tail -n 120 "$report/sts-reference.log"; exit 1;
+    }
+    cargo test --locked --manifest-path tools/d7-stateful-profile-check/Cargo.toml > "$report/sts-profile-check.log" 2>&1 || {
+      tail -n 120 "$report/sts-profile-check.log"; exit 1;
+    }
+  fi
   cargo test -p candle-nn --no-default-features --locked --lib > "$report/nn-lib-tests.log" 2>&1 || {
     tail -n 120 "$report/nn-lib-tests.log"; exit 1;
   }
@@ -168,6 +179,9 @@ case "$FEATURE" in
   asd_core_v3_standalone)
     cargo test -p candle-core --no-default-features --locked       --test grouped_conv_core_tests --test grouped_conv_transpose_core_tests       -- --test-threads=1 > "$report/cpu-tests.log" 2>&1 &&
     cargo test -p candle-nn --no-default-features --locked --lib       >> "$report/cpu-tests.log" 2>&1 ;;
+  semantic_trace_stateful)
+    cargo test -p candle-core --features d7-trace --locked --test d7_diagnostics > "$report/cpu-tests.log" 2>&1 &&
+    cargo run -p candle-core --features d7-trace --locked --example d7_shortconv_validate -- cpu "$report/sts-reference" >> "$report/cpu-tests.log" 2>&1 ;;
   embeddinggemma2)
     cargo check -p candle-transformers --lib --locked > "$report/embedding-gemma2-transformers.log" 2>&1 &&
     cargo check -p candle-examples --example embedding-gemma2 --locked > "$report/embedding-gemma2-cli.log" 2>&1 &&

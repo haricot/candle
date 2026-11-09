@@ -24,11 +24,17 @@ jq -e '
     (.cpu_tests as $tests | ["default","fp4-reference","grouped-core",
       "embedding-gemma2-native","moe-selection","lean4-contracts",
       "fireredvad-native","smart-turn-native","transcribepsy-native",
-      "nemotron-asr-native","pockettts-native"] | index($tests) != null) and
+      "nemotron-asr-native","pockettts-native","sts-semantic-stateful"] | index($tests) != null) and
     (.cuda_features | type == "array" and all(.[]; type == "string" and test("^[a-z0-9_-]+$"))) and
     ((.pin_source_sha // false) | type == "boolean") and
     ((.allow_promoted_equivalent_source // false) | type == "boolean"))
 ' "$cfg" >/dev/null
+jq -e '
+  (.features[-1].feature == "semantic_trace_stateful") and
+  (.features[-1].depends_on == ["asd_core_v3_standalone"]) and
+  (.features[-1].qualification_state == "EXPERIMENTAL_SM61_UNQUALIFIED") and
+  ([.features[].feature] | index("asd_core_v3_standalone") < index("semantic_trace_stateful"))
+' "$cfg" >/dev/null || { echo "::error::STS exact bridge requires ASD V3 before source 14"; exit 3; }
 jq -r '.features[] | .source_ref, .target_ref' "$cfg" |
 while IFS= read -r ref; do
   git check-ref-format "refs/heads/$ref" || exit 3
@@ -137,10 +143,10 @@ for feature in "${features[@]}"; do
     fi
   fi
 
-  jq -cn --arg feature "$feature"     --arg source_ref "${source_ref[$feature]}"     --arg target_ref "${target_ref[$feature]}"     --arg source_sha "$sha"     --arg review_source_sha "${review[$feature]}"     --arg prepared_sha "${prepared[$feature]}"     --arg preparation_ref "prepare/extended/$CAMPAIGN/$feature"     --arg common_base_sha "$common"     --arg source_patch_sha256 "$source_patch_sha"     --arg prepared_patch_sha256 "$prepared_patch_sha"     --argjson cuda_features "$(jq -c --arg f "$feature" '.features[] | select(.feature == $f) | .cuda_features' "$cfg")" \
+  jq -cn --arg feature "$feature"     --arg source_ref "${source_ref[$feature]}"     --arg target_ref "${target_ref[$feature]}"     --arg source_sha "$sha"     --arg review_source_sha "${review[$feature]}"     --arg prepared_sha "${prepared[$feature]}"     --arg preparation_ref "prepare/extended/$CAMPAIGN/$feature"     --arg common_base_sha "$common"     --arg source_patch_sha256 "$source_patch_sha"     --arg prepared_patch_sha256 "$prepared_patch_sha"     --arg qualification_state "$(jq -r --arg f "$feature" '.features[] | select(.feature == $f) | .qualification_state // "HARDWARE_GATE_REQUIRED"' "$cfg")"     --argjson cuda_features "$(jq -c --arg f "$feature" '.features[] | select(.feature == $f) | .cuda_features' "$cfg")" \
     '{feature:$feature,source_ref:$source_ref,target_ref:$target_ref,
       source_sha:$source_sha,review_source_sha:$review_source_sha,
-      cuda_features:$cuda_features,
+      cuda_features:$cuda_features,qualification_state:$qualification_state,
       prepared_sha:$prepared_sha,preparation_ref:$preparation_ref,
       common_base_sha:$common_base_sha,
       source_patch_sha256:$source_patch_sha256,
@@ -169,6 +175,9 @@ for feature in "${features[@]}"; do
     elif [[ "$feature" == asd_core_v3_standalone ]] &&
       bash .github/scripts/candle-resolve-extended-asd-v3.sh "$aggregate"         "${review[bf16_candle]}" "${review[fp8_candle]}"         "${review[fp4_candle]}" "${review[cudnn_fallback_candle]}"         "${review[moe_simt_f16_candle]}" "${review[asd_core_v3_standalone]}" "$report"; then
       resolved=true
+    elif [[ "$feature" == semantic_trace_stateful ]] &&
+      bash .github/scripts/candle-resolve-extended-sts.sh "$aggregate" "$report"; then
+      resolved=true
     fi
 
     if [[ "$resolved" == true ]]; then
@@ -196,6 +205,9 @@ for feature in "${features[@]}"; do
       fi
       exit 1
     fi
+  fi
+  if [[ "$feature" == semantic_trace_stateful ]]; then
+    bash .github/scripts/candle-compose-sts-asd-v3.sh "$aggregate" "$report"
   fi
 done
 
