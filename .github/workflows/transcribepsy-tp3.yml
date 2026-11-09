@@ -1,0 +1,100 @@
+name: TP3 QVAC one-clip real-model parity
+
+on:
+  push:
+    branches: [TranscribePsy]
+    paths:
+      - 'candle-transformers/src/models/transcribepsy/**'
+      - 'candle-examples/examples/transcribepsy_tp3.rs'
+      - 'tools/transcribepsy_tp3/**'
+      - '.github/workflows/transcribepsy-tp3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tp3-driver-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - name: Rust driver compilation and WAV fail-closed unit test
+        run: cargo test -p candle-examples --example transcribepsy_tp3
+      - name: Python source syntax
+        run: python3 -m compileall -q tools/transcribepsy_tp3
+
+  # TP3 downloads ~2 GB of official weights plus one public CaFE subset.
+  # Run on explicit dispatch or a one-shot [tp3-real] commit; subsequent ordinary pushes remain light.
+  tp3-real-cpu-f32:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[tp3-real]')
+    needs: tp3-driver-contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+      RAYON_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_DATASETS_DISABLE_TELEMETRY: '1'
+      WANDB_MODE: disabled
+      OTEL_SDK_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+      - name: Install CPU NeMo reference runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'nemo_toolkit[asr]==2.7.3' huggingface_hub 'pyarrow<23' sentencepiece safetensors soundfile numpy
+      - name: Download original pinned QVAC checkpoints and one public CaFE dataset split
+        run: |
+          mkdir -p "$RUNNER_TEMP/tp3-model" "$RUNNER_TEMP/tp3-dataset"
+          hf download qvac/TranscribePsy-250M-EU-sub model.safetensors TranscribePsy-250M-EU-sub.nemo --revision ccf70de9ff9848f5cd5975adda1370ce4addf6f1 --local-dir "$RUNNER_TEMP/tp3-model"
+          hf download amu-cai/CAMEO data/cafe-00000-of-00001.parquet --repo-type dataset --revision c7f2fc9f0538ca871d38e183ba8ad6c329120ecc --local-dir "$RUNNER_TEMP/tp3-dataset"
+      - name: Install deterministic public audio decoder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Select one pinned licensed French public sample
+        run: |
+          python tools/transcribepsy_tp3/fixture.py \
+            --parquet "$RUNNER_TEMP/tp3-dataset/data/cafe-00000-of-00001.parquet" \
+            --output "$RUNNER_TEMP/tp3-clip"
+      - name: Original NeMo reference and exact native weights
+        run: |
+          python tools/transcribepsy_tp3/reference.py \
+            --nemo "$RUNNER_TEMP/tp3-model/TranscribePsy-250M-EU-sub.nemo" \
+            --weights "$RUNNER_TEMP/tp3-model/model.safetensors" \
+            --wav "$RUNNER_TEMP/tp3-clip/public-fr-16k.wav" \
+            --output "$RUNNER_TEMP/tp3-reference"
+      - name: Native QVAC Candle CPU F32 inference
+        run: |
+          cargo run --release -p candle-examples --example transcribepsy_tp3 -- \
+            --weights "$RUNNER_TEMP/tp3-model/model.safetensors" \
+            --config "$RUNNER_TEMP/tp3-reference/config.json" \
+            --wav "$RUNNER_TEMP/tp3-clip/public-fr-16k.wav" \
+            --output "$RUNNER_TEMP/tp3-candle" \
+            --reference "$RUNNER_TEMP/tp3-reference"
+      - name: Strict Mel, FastConformer, TDT and tokenizer gate
+        run: |
+          python tools/transcribepsy_tp3/compare.py \
+            --reference "$RUNNER_TEMP/tp3-reference" \
+            --candidate "$RUNNER_TEMP/tp3-candle" \
+            --fixture "$RUNNER_TEMP/tp3-clip" \
+            --output "$RUNNER_TEMP/tp3-public-report.json" \
+            --require-isolation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tp3-one-clip-public-metrics
+          path: ${{ runner.temp }}/tp3-public-report.json
+          if-no-files-found: ignore
