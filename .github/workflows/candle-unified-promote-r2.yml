@@ -1,0 +1,54 @@
+name: Candle Unified R2 — Promote Prior SM61-Validated Campaign
+
+on:
+  push:
+    branches: [orch/unified-candle-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The source campaign is immutable. No Cargo, CUDA, GPU runner or rebuild jobs.
+concurrency:
+  group: candle-unified-r2-promote-42518965385
+  cancel-in-progress: false
+
+jobs:
+  promote_existing:
+    name: Verify run 42518965385 and atomically promote 13 + Legacy + Extended
+    if: >-
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[promote-validated-r2:42518965385]')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate R2 provenance check and atomic promotion script syntax
+        run: |
+          set -euo pipefail
+          python3 -B .github/scripts/candle-promote-existing-proof.py --selftest
+          bash -n .github/scripts/candle-promote-validated.sh
+          python3 -B .github/scripts/candle-unified-pair-verify.py --selftest
+      - name: Require all prior hosted and physical SM61 gates, artifacts and unchanged refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B .github/scripts/candle-promote-existing-proof.py
+      - name: Archive and atomically promote ONLY the already qualified refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/candle-promote-validated.sh
+      - name: Preserve promotion report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-unified-r2-42518965385-promotion
+          path: ${{ runner.temp }}/candle-promotion/
+          if-no-files-found: warn
+          retention-days: 30
