@@ -59,6 +59,7 @@ jobs:
           persist-credentials: false
       - run: python3 -B .github/scripts/candle-unified-pair-verify.py --selftest
       - run: python3 -B .github/scripts/candle-unified-retention-selftest.py
+      - run: python3 -B .github/scripts/candle-sts-preservation-selftest.py
       - run: bash -n .github/scripts/candle-legacy-assemble.sh .github/scripts/candle-promote-validated.sh
       - run: python3 -B .github/scripts/legacy-main-selftest.py
       - run: python3 -B .github/scripts/candle-default-branch-migration-selftest.py

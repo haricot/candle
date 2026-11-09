@@ -79,6 +79,13 @@ for feature in "${features[@]}"; do
 done
 
 oldintegration="$(git ls-remote --heads origin refs/heads/extended | cut -f1 || true)"
+if [[ -n "$oldintegration" ]]; then
+  # Read the exact stable ref that a successful promotion would replace.
+  git fetch --no-tags origin '+refs/heads/extended:refs/remotes/origin/extended-preflight'
+  [[ "$(git rev-parse refs/remotes/origin/extended-preflight)" == "$oldintegration" ]] || {
+    echo "::error::Extended moved during candidate preparation"; exit 3;
+  }
+fi
 : > "$report/sources.ndjson"
 
 for feature in "${features[@]}"; do
@@ -195,6 +202,16 @@ done
 for feature in "${features[@]}"; do
   git -C "$aggregate" merge-base --is-ancestor "${prepared[$feature]}" HEAD || exit 3
 done
+
+# Experimental STS was integrated directly into Extended without a new SM61
+# qualification. The current 13-source exact-delta manifest does not yet carry
+# that overlay. Fail *during preparation* rather than silently dropping it at
+# the next Unified promotion. A future reviewed STS composition can satisfy
+# this guard without relaxing the physical gate for the other 13 sources.
+if [[ -n "$oldintegration" ]]; then
+  python3 -B .github/scripts/candle-sts-preservation-guard.py \
+    --repo "$aggregate" --existing "$oldintegration" --candidate HEAD
+fi
 
 # Verify that the independent BF16, FP8 and FP4 source deltas contributed
 # their own CUDA aliases to the integrated candle-examples Cargo manifest.
