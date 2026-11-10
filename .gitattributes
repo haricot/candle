@@ -1,0 +1,2 @@
+# Unified STS stores literal git patches: leading context spaces are required.
+.github/sts-asd-v3-*.patch -whitespace

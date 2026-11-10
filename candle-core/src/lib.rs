@@ -88,6 +88,8 @@ mod tensor_cat;
 pub mod test_utils;
 pub mod utils;
 mod variable;
+pub mod diagnostics;
+pub mod stateful;
 
 #[cfg(feature = "cudnn")]
 pub use cuda_backend::cudnn;
