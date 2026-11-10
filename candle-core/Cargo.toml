@@ -50,6 +50,7 @@ criterion = { workspace = true }
 
 [features]
 default = []
+d7-trace = ["dep:serde", "dep:serde_json"]
 cuda = ["cudarc", "dep:candle-kernels", "dep:serde", "dep:serde_json"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]
 cuda-legacy-fp8 = ["cuda", "candle-kernels/cuda-legacy-fp8"]
@@ -170,3 +171,11 @@ name = "asd_v3_performance_qualification"
 
 [[example]]
 name = "asd_v3_stage_tuner_candidate"
+
+[[test]]
+name = "d7_diagnostics"
+required-features = ["d7-trace"]
+
+[[example]]
+name = "d7_shortconv_validate"
+required-features = ["d7-trace"]
