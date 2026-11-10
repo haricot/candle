@@ -34,6 +34,10 @@ but its formal proof runs separately in `haricot/haricot-verify`.
   `rebase/` refs, dry-run by default and explicit confirmation for deletion.
   It is **not** an automatic campaign and cannot be replaced by Unified R3
   retention of `prepare/` / `integration/` refs.
+  Its `unified_historical` mode runs the R4.3 historical reachability audit
+  with an opt-in atomic archive-and-prune operation; default remains dry-run.
+  Apply requires the SHA-bound `PRUNE_HISTORICAL_<digest>` token printed by
+  a preceding dry-run; a changed inventory invalidates the token.
 - `candle-cuda1292-container-smoke.yml`: CUDA container smoke tests on PRs.
 - `maturin.yml`, `python.yml`, `rust-ci.yml`:
   upstream-related build and package CI.

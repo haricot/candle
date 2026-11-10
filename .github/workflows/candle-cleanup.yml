@@ -5,8 +5,14 @@ on:
   # requests must never be reactivated by moving the default branch.
   workflow_dispatch:
     inputs:
+      cleanup_mode:
+        description: Select legacy sync/rebase cleanup or R4.3 historical audit
+        required: true
+        type: choice
+        default: legacy_sync_rebase
+        options: [legacy_sync_rebase, unified_historical]
       scope:
-        description: Promoted feature whose temporary refs may be removed
+        description: Legacy sync/rebase mode only (ignored by unified_historical)
         required: true
         type: choice
         default: all
@@ -29,12 +35,12 @@ on:
         type: boolean
         default: true
       archive_orphans:
-        description: Explicitly archive non-ancestor temp heads as tags before deletion
+        description: Legacy mode only; R4.3 automatically tags otherwise unreachable commits
         required: true
         type: boolean
         default: false
       confirmation:
-        description: Type DELETE_TEMP_REFS to actually remove eligible temp branches
+        description: DELETE_TEMP_REFS (legacy) or exact PRUNE_HISTORICAL_* token from R4.3 preview
         required: false
         type: string
 
@@ -46,7 +52,7 @@ concurrency:
 
 jobs:
   cleanup:
-    if: github.ref == 'refs/heads/orch/unified-candle-v1'
+    if: github.ref == 'refs/heads/orch/unified-candle-v1' && inputs.cleanup_mode == 'legacy_sync_rebase'
     runs-on: ubuntu-26.04
     timeout-minutes: 35
     permissions:
@@ -215,5 +221,45 @@ jobs:
         with:
           name: candle-cleanup-${{ inputs.scope }}-${{ github.run_id }}
           path: ${{ runner.temp }}/candle-cleanup/
+          if-no-files-found: warn
+          retention-days: 90
+
+  historical_audit:
+    name: R4.3 — historical Unified reachability audit
+    if: github.ref == 'refs/heads/orch/unified-candle-v1' && inputs.cleanup_mode == 'unified_historical'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the R4.3 historical cleanup contract
+        run: python3 -B .github/scripts/candle-historical-reachability-selftest.py
+      - name: Audit all historical Unified temporary refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRM: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+          args=(--report-dir "$RUNNER_TEMP/candle-historical-audit")
+          if [[ "$DRY_RUN" != true ]]; then
+            args+=(--apply --confirm "$CONFIRM")
+          fi
+          python3 -B .github/scripts/candle-historical-reachability.py "${args[@]}"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candle-historical-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-historical-audit/
           if-no-files-found: warn
           retention-days: 90

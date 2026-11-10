@@ -61,6 +61,7 @@ jobs:
       - run: python3 -B .github/scripts/candle-unified-source-summary.py --selftest
       - run: python3 -B .github/scripts/candle-unified-topology.py --selftest
       - run: python3 -B .github/scripts/candle-unified-retention-selftest.py
+      - run: python3 -B .github/scripts/candle-historical-reachability-selftest.py
       - run: python3 -B .github/scripts/candle-sts-preservation-selftest.py
       - run: bash -n .github/scripts/candle-legacy-assemble.sh .github/scripts/candle-promote-validated.sh .github/scripts/candle-resolve-extended-sts.sh .github/scripts/candle-compose-sts-asd-v3.sh
       - run: python3 -B .github/scripts/legacy-main-selftest.py
