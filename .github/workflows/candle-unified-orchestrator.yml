@@ -59,6 +59,7 @@ jobs:
           persist-credentials: false
       - run: python3 -B .github/scripts/candle-unified-pair-verify.py --selftest
       - run: python3 -B .github/scripts/candle-unified-source-summary.py --selftest
+      - run: python3 -B .github/scripts/candle-unified-topology.py --selftest
       - run: python3 -B .github/scripts/candle-unified-retention-selftest.py
       - run: python3 -B .github/scripts/candle-sts-preservation-selftest.py
       - run: bash -n .github/scripts/candle-legacy-assemble.sh .github/scripts/candle-promote-validated.sh .github/scripts/candle-resolve-extended-sts.sh .github/scripts/candle-compose-sts-asd-v3.sh
@@ -456,5 +457,35 @@ jobs:
           name: extended-${{ needs.prepare.outputs.campaign }}-promotion
           path: ${{ runner.temp }}/candle-promotion/
           if-no-files-found: warn
+          retention-days: 30
+
+  campaign_overview:
+    name: Unified CI map and campaign history
+    if: always()
+    needs: [validate_orchestrator, prepare, cuda_image, cpu_cuda_compile, cpu_execute, physical_sm61, promote_validated]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Show workflow graph, source inventory and recent campaigns
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          CAMPAIGN: ${{ needs.prepare.outputs.campaign }}
+        run: |
+          python3 -B .github/scripts/candle-unified-topology.py \
+            --output-json "$RUNNER_TEMP/candle-unified-topology.json"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: unified-topology-${{ github.run_id }}
+          path: ${{ runner.temp }}/candle-unified-topology.json
+          if-no-files-found: ignore
           retention-days: 30
 
