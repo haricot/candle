@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline safeguards for Unified R3 rolling branch retention."""
+"""Offline safeguards for reachability-qualified Unified branch retention."""
 
 import importlib.util
 import json
@@ -53,8 +53,12 @@ class RetentionTests(unittest.TestCase):
                       "integration/extended/candidate/unique-older": "0" * 40,
                       "archive/promotion/historical/before/alpha": self.a}
 
-    def plan(self, protected=()):
-        return retention.build_plan(self.heads, set(protected), self.extended, self.legacy, self.env)
+    def plan(self, protected=(), active=(), graph=None):
+        plan = retention.build_plan(self.heads, set(protected), self.extended, self.legacy,
+                                    self.env, graph, active)
+        plan.update(campaign=self.env["CAMPAIGN"], run_id=self.env["RUN_ID"],
+                    run_attempt=self.env["RUN_ATTEMPT"])
+        return plan
 
     def test_only_one_rolling_previous_per_canonical_ref(self):
         result = self.plan()
@@ -67,7 +71,27 @@ class RetentionTests(unittest.TestCase):
         self.assertIn(f"archive/promotion/{self.campaign}/before/beta", result["deletions"])
         self.assertIn("prepare/extended/older/alpha", result["deletions"])
         self.assertNotIn("integration/extended/candidate/unique-older", result["deletions"])
-        self.assertNotIn("archive/promotion/historical/before/alpha", result["deletions"])
+        self.assertIn("archive/promotion/historical/before/alpha", result["deletions"])
+        self.assertNotIn("archive/extended/sm61-validated-42-1", result["deletions"])
+        self.assertNotIn("archive/legacy/sm61-validated-42-1", result["deletions"])
+
+    def test_missing_sm61_qualification_blocks_pruning(self):
+        self.heads.pop("archive/extended/sm61-validated-42-1")
+        with self.assertRaisesRegex(ValueError, "missing preserved SM61 qualification"):
+            self.plan()
+
+    def test_another_active_campaign_blocks_all_temporary_deletions(self):
+        result = self.plan(active=("321",))
+        self.assertFalse(result["deletions"])
+        self.assertTrue(result["skipped"])
+        self.assertIn("OTHER_ACTIVE_CAMPAIGN", {item["reason"] for item in result["skipped"]})
+
+    def test_reachable_ancestor_can_be_pruned_but_independent_work_cannot(self):
+        self.heads["prepare/extended/older/ancestor"] = "9" * 40
+        self.heads["prepare/extended/older/independent"] = "8" * 40
+        result = self.plan(graph={"9" * 40})
+        self.assertIn("prepare/extended/older/ancestor", result["deletions"])
+        self.assertNotIn("prepare/extended/older/independent", result["deletions"])
 
     def test_unproved_history_survives(self):
         self.heads["prepare/extended/older/unmerged-work"] = "0" * 40
@@ -101,6 +125,22 @@ class RetentionTests(unittest.TestCase):
         self.assertEqual(again["updates"], {})
         self.assertEqual(again["deletions"], {})
 
+    def test_preserved_sm61_ref_moving_before_push_blocks_cleanup(self):
+        plan = self.plan()
+        changed = dict(self.heads)
+        changed["archive/extended/sm61-validated-42-1"] = self.a
+        with patch.object(retention, "remote_heads", return_value=changed):
+            with self.assertRaisesRegex(ValueError, "preserved ancestry proof moved"):
+                retention.apply_plan(plan, self.heads, "haricot/candle")
+
+    def test_new_active_run_before_push_blocks_cleanup(self):
+        plan = self.plan()
+        with (patch.object(retention, "remote_heads", return_value=self.heads),
+              patch.object(retention, "open_pr_refs", return_value=set()),
+              patch.object(retention, "other_active_runs", return_value=["777"])):
+            with self.assertRaisesRegex(ValueError, "another active campaign"):
+                retention.apply_plan(plan, self.heads, "haricot/candle")
+
     def test_next_campaign_rotates_existing_previous_without_new_history(self):
         first = self.plan()
         for ref in first["deletions"]:
@@ -124,6 +164,8 @@ class RetentionTests(unittest.TestCase):
                         CANDIDATE_REF=f"integration/extended/candidate/{new_campaign}",
                         LEGACY_CANDIDATE_REF=f"integration/legacy-cuda/candidate/{new_campaign}")
         self.heads.update(next_shas)
+        self.heads["archive/extended/sm61-validated-43-1"] = next_shas["extended"]
+        self.heads["archive/legacy/sm61-validated-43-1"] = next_shas["cuda_legacy"]
         for target in next_shas:
             self.heads[f"archive/promotion/{new_campaign}/before/{target}"] = original[target]
         next_plan = self.plan()
@@ -172,10 +214,10 @@ class AtomicRemoteTests(RetentionTests):
                 command("add", "state")
                 command("commit", "-qm", f"fixture {i}")
                 commits.append(command("rev-parse", "HEAD"))
-            (repo / "state").write_text("historical distinct state")
-            command("add", "state")
-            command("commit", "-qm", "unmerged historical candidate")
-            unproved_sha = command("rev-parse", "HEAD")
+            # Construct an unmerged descendant without moving any stable ref.
+            unproved_sha = command("commit-tree", command("rev-parse", "HEAD^{tree}"),
+                                   "-p", command("rev-parse", "HEAD"),
+                                   "-m", "unmerged historical candidate")
             self.a, self.b, self.c, self.d, self.e, self.f = commits
             self.setUp()  # Recreate manifests/heads from the real SHA identities below.
             # `setUp` assigns placeholder identities; replace in all nested data.
@@ -198,8 +240,14 @@ class AtomicRemoteTests(RetentionTests):
             cwd = Path.cwd()
             os.chdir(repo)
             try:
-                result = self.plan()
-                with patch.object(retention, "open_pr_refs", return_value=set()):
+                graph = retention.retained_graph(
+                    commit for ref, commit in self.heads.items()
+                    if not ref.startswith(retention.PRUNABLE_PREFIXES))
+                self.assertIn(commits[0], graph)
+                self.assertNotIn(unproved_sha, graph)
+                result = self.plan(graph=graph)
+                with (patch.object(retention, "open_pr_refs", return_value=set()),
+                      patch.object(retention, "other_active_runs", return_value=[])):
                     self.assertGreater(retention.apply_plan(result, self.heads, "haricot/candle"), 0)
                 actual = retention.remote_heads()
                 for ref, commit in result["updates"].items():
@@ -207,7 +255,16 @@ class AtomicRemoteTests(RetentionTests):
                 for ref in result["deletions"]:
                     self.assertNotIn(ref, actual)
                 self.assertIn("integration/extended/candidate/unique-older", actual)
-                self.assertIn("archive/promotion/historical/before/alpha", actual)
+                self.assertNotIn("archive/promotion/historical/before/alpha", actual)
+                self.assertEqual(actual["archive/extended/sm61-validated-42-1"], self.env["CANDIDATE_SHA"])
+                self.assertEqual(actual["archive/legacy/sm61-validated-42-1"], self.env["LEGACY_CANDIDATE_SHA"])
+                tag = retention.history_tag(self.campaign)
+                tagged = command("for-each-ref", "--format=%(contents)", f"refs/tags/{tag}")
+                history = json.loads(tagged)
+                self.assertEqual(history["campaign"], self.campaign)
+                self.assertIn({"ref": self.env["CANDIDATE_REF"], "sha": self.env["CANDIDATE_SHA"]},
+                              history["deleted"])
+                self.assertTrue(command("ls-remote", "--tags", "origin", f"refs/tags/{tag}"))
                 self.heads = actual
                 again = self.plan()
                 self.assertEqual(again["updates"], {})
