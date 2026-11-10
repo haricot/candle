@@ -30,6 +30,7 @@ categories = ["science"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+rustfft = "6.4"
 ab_glyph = "0.2.23"
 accelerate-src = { version = "0.3.2" }
 anyhow = { version = "1", features = ["backtrace"] }
