@@ -101,7 +101,11 @@ fn dump(path: &std::path::Path, tensor: &Tensor) -> Result<serde_json::Value> {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    run_from(std::env::args_os().collect())
+}
+
+pub(crate) fn run_from(argv: Vec<std::ffi::OsString>) -> Result<()> {
+    let args = Args::parse_from(argv);
     if args.pcm_chunk_ms == 0 || args.pcm_chunk_ms > 60_000 {
         bail!("pcm-chunk-ms must be between 1 and 60000")
     }
