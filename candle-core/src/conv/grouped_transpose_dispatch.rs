@@ -95,11 +95,11 @@ fn request_from_policy(bits: u32) -> GroupedTransposeDispatchRequest {
     }
 }
 
-pub(super) fn specialized_cuda_disabled() -> bool {
+pub(crate) fn specialized_cuda_disabled() -> bool {
     runtime_policy() & POLICY_SPECIALIZED_CUDA_DISABLED != 0
 }
 
-pub(super) fn exact_disabled() -> bool {
+pub(crate) fn exact_disabled() -> bool {
     runtime_policy() & POLICY_EXACT_DISABLED != 0
 }
 
