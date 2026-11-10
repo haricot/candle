@@ -1,0 +1,38 @@
+name: Lean4 standalone contracts (CPU)
+
+on:
+  push:
+    branches: [lean4_standalone]
+    paths:
+      - "tools/lean4-standalone/**"
+      - ".github/workflows/lean4-standalone-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof_and_rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+      - name: Rust contract unit tests
+        run: cargo test --manifest-path tools/lean4-standalone/Cargo.toml
+      - name: Lean official kernel verification
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865
+        with:
+          lake-package-directory: tools/lean4-standalone/lean
+          auto-config: false
+          build: true
+          axiom-audit: true
+          use-github-cache: false
+      - name: Reject admitted proofs
+        run: |
+          set -euo pipefail
+          if grep -RnE '(^|[[:space:]])(sorry|sorryAx|axiom)([[:space:]]|$)' tools/lean4-standalone/lean/HaricotLeanContracts --include='*.lean'; then
+            exit 1
+          fi
