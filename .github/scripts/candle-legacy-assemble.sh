@@ -200,7 +200,7 @@ jq -s --arg main_sha "$base" --arg campaign "$CAMPAIGN"   --arg strategy "$STRAT
     campaign:$campaign,strategy:$strategy,integration_target:"legacy-cuda",promotion_target:"cuda_legacy",
     old_integration_sha:(if $old_integration_sha=="" then null else $old_integration_sha end),
     source_config_sha256:$config_sha256,
-    validation_state:"UNVALIDATED_CANDIDATE",features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/legacy-cuda.json"
+    validation_state:"UNVALIDATED_CANDIDATE",feature_count:length,features:.}'   "$report/sources.ndjson" > "$aggregate/candle-integration/legacy-cuda.json"
 cp "$aggregate/candle-integration/legacy-cuda.json" "$report/legacy-cuda.json"
 git -C "$aggregate" add candle-integration/legacy-cuda.json
 git -C "$aggregate" diff --cached --check

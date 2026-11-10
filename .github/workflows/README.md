@@ -13,6 +13,13 @@ qualification paths while Unified validates the shared preparations once.
 | `candle-unified-orchestrator.yml` | **Unified R3**: one Extended-qualified Legacy/Extended pair and automatic SHA-guarded post-promotion retention | `orch/unified-candle-v1`, explicit dispatch with `promote: true` |
 | `candle-cuda-ci-image.yml` | Cached, fingerprinted CUDA 12.9.2/SM61 build environment | Reusable workflow and explicit image dispatch |
 
+**Unified campaign map:** open a Unified run, then its **Summary** and the
+**Unified CI map and campaign history** job. The diagram and source inventory
+are generated from the checked-out workflow and source contracts; the job
+includes per-gate results, current workflow states and recent run history.
+It runs even if preparation fails. GitHub's workflow sidebar also retains
+historical entries that are not present in the current branch.
+
 The Extended workflow does **not** require the older six-feature integration
 workflow. It is driven by `.github/extended-sources.json`, not a fixed number
 of source branches. The `lean4_standalone` source can remain in the composition,
