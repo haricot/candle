@@ -31,6 +31,8 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 rayon = { workspace = true }
 safetensors = { workspace = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 yoke = { workspace = true }
 zerocopy = { workspace = true }
@@ -46,6 +48,7 @@ criterion = { workspace = true }
 
 [features]
 default = []
+d7-trace = ["dep:serde", "dep:serde_json"]
 cuda = ["cudarc", "dep:candle-kernels"]
 cutile = ["cuda", "dep:cutile"]
 cudnn = ["cuda", "cudarc/cudnn"]
@@ -74,3 +77,11 @@ required-features = ["cuda"]
 [[example]]
 name = "cutile"
 required-features = ["cutile"]
+
+[[test]]
+name = "d7_diagnostics"
+required-features = ["d7-trace"]
+
+[[example]]
+name = "d7_shortconv_validate"
+required-features = ["d7-trace"]
