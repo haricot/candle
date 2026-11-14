@@ -81,25 +81,52 @@ pub fn mmq_entries(ptx: &str, family: &str) -> Option<std::collections::BTreeMap
         Some(words.next()?.split('(').next()?)
     }).collect();
     let mut map = std::collections::BTreeMap::new();
-    let mut add = |key: String, marker: String| -> Option<()> {
+    let mut add = |key: String, marker: String, widths: &[u32]| -> Option<()> {
         let mut hits = entries.iter().filter(|&&name| {
             name.strip_prefix("_ZL").or_else(|| name.strip_prefix("_Z"))
                 .is_some_and(|s| s.starts_with(&marker))
         });
         let name = *hits.next()?;
         if hits.next().is_some() { return None; }
+        // Validate the actual PTX declaration, not just the C++ mangling.
+        // NVCC emits scalar parameters as .u64/.b64 or .u32/.b32.
+        let mut declarations = ptx.match_indices(name).filter_map(|(offset, _)| {
+            let start = ptx[..offset].rfind('\n').map_or(0, |p| p+1);
+            let prefix = &ptx[start..offset];
+            if !prefix.split_whitespace().any(|w| w == ".entry") {
+                return None;
+            }
+            let tail = &ptx[offset+name.len()..];
+            let tail = tail.trim_start().strip_prefix('(')?;
+            let (params, _) = tail.split_once(')')?;
+            let parsed: Option<Vec<u32>> = params.split(',').map(|p| {
+                let mut words = p.split_whitespace();
+                if !words.any(|w| w == ".param") { return None; }
+                match words.next()? {
+                    ".u64" | ".b64" | ".s64" => Some(64),
+                    ".u32" | ".b32" | ".s32" => Some(32),
+                    _ => None,
+                }
+            }).collect();
+            parsed
+        });
+        if declarations.next()?.as_slice() != widths || declarations.next().is_some() {
+            return None;
+        }
         map.insert(key, name.to_string());
         Some(())
     };
     if family == "mmq_quantize" {
         for (id, name) in ["D4", "DS4", "D2S6"].into_iter().enumerate() {
-            add(name.to_string(), format!("17quantize_mmq_q8_1IL18mmq_q8_1_ds_layout{id}EE"))?;
+            add(name.to_string(), format!("17quantize_mmq_q8_1IL18mmq_q8_1_ds_layout{id}EE"),
+                &[64,64,64,64,64,64,64,64,32,32])?;
         }
     } else {
         let id = mmq_codec_id(family.strip_prefix("mmq_instance_")?)?;
         for tile in (8..=64).step_by(8) {
             for check in 0..=1 {
-                add(format!("{tile}:{check}"), format!("9mul_mat_qIL9ggml_type{id}ELi{tile}ELb{check}EE"))?;
+                add(format!("{tile}:{check}"), format!("9mul_mat_qIL9ggml_type{id}ELi{tile}ELb{check}EE"),
+                    &[64,64,64,64,64,64,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32])?;
             }
         }
     }
@@ -168,16 +195,20 @@ mod mmq_tests {
     }
     #[test]
     fn exact_mangled_template_inventory() {
+        fn params(pointers_and_i64: usize, i32_count: usize) -> String {
+            (0..pointers_and_i64+i32_count).map(|i| format!(".param .u{} p{i}", if i < pointers_and_i64 {64} else {32})).collect::<Vec<_>>().join(",\n")
+        }
         let mut ptx = String::new();
         for tile in (8..=64).step_by(8) {
             for check in 0..=1 {
-                ptx += &format!(".entry _ZL9mul_mat_qIL9ggml_type12ELi{tile}ELb{check}EEvPKc() {{ ret; }}\n");
+                ptx += &format!(".entry _ZL9mul_mat_qIL9ggml_type12ELi{tile}ELb{check}EEvPKc({}) {{ ret; }}\n", params(6,17));
             }
         }
         assert_eq!(mmq_entries(&ptx,"mmq_instance_q4_k").unwrap().len(),16);
         assert!(mmq_entries(&ptx,"mmq_instance_q4_0").is_none());
         assert!(mmq_entries(&ptx.replace("ELi8ELb0EE","ELi9ELb0EE"),"mmq_instance_q4_k").is_none());
-        let q = (0..3).map(|i| format!(".entry _ZL17quantize_mmq_q8_1IL18mmq_q8_1_ds_layout{i}EEvPKf() {{ ret; }}\n")).collect::<String>();
+        assert!(mmq_entries(&ptx.replacen(".param .u64", ".param .u32", 1),"mmq_instance_q4_k").is_none());
+        let q = (0..3).map(|i| format!(".entry _ZL17quantize_mmq_q8_1IL18mmq_q8_1_ds_layout{i}EEvPKf({}) {{ ret; }}\n", params(8,2))).collect::<String>();
         assert_eq!(mmq_entries(&q,"mmq_quantize").unwrap().len(),3);
     }
 }

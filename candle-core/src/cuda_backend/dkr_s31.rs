@@ -50,7 +50,9 @@ fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
         || flags != contract::FLAGS
         || !contract::is_sm61_ptx(ptx)
         || (name == "mmvq_gguf" && !contract::has_mmvq_entries(ptx))
-        || (name.starts_with("mmq_") && contract::mmq_entries(ptx, name).is_none())
+        || (name.starts_with("mmq_") && contract::mmq_entries(ptx, name)
+            .and_then(|entries| serde_json::to_value(entries).ok())
+            .is_none_or(|entries| entries != manifest["mmq_entries"]))
     {
         crate::bail!("Candle DKR S3.1 invalid package for {name}");
     }

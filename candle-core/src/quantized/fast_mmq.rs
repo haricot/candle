@@ -9,7 +9,7 @@ use super::GgmlDType;
 use crate::cuda_backend::DeviceId;
 use crate::{backend::BackendStorage, CudaDevice, CudaStorage, DType, Result, Shape};
 
-use cudarc::driver::{CudaSlice, DevicePtr};
+use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 
 const QK8_1: usize = 32;
 const BLOCK_Q8_1_MMQ_SIZE: usize = 4 * QK8_1 + 4 * 4; // 128 qs + 16 scale bytes = 144
@@ -246,7 +246,7 @@ fn get_device_info(dev: &CudaDevice) -> DeviceInfo {
 // ---------------------------------------------------------------------------
 
 // SM61 only: mirror the historical C++ tile selector. Retain a bounded
-// thread-local last plan, including resolved functions and launch configs.
+// thread-local plan cache, including resolved functions and launch configs.
 // No static fixup buffer is needed for conventional tiling.
 #[cfg(feature = "cuda-dkr-s31")]
 mod external {
@@ -273,8 +273,10 @@ mod external {
         mcfg: LaunchConfig,
     }
 
+    const PLAN_CAPACITY: usize = 64;
     thread_local! {
-        static LAST: std::cell::RefCell<Option<Plan>> = const { std::cell::RefCell::new(None) };
+        static PLANS: std::cell::RefCell<std::collections::VecDeque<Plan>> =
+            const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
     }
 
     fn prepare(dev: &CudaDevice, key: Key) -> Result<Plan> {
@@ -323,12 +325,18 @@ mod external {
             || padded.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
         { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
         let key = Key { device:dev.id(), dtype,k,padded,rows,batch };
-        LAST.with(|slot| -> Result<()> {
+        PLANS.with(|slot| -> Result<()> {
             let mut slot = slot.borrow_mut();
-            if slot.as_ref().is_none_or(|p| p.key != key) {
-                *slot = Some(prepare(dev,key)?);
+            if slot.front().is_none_or(|p| p.key != key) {
+                let plan = if let Some(i) = slot.iter().position(|p| p.key == key) {
+                    slot.remove(i).unwrap()
+                } else {
+                    prepare(dev,key)?
+                };
+                slot.push_front(plan);
+                if slot.len() > PLAN_CAPACITY { slot.pop_back(); }
             }
-            let p = slot.as_ref().unwrap();
+            let p = slot.front().unwrap();
             let stream = dev.cuda_stream();
             let null = 0u64;
             let zero64 = 0i64;
@@ -402,6 +410,21 @@ pub fn try_fwd(
     };
 
     let dev = qstorage.device();
+    #[cfg(feature = "cuda-dkr-s31")]
+    let use_external = dev.dkr_mmq_enabled();
+    #[cfg(not(feature = "cuda-dkr-s31"))]
+    let use_external = false;
+    if use_external {
+        if rhs.device().id() != dev.id() {
+            crate::bail!("DKR MMQ requires same-device inputs");
+        }
+        if k == 0 || nrows == 0 ||
+            [k,nrows,b_size].iter().any(|&v| v > i32::MAX as usize) ||
+            nrows.checked_mul(k).is_none_or(|v| v > i32::MAX as usize) ||
+            nrows.checked_mul(b_size).is_none_or(|v| v > i32::MAX as usize) ||
+            k.checked_mul(b_size).is_none_or(|v| v > i32::MAX as usize)
+        { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
+    }
     let stream = dev.cuda_stream();
     let stream_ptr = stream.cu_stream() as *mut std::ffi::c_void;
 
@@ -447,18 +470,14 @@ pub fn try_fwd(
     const MMQ_Y_MAX: usize = 128;
     const MAX_SMS: usize = 256;
     let fixup_bytes = MAX_SMS * MMQ_X_MAX * MMQ_Y_MAX * std::mem::size_of::<f32>();
-    #[cfg(feature = "cuda-dkr-s31")]
-    let use_external = dev.dkr_mmq_enabled();
-    #[cfg(not(feature = "cuda-dkr-s31"))]
-    let use_external = false;
 
     let weight_ptr = qstorage.device_ptr()? as *const std::ffi::c_void;
     let stride_row_x = (k / qk) as i64;
 
-    let out = unsafe { dev.alloc::<f32>(nrows * b_size)? };
+    let mut out = unsafe { dev.alloc::<f32>(nrows * b_size)? };
     let stride_col_dst = nrows as i64;
 
-    let (out_addr, out_guard) = out.device_ptr(&stream);
+    let (out_addr, out_guard) = out.device_ptr_mut(&stream);
     let out_ptr = out_addr as *mut std::ffi::c_void;
 
     #[cfg(feature = "cuda-dkr-s31")]

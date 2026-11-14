@@ -55,10 +55,11 @@ Adds the eleven original MMQ compilation units without changing CUDA source algo
 Each format requires 16 native C++ entries (eight widths, two boundary variants),
 and the quantizer requires all three Q8_1 layouts. The builder discovers the exact
 Itanium-mangled symbol names from PTX and fails if absent or ambiguous; the loader
-independently reconstructs this inventory. This is a compiler-ABI gate, not an
+independently reconstructs and compares this inventory, including exact PTX scalar
+parameter widths. This is a compiler-ABI gate, not an
 assumption that all NVCC versions will emit the same names.
 SM61 uses tile_y=64, 32x8 threads, conventional tiling, exact DP4A shared bytes.
-A last-plan cache per thread retains resolved CUDA functions and geometry;
+A bounded 64-entry LRU per thread retains resolved CUDA functions and geometry;
 no Stream-K fixup allocation is needed in the selected external path.
 Original static routes remain available when the provider is unset. S3.3.1 is
 not compiled or GPU qualified yet; the previous 'MMQ pending' note above is
