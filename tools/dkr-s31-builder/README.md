@@ -64,3 +64,30 @@ no Stream-K fixup allocation is needed in the selected external path.
 Original static routes remain available when the provider is unset. S3.3.1 is
 not compiled or GPU qualified yet; the previous 'MMQ pending' note above is
 superseded at source level only. Total native packages: 21.
+
+
+## S3.4 — Convolution, Sort and source closure
+
+The provider covers all eleven native Candle modules, plus MMVQ and eleven
+MMQ units: 23 of the 28 original CUDA translation units. Conv and Sort reuse
+the existing get_or_load_func route and the unchanged kernels. The producer
+and consumer check the 66 convolution/pooling/upsample/im2col symbols and
+14 argsort symbols expected on SM61 with legacy BF16 enabled.
+
+Keep cuDNN/cublas dispatch and fallbacks unchanged. The five remaining units:
+- moe/moe_gguf.cu: static FFI, includes Q8_1 allocation and routed launch.
+- moe/moe_simt_f16.cu: static FFI, counts and scan (Thrust prefill or light scan).
+- moe/moe_wmma.cu and moe/moe_wmma_gguf.cu: omitted pre-Volta in build.rs.
+- moe/moe_align.cu: built only with cuTile, not part of this SM61 profile.
+
+Do not advertise these five as external. In particular, the pre-Volta build
+omits moe_wmma_gguf.cu while candle-nn/src/moe.rs references
+moe_gemm_gguf_prefill; this inherited FFI boundary needs explicit architecture
+gating/link verification during the MoE closure. No stub should silently
+return without producing output.
+
+Qualification must include Conv1d/2d/transposed, im2col/col2im, padding,
+dilation, non-contiguous layouts, pooling, nearest/bilinear upsample and
+cuDNN fallback; argsort ascending/descending, non-power-of-two dimensions,
+ties and top-k routing. F16/BF16/F32 are required where supported.
+No CUDA source algorithms are changed and no static fallback has been removed.

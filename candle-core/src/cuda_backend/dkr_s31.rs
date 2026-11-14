@@ -23,6 +23,8 @@ fn family(index: usize) -> Option<&'static str> {
         (kernels::AFFINE.index(), "affine"),
         (kernels::BINARY.index(), "binary"),
         (kernels::CAST.index(), "cast"),
+        (kernels::CONV.index(), "conv"),
+        (kernels::SORT.index(), "sort"),
         (kernels::FILL.index(), "fill"),
         (kernels::INDEXING.index(), "indexing"),
         (kernels::REDUCE.index(), "reduce"),
@@ -50,6 +52,7 @@ fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
         || flags != contract::FLAGS
         || !contract::is_sm61_ptx(ptx)
         || (name == "mmvq_gguf" && !contract::has_mmvq_entries(ptx))
+        || (matches!(name, "conv" | "sort") && !contract::has_conv_sort_entries(ptx, name))
         || (name.starts_with("mmq_") && contract::mmq_entries(ptx, name)
             .and_then(|entries| serde_json::to_value(entries).ok())
             .is_none_or(|entries| entries != manifest["mmq_entries"]))
@@ -150,7 +153,8 @@ mod tests {
         assert_eq!(family(kernels::REDUCE.index()), Some("reduce"));
         assert_eq!(family(kernels::INDEXING.index()), Some("indexing"));
         assert_eq!(family(kernels::QUANTIZED.index()), Some("quantized"));
-        assert_eq!(family(kernels::CONV.index()), None);
+        assert_eq!(family(kernels::CONV.index()), Some("conv"));
+        assert_eq!(family(kernels::SORT.index()), Some("sort"));
         assert_eq!(contract::mmvq_entries().len(), 243);
     }
 }

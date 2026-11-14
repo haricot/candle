@@ -8,7 +8,7 @@ pub const FLAGS: &[&str] = &[
     "-DCANDLE_CUDA_LEGACY_FP8=1",
     "-DCANDLE_CUDA_LEGACY_FP4=1",
 ];
-pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "fill", "indexing", "reduce", "ternary", "unary", "quantized", "mmvq_gguf", "mmq_quantize",
+pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "conv", "fill", "indexing", "reduce", "sort", "ternary", "unary", "quantized", "mmvq_gguf", "mmq_quantize",
     "mmq_instance_q4_0", "mmq_instance_q4_1", "mmq_instance_q5_0", "mmq_instance_q5_1", "mmq_instance_q8_0",
     "mmq_instance_q2_k", "mmq_instance_q3_k", "mmq_instance_q4_k", "mmq_instance_q5_k", "mmq_instance_q6_k"];
 
@@ -210,5 +210,61 @@ mod mmq_tests {
         assert!(mmq_entries(&ptx.replacen(".param .u64", ".param .u32", 1),"mmq_instance_q4_k").is_none());
         let q = (0..3).map(|i| format!(".entry _ZL17quantize_mmq_q8_1IL18mmq_q8_1_ds_layout{i}EEvPKf({}) {{ ret; }}\n", params(8,2))).collect::<String>();
         assert_eq!(mmq_entries(&q,"mmq_quantize").unwrap().len(),3);
+    }
+}
+
+/// These five source units are not part of the SM61 external module set.
+/// Keep the reason explicit: "static" is not external dispatch coverage.
+pub const SM61_REMAINING: &[(&str, &str)] = &[
+    ("moe/moe_gguf.cu", "STATIC_FFI_GGUF"),
+    ("moe/moe_simt_f16.cu", "STATIC_FFI_SIMT"),
+    ("moe/moe_wmma.cu", "EXCLUDED_PRE_VOLTA"),
+    ("moe/moe_wmma_gguf.cu", "EXCLUDED_PRE_VOLTA"),
+    ("moe/moe_align.cu", "CUTILE_ONLY"),
+];
+
+pub fn conv_sort_entries(family: &str) -> Option<Vec<String>> {
+    let (ops, types): (&[&str], &[&str]) = match family {
+        "conv" => (&["conv1d", "conv2d", "conv_transpose1d", "conv_transpose2d",
+            "avg_pool2d", "max_pool2d", "upsample_nearest2d", "upsample_bilinear2d",
+            "im2col", "im2col1d", "col2im1d"],
+            &["bf16", "f16", "f32", "f64", "u8", "u32"]),
+        "sort" => (&["asort_asc", "asort_desc"],
+            &["bf16", "f16", "f32", "f64", "u8", "u32", "i64"]),
+        _ => return None,
+    };
+    Some(ops.iter().flat_map(|op| types.iter().map(move |dtype| format!("{op}_{dtype}"))).collect())
+}
+
+pub fn has_conv_sort_entries(ptx: &str, family: &str) -> bool {
+    let Some(expected) = conv_sort_entries(family) else { return false; };
+    let mut counts = std::collections::HashMap::<&str, usize>::new();
+    for line in ptx.lines() {
+        let mut words = line.split_whitespace();
+        if words.any(|word| word == ".entry") {
+            if let Some(name) = words.next() {
+                *counts.entry(name.split('(').next().unwrap_or(name)).or_default() += 1;
+            }
+        }
+    }
+    expected.iter().all(|name| counts.get(name.as_str()) == Some(&1))
+}
+
+#[cfg(test)]
+mod conv_sort_tests {
+    use super::*;
+    #[test]
+    fn complete_source_and_entry_inventory() {
+        assert_eq!(FAMILIES.len(), 23);
+        assert_eq!(SM61_REMAINING.len(), 5);
+        assert_eq!(FAMILIES.iter().collect::<std::collections::HashSet<_>>().len(), 23);
+        for (family, count) in [("conv", 66), ("sort", 14)] {
+            let entries = conv_sort_entries(family).unwrap();
+            assert_eq!(entries.len(), count);
+            let ptx = entries.iter().map(|name| format!(".visible .entry\t{name}() {{ ret; }}\n")).collect::<String>();
+            assert!(has_conv_sort_entries(&ptx, family));
+            assert!(!has_conv_sort_entries(&ptx.replace(&entries[0], "missing"), family));
+            assert!(!has_conv_sort_entries(&format!("{ptx}{ptx}"), family));
+        }
     }
 }

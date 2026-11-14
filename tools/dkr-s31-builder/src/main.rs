@@ -34,6 +34,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if !contract::is_sm61_ptx(&ptx) || (*name == "mmvq_gguf" && !contract::has_mmvq_entries(&ptx)) {
             return Err(format!("invalid SM61 PTX for {name}").into());
         }
+        if matches!(*name, "conv" | "sort") && !contract::has_conv_sort_entries(&ptx, name) {
+            return Err(format!("missing or duplicate SM61 {name} entry").into());
+        }
         let mmq_entries = if name.starts_with("mmq_") {
             Some(contract::mmq_entries(&ptx, name).ok_or_else(|| format!("missing or ambiguous SM61 MMQ entries for {name}"))?)
         } else { None };
