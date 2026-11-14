@@ -65,6 +65,68 @@ pub(crate) fn launch_conv2d<
     params: &crate::conv::ParamsConv2D,
     dev: &crate::cuda_backend::CudaDevice,
 ) -> crate::Result<()> {
+    launch_conv2d_with_groups::<T, Y>(src, src_l, filter, dst, params, dev, 1)
+}
+
+// Opt-in forward-only F32 DW5x5 qualification path, not an ASD policy.
+// Params hold the FULL channel dimensions, not the split-group dimensions.
+pub(crate) fn launch_sm61_grouped_dw5x5(
+    input: &crate::cuda_backend::CudaStorage,
+    input_l: &crate::Layout,
+    kernel: &crate::cuda_backend::CudaStorage,
+    kernel_l: &crate::Layout,
+    params: &crate::conv::ParamsConv2D,
+    groups: usize,
+) -> crate::Result<Option<crate::cuda_backend::CudaStorage>> {
+    use crate::cuda_backend::{CudaStorage, CudaStorageSlice as S};
+    use cudarc::driver::{result, sys};
+    if groups != params.c_in || groups != params.c_out
+        || params.b_size != 1 || params.k_h != 5 || params.k_w != 5
+        || params.padding != 2 || params.stride != 1 || params.dilation != 1
+        || !kernel_l.is_contiguous()
+        || input.device.id() != kernel.device.id()
+    {
+        return Ok(None);
+    }
+    let device = input.device.clone();
+    let cu_device = device.cuda_stream().context().cu_device();
+    let major = unsafe { result::device::get_attribute(cu_device,
+        sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR) }?;
+    let minor = unsafe { result::device::get_attribute(cu_device,
+        sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR) }?;
+    if (major, minor) != (6, 1) {
+        return Ok(None);
+    }
+    let (S::F32(inp), S::F32(k)) = (&input.slice, &kernel.slice) else {
+        return Ok(None);
+    };
+    if convolution_is_disabled(device.id()) {
+        crate::bail!("HD_DW5X5: cuDNN was disabled earlier; refusing silent split fallback");
+    }
+    let inp = &inp.slice(input_l.start_offset()..);
+    let k = &k.slice(kernel_l.start_offset()..);
+    let dst_el = params.c_out * params.out_w() * params.out_h() * params.b_size;
+    let mut out = unsafe { device.alloc::<f32>(dst_el)? };
+    launch_conv2d_with_groups::<f32, f32>(inp, input_l, k, &mut out, params, &device, groups)?;
+    if std::env::var("CANDLE_HD_DW5X5_TRACE").as_deref() == Ok("1") {
+        eprintln!("HD_DW5X5=SUBMITTED backend=CUDNN_GROUPED sm=61 groups={} h={} w={}",
+                  groups, params.i_h, params.i_w);
+    }
+    Ok(Some(CudaStorage { slice: S::F32(out), device }))
+}
+
+fn launch_conv2d_with_groups<
+    T: DeviceRepr + WithDType + ValidAsZeroBits + cudarc::cudnn::CudnnDataType,
+    Y: cudarc::cudnn::CudnnDataType,
+>(
+    src: &CudaView<T>,
+    src_l: &crate::Layout,
+    filter: &CudaView<T>,
+    dst: &mut CudaSlice<T>,
+    params: &crate::conv::ParamsConv2D,
+    dev: &crate::cuda_backend::CudaDevice,
+    groups: usize,
+) -> crate::Result<()> {
     use crate::conv::CudnnFwdAlgo as CandleAlgo;
     use cudarc::cudnn::sys::cudnnConvolutionFwdAlgo_t as A;
 
@@ -79,12 +141,15 @@ pub(crate) fn launch_conv2d<
         }
         c
     })?;
-    let conv = cudnn.create_conv2d::<Y>(
+    let mut conv = cudnn.create_conv2d::<Y>(
         /* pad */ [params.padding as i32, params.padding as i32],
         /* stride */ [params.stride as i32, params.stride as i32],
         /* dilation */ [params.dilation as i32, params.dilation as i32],
         cudarc::cudnn::sys::cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
     )?;
+    if groups > 1 {
+        conv.set_group_count(groups as i32)?;
+    }
     let x_shape = [
         params.b_size as i32,
         params.c_in as i32,
@@ -108,7 +173,7 @@ pub(crate) fn launch_conv2d<
         cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
         [
             params.c_out as i32,
-            params.c_in as i32,
+            (params.c_in / groups) as i32,
             params.k_h as i32,
             params.k_w as i32,
         ],
