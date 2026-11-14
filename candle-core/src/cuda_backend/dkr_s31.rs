@@ -25,6 +25,7 @@ fn family(index: usize) -> Option<&'static str> {
         (kernels::FILL.index(), "fill"),
         (kernels::INDEXING.index(), "indexing"),
         (kernels::REDUCE.index(), "reduce"),
+        (kernels::QUANTIZED.index(), "quantized"),
         (kernels::TERNARY.index(), "ternary"),
         (kernels::UNARY.index(), "unary"),
     ].into_iter().find_map(|(id, name)| (id == index).then_some(name))
@@ -47,6 +48,7 @@ fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
         || manifest["sha256"].as_str() != Some(sha.as_str())
         || flags != contract::FLAGS
         || !contract::is_sm61_ptx(ptx)
+        || (name == "mmvq_gguf" && !contract::has_mmvq_entries(ptx))
     {
         crate::bail!("Candle DKR S3.1 invalid package for {name}");
     }
@@ -87,6 +89,16 @@ impl ExternalModules {
         family(index).and_then(|name| self.modules.get(name)).map(String::as_str)
     }
 
+    pub(super) fn mmvq_ptx(&self) -> Option<&str> {
+        self.modules.get("mmvq_gguf").map(String::as_str)
+    }
+
+    pub(super) fn record_mmvq_loaded(&self) {
+        if self.trace {
+            eprintln!("CANDLE_DKR_MODULE_LOADED family=mmvq_gguf target=sm61 source=external");
+        }
+    }
+
     pub(super) fn record_loaded(&self, index: usize) {
         if self.trace {
             if let Some(name) = family(index) {
@@ -115,6 +127,8 @@ mod tests {
         assert_eq!(family(kernels::UNARY.index()), Some("unary"));
         assert_eq!(family(kernels::REDUCE.index()), Some("reduce"));
         assert_eq!(family(kernels::INDEXING.index()), Some("indexing"));
+        assert_eq!(family(kernels::QUANTIZED.index()), Some("quantized"));
         assert_eq!(family(kernels::CONV.index()), None);
+        assert_eq!(contract::mmvq_entries().len(), 243);
     }
 }

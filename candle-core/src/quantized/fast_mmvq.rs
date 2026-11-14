@@ -154,6 +154,64 @@ fn plain_launcher_f32(dtype: GgmlDType) -> Option<PlainLauncher> {
 // Public entry point
 // ---------------------------------------------------------------------------
 
+// S3.3: reuse the existing specialized device entries with the identical
+// launch geometry and Q8_1 workspace. Resolve both before launching either.
+// No host-side CUDA runtime launcher is needed on the selected path.
+#[cfg(feature = "cuda-dkr-s31")]
+#[allow(clippy::too_many_arguments)]
+fn try_dkr_launch(
+    dev: &CudaDevice, dtype: GgmlDType, input_dtype: DType,
+    rhs: u64, scratch: u64, weight: u64, output: u64,
+    k: usize, k_padded: usize, nrows: usize, batch: usize,
+    stride_col_y: i32, stride_col_dst: i32,
+) -> Result<bool> {
+    use cudarc::driver::{LaunchConfig, PushKernelArg};
+    use crate::cuda_backend::WrapErr;
+    let codec = match dtype {
+        GgmlDType::Q4_0 => "q4_0", GgmlDType::Q4_1 => "q4_1",
+        GgmlDType::Q5_0 => "q5_0", GgmlDType::Q5_1 => "q5_1",
+        GgmlDType::Q8_0 => "q8_0", GgmlDType::Q2K => "q2_k",
+        GgmlDType::Q3K => "q3_k", GgmlDType::Q4K => "q4_k",
+        GgmlDType::Q5K => "q5_k", GgmlDType::Q6K => "q6_k",
+        _ => return Ok(false),
+    };
+    let tag = match input_dtype {
+        DType::BF16 => "bf16", DType::F16 => "f16", DType::F32 => "f32",
+        _ => return Ok(false),
+    };
+    let Some(quant) = dev.dkr_mmvq_func(&format!("mmvq_gguf_quantize_q8_1_{tag}"))? else {
+        return Ok(false);
+    };
+    let mat = dev.dkr_mmvq_func(&format!("mmvq_gguf_{codec}_{tag}_plain_cuda{batch}"))?
+        .ok_or_else(|| crate::Error::Msg("DKR MMVQ provider changed during launch".into()))?;
+    if k == 0 || nrows == 0 || !(1..=8).contains(&batch)
+        || [k, k_padded, nrows].iter().any(|n| *n > i32::MAX as usize)
+        || k_padded.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
+        || nrows.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
+    {
+        crate::bail!("DKR MMVQ geometry exceeds native ABI");
+    }
+    let k_i32 = k as i32;
+    let padded_i32 = k_padded as i32;
+    let rows_i32 = nrows as i32;
+    let qcfg = LaunchConfig {
+        grid_dim: (k_padded.div_ceil(256) as u32, batch as u32, 1),
+        block_dim: (256, 1, 1), shared_mem_bytes: 0,
+    };
+    let mcfg = LaunchConfig {
+        grid_dim: (nrows.div_ceil(if batch == 1 { 1 } else { 2 }) as u32, 1, 1),
+        block_dim: (32, if batch <= 4 { 4 } else { 2 }, 1), shared_mem_bytes: 0,
+    };
+    let mut q = quant.builder();
+    q.arg(&rhs).arg(&scratch).arg(&k_i32).arg(&padded_i32);
+    unsafe { q.launch(qcfg).w()?; }
+    let mut m = mat.builder();
+    m.arg(&weight).arg(&scratch).arg(&output).arg(&k_i32).arg(&rows_i32)
+        .arg(&stride_col_y).arg(&stride_col_dst);
+    unsafe { m.launch(mcfg).w()?; }
+    Ok(true)
+}
+
 /// Try the fast MMVQ path. Returns `Ok(None)` when the fast path is not applicable:
 /// - unsupported quant dtype
 /// - batch too large
@@ -221,10 +279,18 @@ pub fn try_fwd(
             let rhs_slice = rhs_slice.slice(o1..o2);
             let out = unsafe { dev.alloc::<half::bf16>(nrows * b_size)? };
 
-            let rhs_ptr = rhs_slice.device_ptr(&stream).0 as *const std::ffi::c_void;
-            let out_ptr = out.device_ptr(&stream).0 as *mut std::ffi::c_void;
+            let (rhs_addr, rhs_guard) = rhs_slice.device_ptr(&stream);
+            let (out_addr, out_guard) = out.device_ptr(&stream);
+            let rhs_ptr = rhs_addr as *const std::ffi::c_void;
+            let out_ptr = out_addr as *mut std::ffi::c_void;
 
-            unsafe {
+            #[cfg(feature = "cuda-dkr-s31")]
+            let launched = try_dkr_launch(dev, w_dtype, input_dtype,
+                rhs_ptr as u64, scratch_ptr as u64, weight_ptr as u64, out_ptr as u64,
+                k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
+            #[cfg(not(feature = "cuda-dkr-s31"))]
+            let launched = false;
+            if !launched { unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_bf16(
                     rhs_ptr,
                     scratch_ptr,
@@ -245,8 +311,10 @@ pub fn try_fwd(
                     b_size as i32,
                     stream_ptr,
                 );
-            }
+            } }
 
+            drop(rhs_guard);
+            drop(out_guard);
             let out_storage = CudaStorage::wrap_cuda_slice(out, dev.clone());
             Ok(Some((out_storage, out_shape.into())))
         }
@@ -255,10 +323,18 @@ pub fn try_fwd(
             let rhs_slice = rhs_slice.slice(o1..o2);
             let out = unsafe { dev.alloc::<half::f16>(nrows * b_size)? };
 
-            let rhs_ptr = rhs_slice.device_ptr(&stream).0 as *const std::ffi::c_void;
-            let out_ptr = out.device_ptr(&stream).0 as *mut std::ffi::c_void;
+            let (rhs_addr, rhs_guard) = rhs_slice.device_ptr(&stream);
+            let (out_addr, out_guard) = out.device_ptr(&stream);
+            let rhs_ptr = rhs_addr as *const std::ffi::c_void;
+            let out_ptr = out_addr as *mut std::ffi::c_void;
 
-            unsafe {
+            #[cfg(feature = "cuda-dkr-s31")]
+            let launched = try_dkr_launch(dev, w_dtype, input_dtype,
+                rhs_ptr as u64, scratch_ptr as u64, weight_ptr as u64, out_ptr as u64,
+                k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
+            #[cfg(not(feature = "cuda-dkr-s31"))]
+            let launched = false;
+            if !launched { unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_f16(
                     rhs_ptr,
                     scratch_ptr,
@@ -279,8 +355,10 @@ pub fn try_fwd(
                     b_size as i32,
                     stream_ptr,
                 );
-            }
+            } }
 
+            drop(rhs_guard);
+            drop(out_guard);
             let out_storage = CudaStorage::wrap_cuda_slice(out, dev.clone());
             Ok(Some((out_storage, out_shape.into())))
         }
@@ -289,10 +367,18 @@ pub fn try_fwd(
             let rhs_slice = rhs_slice.slice(o1..o2);
             let out = unsafe { dev.alloc::<f32>(nrows * b_size)? };
 
-            let rhs_ptr = rhs_slice.device_ptr(&stream).0 as *const std::ffi::c_void;
-            let out_ptr = out.device_ptr(&stream).0 as *mut std::ffi::c_void;
+            let (rhs_addr, rhs_guard) = rhs_slice.device_ptr(&stream);
+            let (out_addr, out_guard) = out.device_ptr(&stream);
+            let rhs_ptr = rhs_addr as *const std::ffi::c_void;
+            let out_ptr = out_addr as *mut std::ffi::c_void;
 
-            unsafe {
+            #[cfg(feature = "cuda-dkr-s31")]
+            let launched = try_dkr_launch(dev, w_dtype, input_dtype,
+                rhs_ptr as u64, scratch_ptr as u64, weight_ptr as u64, out_ptr as u64,
+                k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
+            #[cfg(not(feature = "cuda-dkr-s31"))]
+            let launched = false;
+            if !launched { unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_f32(
                     rhs_ptr,
                     scratch_ptr,
@@ -313,8 +399,10 @@ pub fn try_fwd(
                     b_size as i32,
                     stream_ptr,
                 );
-            }
+            } }
 
+            drop(rhs_guard);
+            drop(out_guard);
             let out_storage = CudaStorage::wrap_cuda_slice(out, dev.clone());
             Ok(Some((out_storage, out_shape.into())))
         }

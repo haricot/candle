@@ -37,3 +37,14 @@ all eight validated PTX texts; subsequent cold loads perform no file reads.
 The original feature and environment variable names remain for compatibility.
 A neutral
 shared runtime/typed catalog and launch plans require separate design work.
+
+## S3.3 — GGUF and fast MMVQ
+
+The same provider now requires ten modules, adding `quantized.cu` and `mmvq_gguf.cu`.
+The latter reuses 240 existing specialized matvec entries and three Q8_1 quantizers.
+The Rust path preserves batch-specific launch geometry and the resident Q8_1 scratch.
+The builder and loader reject an MMVQ PTX that lacks any of the 243 expected entries.
+The legacy static MMVQ path remains available with external activation unset.
+Fast MMQ remains static pending a separate launch-plan port; its template symbol,
+shared-memory, tile selection and stream-K launch contracts must not be replaced
+with generic GEMM. No CUDA source algorithm has been changed.

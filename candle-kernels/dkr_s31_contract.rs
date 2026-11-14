@@ -8,7 +8,31 @@ pub const FLAGS: &[&str] = &[
     "-DCANDLE_CUDA_LEGACY_FP8=1",
     "-DCANDLE_CUDA_LEGACY_FP4=1",
 ];
-pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "fill", "indexing", "reduce", "ternary", "unary"];
+pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "fill", "indexing", "reduce", "ternary", "unary", "quantized", "mmvq_gguf"];
+
+pub const MMVQ_CODECS: &[&str] = &["q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "q2_k", "q3_k", "q4_k", "q5_k", "q6_k"];
+pub const MMVQ_DTYPES: &[&str] = &["bf16", "f16", "f32"];
+
+pub fn mmvq_entries() -> Vec<String> {
+    let mut entries = Vec::with_capacity(243);
+    for dtype in MMVQ_DTYPES {
+        entries.push(format!("mmvq_gguf_quantize_q8_1_{dtype}"));
+        for codec in MMVQ_CODECS {
+            for batch in 1..=8 {
+                entries.push(format!("mmvq_gguf_{codec}_{dtype}_plain_cuda{batch}"));
+            }
+        }
+    }
+    entries
+}
+
+pub fn has_mmvq_entries(ptx: &str) -> bool {
+    let entries: std::collections::HashSet<_> = ptx.lines().filter_map(|line| {
+        let (_, tail) = line.split_once(".entry ")?;
+        Some(tail.split(|c: char| c == '(' || c.is_whitespace()).next()?)
+    }).collect();
+    mmvq_entries().iter().all(|entry| entries.contains(entry.as_str()))
+}
 
 pub fn is_sm61_ptx(ptx: &str) -> bool {
     let mut targets = ptx.lines().filter_map(|line| {

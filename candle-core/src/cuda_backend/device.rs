@@ -57,6 +57,8 @@ impl Drop for CudaGraphHtodCacheGuard {
 
 pub struct ModuleStore {
     mdls: [Option<Arc<cudarc::driver::CudaModule>>; kernels::ALL_IDS.len()],
+    #[cfg(feature = "cuda-dkr-s31")]
+    mmvq: Option<Arc<cudarc::driver::CudaModule>>,
 }
 
 #[derive(Clone)]
@@ -383,6 +385,27 @@ impl CudaDevice {
         })
     }
 
+    /// Resolve an MMVQ entry only when the native external provider is active.
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmvq_func(&self, name: &str) -> Result<Option<CudaFunc>> {
+        let Some(packages) = &self.dkr_s31 else { return Ok(None) };
+        let ms = self.modules.read().unwrap();
+        if let Some(module) = &ms.mmvq {
+            return Ok(Some(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() }));
+        }
+        drop(ms);
+        let mut ms = self.modules.write().unwrap();
+        if let Some(module) = &ms.mmvq {
+            return Ok(Some(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() }));
+        }
+        let ptx = packages.mmvq_ptx().ok_or_else(|| crate::Error::Msg("DKR MMVQ package missing".into()))?;
+        let module = self.context.load_module(ptx.into()).w()?;
+        let func = module.load_function(name).w()?;
+        ms.mmvq = Some(module);
+        packages.record_mmvq_loaded();
+        Ok(Some(CudaFunc { func, stream: self.stream.clone() }))
+    }
+
     pub fn cublas_handle(&self) -> Arc<cudarc::cublas::CudaBlas> {
         self.blas.clone()
     }
@@ -405,6 +428,8 @@ impl CudaDevice {
         let curand = cudarc::curand::CudaRng::new(299792458, stream.clone()).w()?;
         let module_store = ModuleStore {
             mdls: [const { None }; kernels::ALL_IDS.len()],
+            #[cfg(feature = "cuda-dkr-s31")]
+            mmvq: None,
         };
         Ok(Self {
             id: DeviceId::new(),

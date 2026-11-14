@@ -27,7 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         builder.build_ptx()?;
         let ptx = fs::read_to_string(dir.join(format!("{name}.ptx")))?;
-        if !contract::is_sm61_ptx(&ptx) {
+        if !contract::is_sm61_ptx(&ptx) || (*name == "mmvq_gguf" && !contract::has_mmvq_entries(&ptx)) {
             return Err(format!("invalid SM61 PTX for {name}").into());
         }
         let manifest = serde_json::json!({
