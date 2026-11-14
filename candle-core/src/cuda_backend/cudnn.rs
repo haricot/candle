@@ -11,6 +11,7 @@ use std::sync::Arc;
 thread_local! {
     static CUDNN: RefCell<HashMap<crate::cuda_backend::DeviceId, Arc<Cudnn>>> = HashMap::new().into();
     static DISABLED_CONV_DEVICES: RefCell<HashSet<crate::cuda_backend::DeviceId>> = HashSet::new().into();
+    static HD_DW5X5_TRACES: RefCell<HashSet<(crate::cuda_backend::DeviceId, usize, usize, usize)>> = HashSet::new().into();
 }
 
 pub(crate) fn convolution_is_disabled(device_id: crate::cuda_backend::DeviceId) -> bool {
@@ -108,7 +109,9 @@ pub(crate) fn launch_sm61_grouped_dw5x5(
     let dst_el = params.c_out * params.out_w() * params.out_h() * params.b_size;
     let mut out = unsafe { device.alloc::<f32>(dst_el)? };
     launch_conv2d_with_groups::<f32, f32>(inp, input_l, k, &mut out, params, &device, groups)?;
-    if std::env::var("CANDLE_HD_DW5X5_TRACE").as_deref() == Ok("1") {
+    if std::env::var("CANDLE_HD_DW5X5_TRACE").as_deref() == Ok("1")
+        && HD_DW5X5_TRACES.with(|seen| seen.borrow_mut().insert((device.id(), groups, params.i_h, params.i_w)))
+    {
         eprintln!("HD_DW5X5=SUBMITTED backend=CUDNN_GROUPED sm=61 groups={} h={} w={}",
                   groups, params.i_h, params.i_w);
     }
