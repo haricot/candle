@@ -12,6 +12,10 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 
+#[cfg(feature = "cuda-dkr-s31")]
+#[path = "dkr_s31.rs"]
+mod dkr_s31;
+
 /// Unique identifier for cuda devices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DeviceId(usize);
@@ -60,6 +64,8 @@ pub struct CudaDevice {
     id: DeviceId,
     context: Arc<cudarc::driver::CudaContext>,
     modules: Arc<std::sync::RwLock<ModuleStore>>,
+    #[cfg(feature = "cuda-dkr-s31")]
+    dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
@@ -347,7 +353,22 @@ impl CudaDevice {
         }
         drop(ms);
         let mut ms = self.modules.write().unwrap();
-        let cuda_module = self.context.load_module(mdl.ptx().into()).w()?;
+        // Recheck after taking the writer lock (another thread may have loaded it).
+        if let Some(module) = ms.mdls[mdl.index()].as_ref() {
+            return Ok(CudaFunc {
+                func: module.load_function(fn_name).w()?,
+                stream: self.stream.clone(),
+            });
+        }
+        #[cfg(feature = "cuda-dkr-s31")]
+        let external = match &self.dkr_s31 {
+            Some(packages) => packages.ptx(mdl.index())?,
+            None => None,
+        };
+        #[cfg(not(feature = "cuda-dkr-s31"))]
+        let external: Option<String> = None;
+        let ptx = external.as_deref().unwrap_or_else(|| mdl.ptx());
+        let cuda_module = self.context.load_module(ptx.into()).w()?;
         ms.mdls[mdl.index()] = Some(cuda_module.clone());
         let func = cuda_module.load_function(fn_name).w()?;
         Ok(CudaFunc {
@@ -372,6 +393,8 @@ impl CudaDevice {
         context: Arc<cudarc::driver::CudaContext>,
         stream: Arc<cudarc::driver::CudaStream>,
     ) -> Result<Self> {
+        #[cfg(feature = "cuda-dkr-s31")]
+        let dkr_s31 = dkr_s31::ExternalModules::from_env(&context)?.map(Arc::new);
         let blas = cudarc::cublas::CudaBlas::new(stream.clone()).w()?;
         let curand = cudarc::curand::CudaRng::new(299792458, stream.clone()).w()?;
         let module_store = ModuleStore {
@@ -384,6 +407,8 @@ impl CudaDevice {
             blas: Arc::new(blas),
             curand: Arc::new(Mutex::new(CudaRng(curand))),
             modules: Arc::new(std::sync::RwLock::new(module_store)),
+            #[cfg(feature = "cuda-dkr-s31")]
+            dkr_s31,
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
             seed_value: Arc::new(RwLock::new(299792458)),
         })

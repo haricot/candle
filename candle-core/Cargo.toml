@@ -36,6 +36,8 @@ yoke = { workspace = true }
 zerocopy = { workspace = true }
 zip = { workspace = true }
 parking_lot = "0.12.5"
+sha2 = { version = "0.10", optional = true }
+serde_json = { workspace = true, optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokenizers = { workspace = true, features = ["fancy-regex"] }
 
@@ -48,6 +50,8 @@ criterion = { workspace = true }
 [features]
 default = []
 cuda = ["cudarc", "dep:candle-kernels"]
+# Experimental exact native-ABI external PTX provider for the six S3.1 modules.
+cuda-dkr-s31 = ["cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4", "dep:sha2", "dep:serde_json"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]
 cuda-legacy-fp8 = ["cuda", "candle-kernels/cuda-legacy-fp8"]
 # Opt-in software NVFP4 E2M1/E4M3FN kernels on Pascal and other pre-native devices.
