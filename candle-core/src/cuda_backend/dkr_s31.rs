@@ -11,9 +11,11 @@ use crate::Result;
 use super::WrapErr;
 
 use candle_kernels::dkr_s31_contract as contract;
+use dkr_kernel_registry::{Registry, RegistryKey, VerifiedArtifact, NATIVE_ABI};
 
 pub(super) struct ExternalModules {
-    modules: std::collections::HashMap<&'static str, String>,
+    modules: Registry<VerifiedArtifact>,
+    native_keys: std::collections::HashMap<&'static str, RegistryKey>,
     trace: bool,
     mmq_symbols: std::collections::HashMap<&'static str, std::collections::BTreeMap<String, String>>,
 }
@@ -79,12 +81,16 @@ impl ExternalModules {
             crate::bail!("CANDLE_DKR_S31_DIR must be an existing absolute directory");
         }
         // Fail before inference if a selected module is absent or corrupt.
-        let mut modules = std::collections::HashMap::new();
+        let mut modules = Registry::default();
+        let mut native_keys = std::collections::HashMap::new();
         for &name in contract::FAMILIES {
-            modules.insert(name, Self::read(&root, name)?);
+            let key = RegistryKey::new(NATIVE_ABI, name, "native", contract::CC);
+            modules.insert(key.clone(), Self::read(&root, name)?).map_err(crate::Error::Msg)?;
+            native_keys.insert(name,key);
         }
         let mut mmq_symbols = std::collections::HashMap::new();
-        for (&name, ptx) in &modules {
+        for (&name, key) in &native_keys {
+            let ptx = modules.get(key).expect("registered native module").ptx();
             if name.starts_with("mmq_") || name.starts_with("moe_") {
                 let symbols = if name.starts_with("moe_") { contract::moe_entries(ptx, name) }
                     else { contract::mmq_entries(ptx, name) }
@@ -92,24 +98,28 @@ impl ExternalModules {
                 mmq_symbols.insert(name, symbols);
             }
         }
-        Ok(Some(Self { modules, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
     }
 
-    fn read(root: &Path, name: &str) -> Result<String> {
+    fn read(root: &Path, name: &str) -> Result<VerifiedArtifact> {
         let manifest = read_text(&root.join(name).join("manifest.json"))?;
         let manifest: Value = serde_json::from_str(&manifest)
             .map_err(|e| crate::Error::Msg(format!("Candle DKR S3.1 manifest: {e}")))?;
         let ptx = read_text(&root.join(name).join(format!("{name}.ptx")))?;
         validate(&manifest, name, &ptx)?;
-        Ok(ptx)
+        VerifiedArtifact::new(ptx, contract::CC, manifest["sha256"].as_str().unwrap_or("")).map_err(crate::Error::Msg)
     }
 
-    pub(super) fn ptx(&self, index: usize) -> Option<&str> {
-        family(index).and_then(|name| self.modules.get(name)).map(String::as_str)
+    fn artifact(&self, name: &str) -> Option<&VerifiedArtifact> {
+        self.modules.get(self.native_keys.get(name)?)
     }
 
-    pub(super) fn mmq_entry(&self, family: &str, key: &str) -> Option<(&str, &str)> {
-        Some((self.modules.get(family)?.as_str(), self.mmq_symbols.get(family)?.get(key)?.as_str()))
+    pub(super) fn ptx(&self, index: usize) -> Option<&VerifiedArtifact> {
+        family(index).and_then(|name| self.artifact(name))
+    }
+
+    pub(super) fn mmq_entry(&self, family: &str, key: &str) -> Option<(&VerifiedArtifact, &str)> {
+        Some((self.artifact(family)?, self.mmq_symbols.get(family)?.get(key)?.as_str()))
     }
 
     pub(super) fn record_mmq_loaded(&self, family: &str) {
@@ -118,8 +128,8 @@ impl ExternalModules {
         }
     }
 
-    pub(super) fn mmvq_ptx(&self) -> Option<&str> {
-        self.modules.get("mmvq_gguf").map(String::as_str)
+    pub(super) fn mmvq_ptx(&self) -> Option<&VerifiedArtifact> {
+        self.artifact("mmvq_gguf")
     }
 
     pub(super) fn record_mmvq_loaded(&self) {

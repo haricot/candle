@@ -57,10 +57,7 @@ impl Drop for CudaGraphHtodCacheGuard {
 
 pub struct ModuleStore {
     mdls: [Option<Arc<cudarc::driver::CudaModule>>; kernels::ALL_IDS.len()],
-    #[cfg(feature = "cuda-dkr-s31")]
-    mmvq: Option<Arc<cudarc::driver::CudaModule>>,
-    #[cfg(feature = "cuda-dkr-s31")]
-    mmq: HashMap<String, Arc<cudarc::driver::CudaModule>>,
+
 }
 
 #[derive(Clone)]
@@ -71,6 +68,8 @@ pub struct CudaDevice {
     #[cfg(feature = "cuda-dkr-s31")]
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
+    #[cfg(feature = "cuda-dkr-s31")]
+    dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, HashMap<String, CudaFunction>>>>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
     curand: Arc<Mutex<CudaRng>>,
@@ -337,102 +336,90 @@ impl CudaDevice {
         }
         drop(ms);
         let mut ms = self.custom_modules.write().unwrap();
+        if let Some(module) = ms.get(module_name) {
+            return Ok(CudaFunc { func: module.load_function(fn_name).w()?, stream: self.stream.clone() });
+        }
         let cuda_module = self.context.load_module(ptx.into()).w()?;
-        ms.insert(module_name.to_string(), cuda_module.clone());
         let func = cuda_module.load_function(fn_name).w()?;
+        ms.insert(module_name.to_string(), cuda_module);
         Ok(CudaFunc {
             func,
             stream: self.stream.clone(),
         })
+    }
+
+    /// Shared content-addressed module/function cache. Both ABI adapters validate
+    /// semantic arguments before using this transport. Context ownership remains here.
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub fn get_or_load_dkr_func(
+        &self, artifact: &dkr_kernel_registry::VerifiedArtifact, name: &str,
+    ) -> Result<(CudaFunc,bool)> {
+        if !artifact.has_entry(name) { crate::bail!("DKR entry absent: {name}"); }
+        let cached = self.dkr_functions.read().unwrap();
+        if let Some(func) = cached.get(artifact.key()).and_then(|m|m.get(name)) {
+            return Ok((CudaFunc{func:func.clone(),stream:self.stream.clone()},false));
+        }
+        drop(cached);
+        let mut cached=self.dkr_functions.write().unwrap();
+        if let Some(func)=cached.get(artifact.key()).and_then(|m|m.get(name)){
+            return Ok((CudaFunc{func:func.clone(),stream:self.stream.clone()},false));
+        }
+        // Context is verified once for each physical module on its cold path.
+        let first=!cached.contains_key(artifact.key());
+        if first {
+            let (major,minor)=self.context.compute_capability().w()?;
+            if (major as u32)*10+minor as u32 < artifact.key().target_cc(){
+                crate::bail!("DKR artifact architecture exceeds device");
+            }
+        }
+        let func=self.get_or_load_custom_func(name,&artifact.key().module_key(),artifact.ptx())?;
+        cached.entry(artifact.key().clone()).or_default().insert(name.to_owned(),func.func.clone());
+        Ok((func,first))
     }
 
     pub fn get_or_load_func(&self, fn_name: &str, mdl: &kernels::Module) -> Result<CudaFunc> {
-        let ms = self.modules.read().unwrap();
-        if let Some(mdl) = ms.mdls[mdl.index()].as_ref() {
-            let func = mdl.load_function(fn_name).w()?;
-            return Ok(CudaFunc {
-                func,
-                stream: self.stream.clone(),
-            });
-        }
-        drop(ms);
-        let mut ms = self.modules.write().unwrap();
-        // Recheck after taking the writer lock (another thread may have loaded it).
-        if let Some(module) = ms.mdls[mdl.index()].as_ref() {
-            return Ok(CudaFunc {
-                func: module.load_function(fn_name).w()?,
-                stream: self.stream.clone(),
-            });
-        }
         #[cfg(feature = "cuda-dkr-s31")]
-        let external = match &self.dkr_s31 {
-            Some(packages) => packages.ptx(mdl.index()),
-            None => None,
-        };
-        #[cfg(not(feature = "cuda-dkr-s31"))]
-        let external: Option<&str> = None;
-        let ptx = external.unwrap_or_else(|| mdl.ptx());
-        let cuda_module = self.context.load_module(ptx.into()).w()?;
-        let func = cuda_module.load_function(fn_name).w()?;
-        ms.mdls[mdl.index()] = Some(cuda_module.clone());
-        #[cfg(feature = "cuda-dkr-s31")]
-        if external.is_some() {
-            if let Some(packages) = &self.dkr_s31 {
-                packages.record_loaded(mdl.index());
+        if let Some(packages)=&self.dkr_s31 {
+            if let Some(artifact)=packages.ptx(mdl.index()){
+                let (func,first)=self.get_or_load_dkr_func(artifact,fn_name)?;
+                if first {packages.record_loaded(mdl.index());}
+                return Ok(func);
             }
         }
-        Ok(CudaFunc {
-            func,
-            stream: self.stream.clone(),
-        })
-    }
-
-    /// Resolve an MMVQ entry only when the native external provider is active.
-    #[cfg(feature = "cuda-dkr-s31")]
-    pub(crate) fn dkr_mmvq_func(&self, name: &str) -> Result<Option<CudaFunc>> {
-        let Some(packages) = &self.dkr_s31 else { return Ok(None) };
         let ms = self.modules.read().unwrap();
-        if let Some(module) = &ms.mmvq {
-            return Ok(Some(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() }));
+        if let Some(mdl) = ms.mdls[mdl.index()].as_ref() {
+            return Ok(CudaFunc {func:mdl.load_function(fn_name).w()?,stream:self.stream.clone()});
         }
         drop(ms);
         let mut ms = self.modules.write().unwrap();
-        if let Some(module) = &ms.mmvq {
-            return Ok(Some(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() }));
+        if let Some(module)=ms.mdls[mdl.index()].as_ref(){
+            return Ok(CudaFunc {func:module.load_function(fn_name).w()?,stream:self.stream.clone()});
         }
-        let ptx = packages.mmvq_ptx().ok_or_else(|| crate::Error::Msg("DKR MMVQ package missing".into()))?;
-        let module = self.context.load_module(ptx.into()).w()?;
-        let func = module.load_function(name).w()?;
-        ms.mmvq = Some(module);
-        packages.record_mmvq_loaded();
-        Ok(Some(CudaFunc { func, stream: self.stream.clone() }))
+        let module=self.context.load_module(mdl.ptx().into()).w()?;
+        let func=module.load_function(fn_name).w()?;
+        ms.mdls[mdl.index()]=Some(module);
+        Ok(CudaFunc{func,stream:self.stream.clone()})
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
-    pub(crate) fn dkr_mmq_enabled(&self) -> bool {
-        self.dkr_s31.is_some()
+    pub(crate) fn dkr_mmvq_func(&self,name:&str)->Result<Option<CudaFunc>>{
+        let Some(packages)=&self.dkr_s31 else{return Ok(None)};
+        let artifact=packages.mmvq_ptx().ok_or_else(||crate::Error::Msg("DKR MMVQ package missing".into()))?;
+        let (func,first)=self.get_or_load_dkr_func(artifact,name)?;
+        if first{packages.record_mmvq_loaded();}
+        Ok(Some(func))
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
-    pub(crate) fn dkr_mmq_func(&self, family: &str, key: &str) -> Result<CudaFunc> {
-        let packages = self.dkr_s31.as_ref()
-            .ok_or_else(|| crate::Error::Msg("external MMQ not selected".into()))?;
-        let (ptx, name) = packages.mmq_entry(family, key)
-            .ok_or_else(|| crate::Error::Msg(format!("unknown MMQ entry {family}/{key}")))?;
-        let ms = self.modules.read().unwrap();
-        if let Some(module) = ms.mmq.get(family) {
-            return Ok(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() });
-        }
-        drop(ms);
-        let mut ms = self.modules.write().unwrap();
-        if let Some(module) = ms.mmq.get(family) {
-            return Ok(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() });
-        }
-        let module = self.context.load_module(ptx.into()).w()?;
-        let func = module.load_function(name).w()?;
-        ms.mmq.insert(family.to_string(), module);
-        packages.record_mmq_loaded(family);
-        Ok(CudaFunc { func, stream: self.stream.clone() })
+    pub(crate) fn dkr_mmq_enabled(&self)->bool{self.dkr_s31.is_some()}
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmq_func(&self,family:&str,key:&str)->Result<CudaFunc>{
+        let packages=self.dkr_s31.as_ref().ok_or_else(||crate::Error::Msg("external MMQ not selected".into()))?;
+        let (artifact,name)=packages.mmq_entry(family,key).ok_or_else(||crate::Error::Msg(format!("unknown native entry {family}/{key}")))?;
+        let (func,first)=self.get_or_load_dkr_func(artifact,name)?;
+        if first{packages.record_mmq_loaded(family);}
+        Ok(func)
     }
 
     /// Experimental native MoE provider; caller must uphold tensor/stream ABI.
@@ -469,10 +456,7 @@ impl CudaDevice {
         let curand = cudarc::curand::CudaRng::new(299792458, stream.clone()).w()?;
         let module_store = ModuleStore {
             mdls: [const { None }; kernels::ALL_IDS.len()],
-            #[cfg(feature = "cuda-dkr-s31")]
-            mmvq: None,
-            #[cfg(feature = "cuda-dkr-s31")]
-            mmq: HashMap::new(),
+
         };
         Ok(Self {
             id: DeviceId::new(),
@@ -484,6 +468,8 @@ impl CudaDevice {
             #[cfg(feature = "cuda-dkr-s31")]
             dkr_s31,
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            #[cfg(feature = "cuda-dkr-s31")]
+            dkr_functions: Arc::new(RwLock::new(HashMap::new())),
             seed_value: Arc::new(RwLock::new(299792458)),
         })
     }

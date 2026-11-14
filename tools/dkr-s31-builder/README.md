@@ -112,3 +112,13 @@ GPU, Rust compilation, ABI outputs and static link are unverified.
 
 The GGUF package also requires the explicit warp-tail revision marker entry.
 The marker is never launched; the seven required operational entries remain unchanged.
+
+## S3.5 — Shared registry
+
+`dkr-kernel-registry` is dependency-neutral (only SHA-256), with logical ABI
+namespaces, immutable verified PTX and a generic bounded LRU. Native modules
+are registered by family and target. The common `CudaDevice::get_or_load_dkr_func`
+uses content-addressed module and symbol caches scoped to the existing device.
+Mistral typed adapters may use the same method after their own manifest and
+launch ABI validation. Legacy embedded and arbitrary custom modules remain.
+No change to CUDA sources or kernel geometry in this stage.

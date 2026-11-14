@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "candle-core",
+    "dkr-kernel-registry",
     "candle-datasets",
     "candle-examples",
     "candle-nn",
