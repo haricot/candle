@@ -313,6 +313,33 @@ impl Tensor {
                 "in_channel mismatch between input ({c_in}, groups {groups}) and kernel ({c_in_k})"
             )
         }
+        // Explicitly opt in to the narrow inference-only SM61 path. Keep
+        // ordinary grouped CPU, autograd and all other geometries unchanged.
+        #[cfg(feature = "cudnn")]
+        if groups > 1 && groups == c_in && c_in == c_out && c_in_k == 1
+            && b_size == 1 && k_h == 5 && k_w == 5
+            && padding == 2 && stride == 1 && dilation == 1
+            && !self.track_op() && !kernel.track_op()
+            && std::env::var("CANDLE_HD_GROUPED_DW5X5").as_deref() == Ok("1")
+        {
+            let full = ParamsConv2D {
+                b_size, i_h, i_w, k_h, k_w, c_out, c_in,
+                padding, stride, dilation, cudnn_fwd_algo,
+            };
+            let input_storage = self.storage();
+            let kernel_storage = kernel.storage();
+            if let (crate::Storage::Cuda(input), crate::Storage::Cuda(weight)) =
+                (&*input_storage, &*kernel_storage)
+            {
+                if let Some(out) = crate::cudnn::launch_sm61_grouped_dw5x5(
+                    input, self.layout(), weight, kernel.layout(), &full, groups,
+                )? {
+                    return Ok(crate::tensor::from_storage(
+                        crate::Storage::Cuda(out), full.out_dims(), BackpropOp::none(), false,
+                    ));
+                }
+            }
+        }
         let params = ParamsConv2D {
             b_size,
             i_h,
