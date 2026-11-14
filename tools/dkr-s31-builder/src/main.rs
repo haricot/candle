@@ -21,6 +21,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(&dir)?;
         let cu = if name.starts_with("mmq_") {
             source.join("mmq_gguf").join(format!("{name}.cu"))
+        } else if name.starts_with("moe_") {
+            source.join("moe").join(format!("{name}.cu"))
         } else {
             source.join(format!("{name}.cu"))
         };
@@ -40,11 +42,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mmq_entries = if name.starts_with("mmq_") {
             Some(contract::mmq_entries(&ptx, name).ok_or_else(|| format!("missing or ambiguous SM61 MMQ entries for {name}"))?)
         } else { None };
+        let moe_entries = if name.starts_with("moe_") {
+            Some(contract::moe_entries(&ptx,name).ok_or_else(|| format!("invalid MoE native ABI for {name}"))?)
+        } else { None };
         let manifest = serde_json::json!({
             "schema": contract::SCHEMA, "base_revision": contract::BASE,
             "target_cc": contract::CC, "family": name, "flags": contract::FLAGS,
             "sha256": format!("{:x}", Sha256::digest(ptx.as_bytes())),
             "mmq_entries": mmq_entries,
+            "moe_entries": moe_entries,
         });
         fs::write(dir.join("manifest.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
     }

@@ -107,7 +107,8 @@ __global__ void moe_gemm_gguf_kernel(
     for (int i = laneId; i < blocks_per_row_x; i += WARP_SIZE) {
         w_shared_row[wrapId * blocks_per_row_x + i] = w_expert[row * blocks_per_row_x + i];
     }
-    __syncthreads();
+    // Each warp owns its own shared row. Other warps may return on the N tail.
+    __syncwarp();
 
     // accumulators for rows_per_block rows (usually 1)
     float acc = 0.0f;

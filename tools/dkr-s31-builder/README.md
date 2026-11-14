@@ -91,3 +91,21 @@ dilation, non-contiguous layouts, pooling, nearest/bilinear upsample and
 cuDNN fallback; argsort ascending/descending, non-power-of-two dimensions,
 ties and top-k routing. F16/BF16/F32 are required where supported.
 No CUDA source algorithms are changed and no static fallback has been removed.
+
+
+## S3.4.1 — MoE FFI closure
+
+The same provider now stages 25/28 CUDA units. Native MoE entry inventory:
+SIMT count, prefix scan, GEMM (3); GGUF quantizer and six routed GEMMs (7).
+Candle-NN opts in through cuda-dkr-s31. SIMT uses the existing light integer
+scan for both prefill and decode (<=1024 experts); GGUF uses the original
+DP4A route for both phases on SM61, with Candle-owned temporary workspace.
+This is not a performance-qualified replacement for WMMA prefill.
+Route IDs must be valid and sorted, token pair IDs a valid permutation,
+as in the existing low-level API; no host readback added to inference.
+The GGUF tail fix changes block barrier to warp barrier because each warp
+owns separate shared memory and may return independently. Verify partial N.
+Static prefill dispatch is gated by compiled capability and the Rust FFI
+wrapper reports false if WMMA was not linked. No void no-op fallback.
+The three excluded units remain WMMA (2) and cuTile alignment (1).
+GPU, Rust compilation, ABI outputs and static link are unverified.

@@ -1,6 +1,8 @@
 // Adapted from https://github.com/guoqingbao/attention.rs/blob/main/src/moe.rs
 #[cfg(feature = "cutile")]
 pub mod cutile;
+#[cfg(feature = "cuda-dkr-s31")]
+mod dkr_moe;
 
 #[cfg(feature = "cuda")]
 use candle::cuda_backend::kernels::{
@@ -157,6 +159,10 @@ pub fn moe_gemm(
         Ok(output)
     }
 
+    #[cfg(feature = "cuda-dkr-s31")]
+    if input.device().as_cuda_device()?.dkr_moe_enabled() && input.dtype() == DType::F16 {
+        return dkr_moe::simt(input, weights, topk_weights, sorted_token_ids, experts_ids, topk);
+    }
     match input.dtype() {
         DType::F16 => cuda_fwd::<f16>(
             input,
@@ -283,7 +289,7 @@ pub fn moe_gemm_gguf(
 
         assert!(size_k % 8 == 0, "size_k must divisible by 8");
         unsafe {
-            if is_prefill {
+            if is_prefill && matches!(compiled_moe_backend(if dtype == DType::BF16 { 1 } else { 0 }), Some(MoeBackend::Wmma)) {
                 let input = input.to_dtype(dtype)?;
                 let (input, _) = input.storage_and_layout();
                 let (input_ptr, input_dtype) = match &*input {
@@ -298,7 +304,7 @@ pub fn moe_gemm_gguf(
                     }
                     _ => candle::bail!("input must be a cuda tensor"),
                 };
-                ffi::moe_gemm_gguf_prefill(
+                if !ffi::moe_gemm_gguf_prefill(
                     input_ptr,  // [size_m or size_m/topk, size_k]
                     weight_ptr, // [num_experts, size_n, size_k]
                     sorted_token_ids.device_ptr(sorted_token_ids.stream()).0 as *const i32,
@@ -313,7 +319,7 @@ pub fn moe_gemm_gguf(
                     input_dtype,
                     gguf_dtype as i32, // Q8_0: 0, Q4K: 1, Q2K: 2, Q3k: 3,  Q5K: 4, Q6K: 5 (for weight)
                     stream,
-                );
+                ) { candle::bail!("WMMA GGUF prefill unavailable in this build"); }
             } else {
                 let (input, _) = input.storage_and_layout();
                 let input = match &*input {
@@ -350,6 +356,10 @@ pub fn moe_gemm_gguf(
         Ok(output)
     }
 
+    #[cfg(feature = "cuda-dkr-s31")]
+    if input.device().as_cuda_device()?.dkr_moe_enabled() && input.dtype() == DType::F32 {
+        return dkr_moe::gguf(input, weights, topk_weights, sorted_token_ids, experts_ids, topk);
+    }
     match input.dtype() {
         DType::F32 => cuda_fwd(
             input,

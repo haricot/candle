@@ -19,6 +19,8 @@ fn main() -> Result<()> {
 
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
     println!("cargo:rustc-env=CANDLE_CUDA_COMPUTE_CAP={compute_cap}");
+    println!("cargo:rustc-check-cfg=cfg(candle_moe_wmma)");
+    if compute_cap >= 70 { println!("cargo:rustc-cfg=candle_moe_wmma"); }
     let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
     let legacy_fp8 = compute_cap < 89 && env::var_os(LEGACY_FP8_FEATURE).is_some();
 

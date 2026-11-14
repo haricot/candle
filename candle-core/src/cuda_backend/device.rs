@@ -435,6 +435,18 @@ impl CudaDevice {
         Ok(CudaFunc { func, stream: self.stream.clone() })
     }
 
+    /// Experimental native MoE provider; caller must uphold tensor/stream ABI.
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub fn dkr_moe_enabled(&self) -> bool { self.dkr_s31.is_some() }
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub fn dkr_moe_function(&self, family: &str, key: &str) -> Result<CudaFunction> {
+        if !matches!(family, "moe_simt_f16" | "moe_gguf") {
+            crate::bail!("invalid DKR MoE family");
+        }
+        Ok(self.dkr_mmq_func(family,key)?.into_cuda_function())
+    }
+
     pub fn cublas_handle(&self) -> Arc<cudarc::cublas::CudaBlas> {
         self.blas.clone()
     }

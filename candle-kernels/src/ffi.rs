@@ -71,7 +71,9 @@ extern "C" {
         stream: i64,
     );
 
-    pub fn moe_gemm_gguf_prefill(
+    #[cfg(candle_moe_wmma)]
+    #[link_name = "moe_gemm_gguf_prefill"]
+    fn moe_gemm_gguf_prefill_native(
         input: *const c_void, // input [size_m, size_k]
         weights: *const u8,   // weights [num_experts, size_n, size_k]
         sorted_token_ids: *const i32,
@@ -661,4 +663,27 @@ extern "C" {
         warp_size: i32,
         stream: *mut c_void,
     );
+}
+
+/// Returns false instead of referencing an unavailable pre-Volta FFI symbol.
+/// On true, the native launch was submitted; caller still owns synchronization.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn moe_gemm_gguf_prefill(
+    input: *const c_void, weights: *const u8, sorted_token_ids: *const i32,
+    expert_ids: *const i32, topk_weights: *const f32, output: *mut c_void,
+    num_experts: i32, topk: i32, size_m: i32, size_n: i32, size_k: i32,
+    input_dtype: i32, gguf_dtype: i32, stream: i64,
+) -> bool {
+    #[cfg(candle_moe_wmma)]
+    {
+        unsafe { moe_gemm_gguf_prefill_native(input,weights,sorted_token_ids,expert_ids,
+            topk_weights,output,num_experts,topk,size_m,size_n,size_k,input_dtype,gguf_dtype,stream); }
+        true
+    }
+    #[cfg(not(candle_moe_wmma))]
+    {
+        let _ = (input,weights,sorted_token_ids,expert_ids,topk_weights,output,
+            num_experts,topk,size_m,size_n,size_k,input_dtype,gguf_dtype,stream);
+        false
+    }
 }

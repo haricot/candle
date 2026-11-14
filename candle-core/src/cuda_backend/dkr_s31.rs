@@ -53,6 +53,9 @@ fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
         || !contract::is_sm61_ptx(ptx)
         || (name == "mmvq_gguf" && !contract::has_mmvq_entries(ptx))
         || (matches!(name, "conv" | "sort") && !contract::has_conv_sort_entries(ptx, name))
+        || (name.starts_with("moe_") && contract::moe_entries(ptx, name)
+            .and_then(|entries| serde_json::to_value(entries).ok())
+            .is_none_or(|entries| entries != manifest["moe_entries"]))
         || (name.starts_with("mmq_") && contract::mmq_entries(ptx, name)
             .and_then(|entries| serde_json::to_value(entries).ok())
             .is_none_or(|entries| entries != manifest["mmq_entries"]))
@@ -82,8 +85,9 @@ impl ExternalModules {
         }
         let mut mmq_symbols = std::collections::HashMap::new();
         for (&name, ptx) in &modules {
-            if name.starts_with("mmq_") {
-                let symbols = contract::mmq_entries(ptx, name)
+            if name.starts_with("mmq_") || name.starts_with("moe_") {
+                let symbols = if name.starts_with("moe_") { contract::moe_entries(ptx, name) }
+                    else { contract::mmq_entries(ptx, name) }
                     .ok_or_else(|| crate::Error::Msg(format!("invalid MMQ entries: {name}")))?;
                 mmq_symbols.insert(name, symbols);
             }

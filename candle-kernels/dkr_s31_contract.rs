@@ -10,7 +10,7 @@ pub const FLAGS: &[&str] = &[
 ];
 pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "conv", "fill", "indexing", "reduce", "sort", "ternary", "unary", "quantized", "mmvq_gguf", "mmq_quantize",
     "mmq_instance_q4_0", "mmq_instance_q4_1", "mmq_instance_q5_0", "mmq_instance_q5_1", "mmq_instance_q8_0",
-    "mmq_instance_q2_k", "mmq_instance_q3_k", "mmq_instance_q4_k", "mmq_instance_q5_k", "mmq_instance_q6_k"];
+    "mmq_instance_q2_k", "mmq_instance_q3_k", "mmq_instance_q4_k", "mmq_instance_q5_k", "mmq_instance_q6_k", "moe_gguf", "moe_simt_f16"];
 
 pub const MMVQ_CODECS: &[&str] = &["q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "q2_k", "q3_k", "q4_k", "q5_k", "q6_k"];
 pub const MMVQ_DTYPES: &[&str] = &["bf16", "f16", "f32"];
@@ -216,8 +216,6 @@ mod mmq_tests {
 /// These five source units are not part of the SM61 external module set.
 /// Keep the reason explicit: "static" is not external dispatch coverage.
 pub const SM61_REMAINING: &[(&str, &str)] = &[
-    ("moe/moe_gguf.cu", "STATIC_FFI_GGUF"),
-    ("moe/moe_simt_f16.cu", "STATIC_FFI_SIMT"),
     ("moe/moe_wmma.cu", "EXCLUDED_PRE_VOLTA"),
     ("moe/moe_wmma_gguf.cu", "EXCLUDED_PRE_VOLTA"),
     ("moe/moe_align.cu", "CUTILE_ONLY"),
@@ -255,9 +253,9 @@ mod conv_sort_tests {
     use super::*;
     #[test]
     fn complete_source_and_entry_inventory() {
-        assert_eq!(FAMILIES.len(), 23);
-        assert_eq!(SM61_REMAINING.len(), 5);
-        assert_eq!(FAMILIES.iter().collect::<std::collections::HashSet<_>>().len(), 23);
+        assert_eq!(FAMILIES.len(), 25);
+        assert_eq!(SM61_REMAINING.len(), 3);
+        assert_eq!(FAMILIES.iter().collect::<std::collections::HashSet<_>>().len(), 25);
         for (family, count) in [("conv", 66), ("sort", 14)] {
             let entries = conv_sort_entries(family).unwrap();
             assert_eq!(entries.len(), count);
@@ -267,4 +265,53 @@ mod conv_sort_tests {
             assert!(!has_conv_sort_entries(&format!("{ptx}{ptx}"), family));
         }
     }
+}
+
+/// Resolve exact native MoE symbols and check scalar argument widths.
+/// Do not require exact mangling of the function-pointer template argument.
+pub fn moe_entries(ptx: &str, family: &str) -> Option<std::collections::BTreeMap<String,String>> {
+    let entries: Vec<_> = ptx.lines().filter_map(|line| {
+        let mut words = line.split_whitespace();
+        if !words.any(|w| w == ".entry") { return None; }
+        Some(words.next()?.split('(').next()?)
+    }).collect();
+    let mut map = std::collections::BTreeMap::new();
+    let mut add = |key: &str, marker: &str, block: Option<&str>, widths: &[u32]| -> Option<()> {
+        let mut hits = entries.iter().filter(|&&n| n.contains(marker) && block.is_none_or(|b| n.contains(b)));
+        let name = *hits.next()?;
+        if hits.next().is_some() { return None; }
+        let offset = ptx.match_indices(name).find_map(|(i,_)| {
+            let start = ptx[..i].rfind('\n').map_or(0, |p| p+1);
+            ptx[start..i].split_whitespace().any(|w| w == ".entry").then_some(i)
+        })?;
+        let (params,_) = ptx[offset+name.len()..].trim_start().strip_prefix('(')?.split_once(')')?;
+        let actual: Option<Vec<u32>> = params.split(',').map(|p| {
+            let mut w = p.split_whitespace();
+            if !w.any(|s| s == ".param") { return None; }
+            match w.next()? {
+                ".u64" | ".b64" | ".s64" => Some(64),
+                ".u32" | ".b32" | ".s32" => Some(32),
+                _ => None,
+            }
+        }).collect();
+        if actual?.as_slice() != widths { return None; }
+        map.insert(key.to_string(),name.to_string());
+        Some(())
+    };
+    match family {
+        "moe_simt_f16" => {
+            add("count","count_tokens_per_expert_kernel",None,&[64,64,32])?;
+            add("scan","expert_prefix_sum_kernel",None,&[64,64,32])?;
+            add("gemm","moe_gemm_simt_f16_kernel",None,&[64,64,64,64,64,64,32,32,32,32,32])?;
+        }
+        "moe_gguf" => {
+            add("quantize","quantize_q8_1",None,&[64,64,32,32])?;
+            for (tag, block) in [("q8_0","block_q8_0"),("q4_k","block_q4_K"),
+                ("q2_k","block_q2_K"),("q3_k","block_q3_K"),("q5_k","block_q5_K"),("q6_k","block_q6_K")] {
+                add(tag,"moe_gemm_gguf_kernel",Some(block),&[64,64,64,64,64,64,32,32,32,32,32,32])?;
+            }
+        }
+        _ => return None,
+    }
+    Some(map)
 }
