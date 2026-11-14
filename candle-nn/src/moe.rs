@@ -101,6 +101,8 @@ pub fn moe_gemm(
         let stream = dev.cuda_stream().cu_stream() as i64;
         use core::ffi::c_void;
 
+        #[cfg(feature="cuda-dkr-s31")]
+        candle::cuda_backend::dkr_telemetry::handle("candle.native.ptx.v1","moe_simt_f16","static_ffi","",0).record(candle::cuda_backend::dkr_telemetry::Event::FallbackSelected);
         let backend = compiled_moe_backend(data_type).ok_or_else(|| {
             candle::Error::Msg(format!(
                 "no unquantized CUDA MoE backend for dtype id {data_type}"
@@ -288,6 +290,8 @@ pub fn moe_gemm_gguf(
         use core::ffi::c_void;
 
         assert!(size_k % 8 == 0, "size_k must divisible by 8");
+        #[cfg(feature="cuda-dkr-s31")]
+        candle::cuda_backend::dkr_telemetry::handle("candle.native.ptx.v1","moe_gguf","static_ffi","",0).record(candle::cuda_backend::dkr_telemetry::Event::FallbackSelected);
         unsafe {
             if is_prefill && matches!(compiled_moe_backend(if dtype == DType::BF16 { 1 } else { 0 }), Some(MoeBackend::Wmma)) {
                 let input = input.to_dtype(dtype)?;

@@ -20,7 +20,9 @@ pub mod cutile;
 mod device;
 mod error;
 mod utils;
-pub use device::{CudaDevice, DeviceId};
+pub use device::{CudaDevice, DeviceId, CudaFunc};
+#[cfg(feature="cuda-dkr-s31")]
+pub use dkr_kernel_registry::telemetry as dkr_telemetry;
 pub use error::{CudaError, WrapErr};
 pub use utils::{Map1, Map1Any, Map2, Map2Any, Map2InPlace, Map3, S};
 

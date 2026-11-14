@@ -391,6 +391,7 @@ impl CudaDevice {
         if first {
             let (major,minor)=self.context.compute_capability().w()?;
             if (major as u32)*10+(minor as u32) < artifact.key().target_cc(){
+                ev.record(Event::Rejected);
                 crate::bail!("DKR artifact architecture exceeds device");
             }
         }

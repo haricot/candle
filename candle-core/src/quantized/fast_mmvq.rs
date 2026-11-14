@@ -292,7 +292,10 @@ pub fn try_fwd(
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
             #[cfg(not(feature = "cuda-dkr-s31"))]
             let launched = false;
-            if !launched { unsafe {
+            if !launched {
+                #[cfg(feature="cuda-dkr-s31")]
+                dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
+                unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_bf16(
                     rhs_ptr,
                     scratch_ptr,
@@ -336,7 +339,10 @@ pub fn try_fwd(
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
             #[cfg(not(feature = "cuda-dkr-s31"))]
             let launched = false;
-            if !launched { unsafe {
+            if !launched {
+                #[cfg(feature="cuda-dkr-s31")]
+                dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
+                unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_f16(
                     rhs_ptr,
                     scratch_ptr,
@@ -380,7 +386,10 @@ pub fn try_fwd(
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
             #[cfg(not(feature = "cuda-dkr-s31"))]
             let launched = false;
-            if !launched { unsafe {
+            if !launched {
+                #[cfg(feature="cuda-dkr-s31")]
+                dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
+                unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_f32(
                     rhs_ptr,
                     scratch_ptr,

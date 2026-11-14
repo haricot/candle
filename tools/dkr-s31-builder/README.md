@@ -122,3 +122,15 @@ uses content-addressed module and symbol caches scoped to the existing device.
 Mistral typed adapters may use the same method after their own manifest and
 launch ABI validation. Legacy embedded and arbitrary custom modules remain.
 No change to CUDA sources or kernel geometry in this stage.
+
+## S5 — Runtime evidence
+
+Set DKR_TELEMETRY=1 before first registry use. The neutral crate holds bounded
+process-local counters, shared by native and typed adapters. Native submission
+counts are recorded only after successful driver launch calls at instrumented
+sites. Embedded and static FFI selections remain distinct. Physical module
+cache events are separated from logical resolution, with artifact digest.
+The counters represent host submissions, not completed kernels or CUDA Graph
+replays; no synchronization is inserted. Snapshot explicitly after work has
+quiesced via dkr_telemetry::snapshot_json() or EvidenceGuard; per-test nextest
+processes must export separate snapshots. Disable telemetry for benchmarks.

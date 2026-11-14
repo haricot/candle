@@ -266,8 +266,8 @@ mod external {
     }
 
     struct Plan {
-        quant: crate::cuda_backend::device::CudaFunc,
-        mat: crate::cuda_backend::device::CudaFunc,
+        quant: crate::cuda_backend::CudaFunc,
+        mat: crate::cuda_backend::CudaFunc,
         qcfg: LaunchConfig,
         mcfg: LaunchConfig,
     }
@@ -478,6 +478,8 @@ pub fn try_fwd(
             rhs_addr, scratch_ptr as u64, weight_ptr as u64, out_addr)?;
     }
     if !use_external {
+        #[cfg(feature="cuda-dkr-s31")]
+        dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
         let (fixup_ptr, _fixup_guard) = workspace_ensure(&FIXUP_WORKSPACE, dev, fixup_bytes)?;
         let fixup_ptr = fixup_ptr as *mut std::ffi::c_void;
     unsafe {
