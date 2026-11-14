@@ -1,13 +1,13 @@
-# DKR-R1.22/S3.1 — Candle native module bridge
+# DKR-R1.22/S3.1–S3.2 — Candle native module bridge
 
 Branch base: d99f6d77e507688bd9e4b654fbe20ac9e18238fc. This branch is standalone and does not depend on Mistral.rs.
 
-The six original Candle translation units are compiled unchanged using cudaforge
+The eight original Candle translation units are compiled unchanged using cudaforge
 0.1.6, the original legacy BF16/FP8/FP4 flags and SM61. The standalone builder is
 an independent Cargo workspace; its output is not a dependency of Candle's
 normal build. The new candle-core feature cuda-dkr-s31 opts into the bridge.
 Set CANDLE_DKR_S31_DIR to the absolute output directory before creating a CUDA
-device. With no variable, built-in modules are used. With the variable, all six
+device. With no variable, built-in modules are used. With the variable, all eight
 manifests must pass and missing/corrupt modules are errors, not silent fallbacks.
 Other Candle modules, memcpy/alloc/BLAS/cuDNN/RNG paths stay unchanged.
 
@@ -27,8 +27,13 @@ build/cache. Do not change CUDA_COMPUTE_CAP or run cargo clean.
 3. Run identical tensor tests with CANDLE_DKR_S31_DIR unset and set, including
    all supported dtypes, non-contiguous and offset layouts, broadcast, where,
    cast, const_set, copy2d, strided copy, empty tensors and device streams.
-4. Verify actual external dispatch (not yet instrumented), parity and latency.
+4. Verify module-load evidence with CANDLE_DKR_TRACE=1, parity and latency.
+   A module-load event is not a per-operation launch counter.
    No performance claims or merge before the qualification.
 
-S3.2 should reuse the same loading boundary for reduction/indexing; a neutral
+S3.2 adds reduce.cu and indexing.cu unchanged, including Candle-NN softmax,
+RMSNorm and LayerNorm through the same loader. Device construction snapshots
+all eight validated PTX texts; subsequent cold loads perform no file reads.
+The original feature and environment variable names remain for compatibility.
+A neutral
 shared runtime/typed catalog and launch plans require separate design work.

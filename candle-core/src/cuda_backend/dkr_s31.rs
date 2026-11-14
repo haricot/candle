@@ -10,11 +10,11 @@ use cudarc::driver::CudaContext;
 use crate::Result;
 use super::WrapErr;
 
-#[path = "../../../candle-kernels/dkr_s31_contract.rs"]
-mod contract;
+use candle_kernels::dkr_s31_contract as contract;
 
 pub(super) struct ExternalModules {
-    root: PathBuf,
+    modules: std::collections::HashMap<&'static str, String>,
+    trace: bool,
 }
 
 fn family(index: usize) -> Option<&'static str> {
@@ -23,6 +23,8 @@ fn family(index: usize) -> Option<&'static str> {
         (kernels::BINARY.index(), "binary"),
         (kernels::CAST.index(), "cast"),
         (kernels::FILL.index(), "fill"),
+        (kernels::INDEXING.index(), "indexing"),
+        (kernels::REDUCE.index(), "reduce"),
         (kernels::TERNARY.index(), "ternary"),
         (kernels::UNARY.index(), "unary"),
     ].into_iter().find_map(|(id, name)| (id == index).then_some(name))
@@ -65,24 +67,32 @@ impl ExternalModules {
             crate::bail!("CANDLE_DKR_S31_DIR must be an existing absolute directory");
         }
         // Fail before inference if a selected module is absent or corrupt.
-        let packages = Self { root };
-        for name in contract::FAMILIES {
-            packages.read(name)?;
+        let mut modules = std::collections::HashMap::new();
+        for &name in contract::FAMILIES {
+            modules.insert(name, Self::read(&root, name)?);
         }
-        Ok(Some(packages))
+        Ok(Some(Self { modules, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
     }
 
-    fn read(&self, name: &str) -> Result<String> {
-        let manifest = read_text(&self.root.join(name).join("manifest.json"))?;
+    fn read(root: &Path, name: &str) -> Result<String> {
+        let manifest = read_text(&root.join(name).join("manifest.json"))?;
         let manifest: Value = serde_json::from_str(&manifest)
             .map_err(|e| crate::Error::Msg(format!("Candle DKR S3.1 manifest: {e}")))?;
-        let ptx = read_text(&self.root.join(name).join(format!("{name}.ptx")))?;
+        let ptx = read_text(&root.join(name).join(format!("{name}.ptx")))?;
         validate(&manifest, name, &ptx)?;
         Ok(ptx)
     }
 
-    pub(super) fn ptx(&self, index: usize) -> Result<Option<String>> {
-        family(index).map(|name| self.read(name)).transpose()
+    pub(super) fn ptx(&self, index: usize) -> Option<&str> {
+        family(index).and_then(|name| self.modules.get(name)).map(String::as_str)
+    }
+
+    pub(super) fn record_loaded(&self, index: usize) {
+        if self.trace {
+            if let Some(name) = family(index) {
+                eprintln!("CANDLE_DKR_MODULE_LOADED family={name} target=sm61 source=external");
+            }
+        }
     }
 }
 
@@ -103,6 +113,8 @@ mod tests {
         m["sha256"] = serde_json::json!("bad");
         assert!(validate(&m, "unary", text).is_err());
         assert_eq!(family(kernels::UNARY.index()), Some("unary"));
-        assert_eq!(family(kernels::REDUCE.index()), None);
+        assert_eq!(family(kernels::REDUCE.index()), Some("reduce"));
+        assert_eq!(family(kernels::INDEXING.index()), Some("indexing"));
+        assert_eq!(family(kernels::CONV.index()), None);
     }
 }

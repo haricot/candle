@@ -362,15 +362,21 @@ impl CudaDevice {
         }
         #[cfg(feature = "cuda-dkr-s31")]
         let external = match &self.dkr_s31 {
-            Some(packages) => packages.ptx(mdl.index())?,
+            Some(packages) => packages.ptx(mdl.index()),
             None => None,
         };
         #[cfg(not(feature = "cuda-dkr-s31"))]
-        let external: Option<String> = None;
-        let ptx = external.as_deref().unwrap_or_else(|| mdl.ptx());
+        let external: Option<&str> = None;
+        let ptx = external.unwrap_or_else(|| mdl.ptx());
         let cuda_module = self.context.load_module(ptx.into()).w()?;
-        ms.mdls[mdl.index()] = Some(cuda_module.clone());
         let func = cuda_module.load_function(fn_name).w()?;
+        ms.mdls[mdl.index()] = Some(cuda_module.clone());
+        #[cfg(feature = "cuda-dkr-s31")]
+        if external.is_some() {
+            if let Some(packages) = &self.dkr_s31 {
+                packages.record_loaded(mdl.index());
+            }
+        }
         Ok(CudaFunc {
             func,
             stream: self.stream.clone(),

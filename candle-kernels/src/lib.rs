@@ -79,5 +79,8 @@ mdl!(SORT, Sort);
 mdl!(TERNARY, Ternary);
 mdl!(UNARY, Unary);
 
+#[path = "../dkr_s31_contract.rs"]
+pub mod dkr_s31_contract;
+
 pub mod ffi;
 pub mod moe_selection;

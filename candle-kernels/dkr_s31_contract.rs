@@ -8,7 +8,7 @@ pub const FLAGS: &[&str] = &[
     "-DCANDLE_CUDA_LEGACY_FP8=1",
     "-DCANDLE_CUDA_LEGACY_FP4=1",
 ];
-pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "fill", "ternary", "unary"];
+pub const FAMILIES: &[&str] = &["affine", "binary", "cast", "fill", "indexing", "reduce", "ternary", "unary"];
 
 pub fn is_sm61_ptx(ptx: &str) -> bool {
     let mut targets = ptx.lines().filter_map(|line| {

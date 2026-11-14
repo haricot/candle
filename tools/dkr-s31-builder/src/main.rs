@@ -37,7 +37,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         });
         fs::write(dir.join("manifest.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
     }
-    println!("CANDLE_DKR_S31_PACKAGES=STAGED target=sm61 families=6");
+    println!("CANDLE_DKR_S31_PACKAGES=STAGED target=sm61 families={}", contract::FAMILIES.len());
     Ok(())
 }
 
