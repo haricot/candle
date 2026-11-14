@@ -59,6 +59,8 @@ pub struct ModuleStore {
     mdls: [Option<Arc<cudarc::driver::CudaModule>>; kernels::ALL_IDS.len()],
     #[cfg(feature = "cuda-dkr-s31")]
     mmvq: Option<Arc<cudarc::driver::CudaModule>>,
+    #[cfg(feature = "cuda-dkr-s31")]
+    mmq: HashMap<String, Arc<cudarc::driver::CudaModule>>,
 }
 
 #[derive(Clone)]
@@ -406,6 +408,33 @@ impl CudaDevice {
         Ok(Some(CudaFunc { func, stream: self.stream.clone() }))
     }
 
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmq_enabled(&self) -> bool {
+        self.dkr_s31.is_some()
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmq_func(&self, family: &str, key: &str) -> Result<CudaFunc> {
+        let packages = self.dkr_s31.as_ref()
+            .ok_or_else(|| crate::Error::Msg("external MMQ not selected".into()))?;
+        let (ptx, name) = packages.mmq_entry(family, key)
+            .ok_or_else(|| crate::Error::Msg(format!("unknown MMQ entry {family}/{key}")))?;
+        let ms = self.modules.read().unwrap();
+        if let Some(module) = ms.mmq.get(family) {
+            return Ok(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() });
+        }
+        drop(ms);
+        let mut ms = self.modules.write().unwrap();
+        if let Some(module) = ms.mmq.get(family) {
+            return Ok(CudaFunc { func: module.load_function(name).w()?, stream: self.stream.clone() });
+        }
+        let module = self.context.load_module(ptx.into()).w()?;
+        let func = module.load_function(name).w()?;
+        ms.mmq.insert(family.to_string(), module);
+        packages.record_mmq_loaded(family);
+        Ok(CudaFunc { func, stream: self.stream.clone() })
+    }
+
     pub fn cublas_handle(&self) -> Arc<cudarc::cublas::CudaBlas> {
         self.blas.clone()
     }
@@ -430,6 +459,8 @@ impl CudaDevice {
             mdls: [const { None }; kernels::ALL_IDS.len()],
             #[cfg(feature = "cuda-dkr-s31")]
             mmvq: None,
+            #[cfg(feature = "cuda-dkr-s31")]
+            mmq: HashMap::new(),
         };
         Ok(Self {
             id: DeviceId::new(),

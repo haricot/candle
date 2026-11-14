@@ -245,6 +245,118 @@ fn get_device_info(dev: &CudaDevice) -> DeviceInfo {
 // Public entry point
 // ---------------------------------------------------------------------------
 
+// SM61 only: mirror the historical C++ tile selector. Retain a bounded
+// thread-local last plan, including resolved functions and launch configs.
+// No static fixup buffer is needed for conventional tiling.
+#[cfg(feature = "cuda-dkr-s31")]
+mod external {
+    use super::*;
+    use candle_kernels::dkr_s31_contract as contract;
+    use cudarc::driver::{LaunchConfig, PushKernelArg};
+    use crate::cuda_backend::WrapErr;
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    struct Key {
+        device: DeviceId,
+        dtype: GgmlDType,
+        k: usize,
+        padded: usize,
+        rows: usize,
+        batch: usize,
+    }
+
+    struct Plan {
+        key: Key,
+        quant: cudarc::driver::CudaFunction,
+        mat: cudarc::driver::CudaFunction,
+        qcfg: LaunchConfig,
+        mcfg: LaunchConfig,
+    }
+
+    thread_local! {
+        static LAST: std::cell::RefCell<Option<Plan>> = const { std::cell::RefCell::new(None) };
+    }
+
+    fn prepare(dev: &CudaDevice, key: Key) -> Result<Plan> {
+        use cudarc::driver::{result, sys};
+        let stream = dev.cuda_stream();
+        let context = stream.context();
+        let (major, minor) = context.compute_capability().w()?;
+        if (major, minor) != (6,1) { crate::bail!("DKR MMQ requires SM61"); }
+        let cu = context.cu_device();
+        let limit = unsafe { result::device::get_attribute(cu,
+            sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK) }.w()?;
+        let warp = unsafe { result::device::get_attribute(cu,
+            sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE) }.w()?;
+        if warp != 32 || limit <= 0 { crate::bail!("invalid SM61 MMQ device limits"); }
+        let codec = match key.dtype {
+            GgmlDType::Q4_0 => "q4_0", GgmlDType::Q4_1 => "q4_1",
+            GgmlDType::Q5_0 => "q5_0", GgmlDType::Q5_1 => "q5_1", GgmlDType::Q8_0 => "q8_0",
+            GgmlDType::Q2K => "q2_k", GgmlDType::Q3K => "q3_k", GgmlDType::Q4K => "q4_k",
+            GgmlDType::Q5K => "q5_k", GgmlDType::Q6K => "q6_k",
+            _ => crate::bail!("unsupported MMQ format"),
+        };
+        let layout = match ds_layout_for(key.dtype) { DsLayout::D4 => "D4", DsLayout::DS4 => "DS4", DsLayout::D2S6 => "D2S6" };
+        // Ordinary max shared memory, not opt-in; no function attribute mutation.
+        let tile = contract::mmq_tile(codec, key.rows as u32, key.batch as u32, (limit as u32).min(49152))
+            .ok_or_else(|| crate::Error::Msg("no legal SM61 MMQ tile".into()))?;
+        let quant = dev.dkr_mmq_func("mmq_quantize", layout)?.into_cuda_function();
+        let mat = dev.dkr_mmq_func(&format!("mmq_instance_{codec}"),
+            &format!("{}:{}", tile.x, u8::from(tile.checked)))?.into_cuda_function();
+        Ok(Plan {
+            key, quant, mat,
+            qcfg: LaunchConfig { grid_dim: (key.batch as u32, key.padded.div_ceil(512) as u32, 1),
+                block_dim: (128,1,1), shared_mem_bytes: 0 },
+            mcfg: LaunchConfig { grid_dim: tile.grid, block_dim: (32,8,1), shared_mem_bytes: tile.shared },
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn launch(dev: &CudaDevice, dtype: GgmlDType, k: usize, padded: usize,
+        rows: usize, batch: usize, rhs: u64, scratch: u64, weight: u64, output: u64) -> Result<()> {
+        // Kernel indexes include signed int products. Constrain the native ABI
+        // conservatively before any GPU launch (large shapes stay unsupported).
+        if [k,padded,rows,batch].iter().any(|&v| v == 0 || v > i32::MAX as usize)
+            || padded.div_ceil(512) > 65535
+            || rows.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
+            || rows.checked_mul(k).is_none_or(|n| n > i32::MAX as usize)
+            || padded.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
+        { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
+        let key = Key { device:dev.id(), dtype,k,padded,rows,batch };
+        LAST.with(|slot| -> Result<()> {
+            let mut slot = slot.borrow_mut();
+            if slot.as_ref().is_none_or(|p| p.key != key) {
+                *slot = Some(prepare(dev,key)?);
+            }
+            let p = slot.as_ref().unwrap();
+            let stream = dev.cuda_stream();
+            let null = 0u64;
+            let zero64 = 0i64;
+            let k64 = k as i64;
+            let padded64 = padded as i64;
+            let batch32 = batch as i32;
+            let one = 1i32;
+            let zero = 0i32;
+            let mut q = stream.launch_builder(&p.quant);
+            // Original quantize_mmq_q8_1 native ABI (five i64, two i32).
+            q.arg(&rhs).arg(&null).arg(&scratch).arg(&k64).arg(&k64)
+                .arg(&zero64).arg(&zero64).arg(&padded64).arg(&batch32).arg(&one);
+            unsafe { q.launch(p.qcfg.clone()).w()?; }
+            let k32 = k as i32;
+            let rows32 = rows as i32;
+            let stride = (k / qk_for(dtype)) as i32;
+            let mut m = stream.launch_builder(&p.mat);
+            // Exact original dense MMQ ABI; no MoE ids, no Stream-K/fixup.
+            m.arg(&weight).arg(&scratch).arg(&null).arg(&null).arg(&output).arg(&null)
+                .arg(&k32).arg(&rows32).arg(&batch32).arg(&stride).arg(&batch32).arg(&rows32)
+                .arg(&one).arg(&one).arg(&zero).arg(&zero).arg(&zero)
+                .arg(&one).arg(&one).arg(&zero).arg(&zero).arg(&zero).arg(&batch32);
+            unsafe { m.launch(p.mcfg.clone()).w()?; }
+            Ok(())
+        })
+    }
+}
+
 /// Try the fast MMQ path. Returns `Ok(None)` when the fast path is not applicable:
 /// - unsupported quant dtype
 /// - batch size 0
@@ -312,7 +424,8 @@ pub fn try_fwd(
     } else {
         rhs_f32_slice.slice(o1..o2)
     };
-    let rhs_ptr = rhs_f32_slice.device_ptr(&stream).0 as *const std::ffi::c_void;
+    let (rhs_addr, rhs_guard) = rhs_f32_slice.device_ptr(&stream);
+    let rhs_ptr = rhs_addr as *const std::ffi::c_void;
 
     // Compute padded dimensions
     let k_padded = pad(k, MATRIX_ROW_PADDING);
@@ -334,18 +447,28 @@ pub fn try_fwd(
     const MMQ_Y_MAX: usize = 128;
     const MAX_SMS: usize = 256;
     let fixup_bytes = MAX_SMS * MMQ_X_MAX * MMQ_Y_MAX * std::mem::size_of::<f32>();
-    let (fixup_ptr, _fixup_guard) = workspace_ensure(&FIXUP_WORKSPACE, dev, fixup_bytes)?;
-    let fixup_ptr = fixup_ptr as *mut std::ffi::c_void;
+    #[cfg(feature = "cuda-dkr-s31")]
+    let use_external = dev.dkr_mmq_enabled();
+    #[cfg(not(feature = "cuda-dkr-s31"))]
+    let use_external = false;
 
     let weight_ptr = qstorage.device_ptr()? as *const std::ffi::c_void;
     let stride_row_x = (k / qk) as i64;
-    let di = get_device_info(dev);
 
     let out = unsafe { dev.alloc::<f32>(nrows * b_size)? };
     let stride_col_dst = nrows as i64;
 
-    let out_ptr = out.device_ptr(&stream).0 as *mut std::ffi::c_void;
+    let (out_addr, out_guard) = out.device_ptr(&stream);
+    let out_ptr = out_addr as *mut std::ffi::c_void;
 
+    #[cfg(feature = "cuda-dkr-s31")]
+    if use_external {
+        external::launch(dev, w_dtype, k, k_padded, nrows, b_size,
+            rhs_addr, scratch_ptr as u64, weight_ptr as u64, out_addr)?;
+    }
+    if !use_external {
+        let (fixup_ptr, _fixup_guard) = workspace_ensure(&FIXUP_WORKSPACE, dev, fixup_bytes)?;
+        let fixup_ptr = fixup_ptr as *mut std::ffi::c_void;
     unsafe {
         let quantize = quantize_launcher(ds_layout_for(w_dtype));
         quantize(
@@ -364,6 +487,7 @@ pub fn try_fwd(
             stream_ptr,
         );
 
+        let di = get_device_info(dev);
         let launcher = mmq_launcher(w_dtype).expect("supports() checked");
         launcher(
             fixup_ptr,
@@ -382,6 +506,9 @@ pub fn try_fwd(
             stream_ptr,
         );
     }
+    }
+    drop(rhs_guard);
+    drop(out_guard);
 
     let mut out_shape = rhs_l.shape().dims().to_vec();
     out_shape.pop();

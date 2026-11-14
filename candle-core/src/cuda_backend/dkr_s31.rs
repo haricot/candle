@@ -15,6 +15,7 @@ use candle_kernels::dkr_s31_contract as contract;
 pub(super) struct ExternalModules {
     modules: std::collections::HashMap<&'static str, String>,
     trace: bool,
+    mmq_symbols: std::collections::HashMap<&'static str, std::collections::BTreeMap<String, String>>,
 }
 
 fn family(index: usize) -> Option<&'static str> {
@@ -49,6 +50,7 @@ fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
         || flags != contract::FLAGS
         || !contract::is_sm61_ptx(ptx)
         || (name == "mmvq_gguf" && !contract::has_mmvq_entries(ptx))
+        || (name.starts_with("mmq_") && contract::mmq_entries(ptx, name).is_none())
     {
         crate::bail!("Candle DKR S3.1 invalid package for {name}");
     }
@@ -73,7 +75,15 @@ impl ExternalModules {
         for &name in contract::FAMILIES {
             modules.insert(name, Self::read(&root, name)?);
         }
-        Ok(Some(Self { modules, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
+        let mut mmq_symbols = std::collections::HashMap::new();
+        for (&name, ptx) in &modules {
+            if name.starts_with("mmq_") {
+                let symbols = contract::mmq_entries(ptx, name)
+                    .ok_or_else(|| crate::Error::Msg(format!("invalid MMQ entries: {name}")))?;
+                mmq_symbols.insert(name, symbols);
+            }
+        }
+        Ok(Some(Self { modules, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
     }
 
     fn read(root: &Path, name: &str) -> Result<String> {
@@ -87,6 +97,16 @@ impl ExternalModules {
 
     pub(super) fn ptx(&self, index: usize) -> Option<&str> {
         family(index).and_then(|name| self.modules.get(name)).map(String::as_str)
+    }
+
+    pub(super) fn mmq_entry(&self, family: &str, key: &str) -> Option<(&str, &str)> {
+        Some((self.modules.get(family)?.as_str(), self.mmq_symbols.get(family)?.get(key)?.as_str()))
+    }
+
+    pub(super) fn record_mmq_loaded(&self, family: &str) {
+        if self.trace {
+            eprintln!("CANDLE_DKR_MODULE_LOADED family={family} target=sm61 source=external");
+        }
     }
 
     pub(super) fn mmvq_ptx(&self) -> Option<&str> {

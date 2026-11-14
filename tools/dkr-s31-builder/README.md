@@ -48,3 +48,18 @@ The legacy static MMVQ path remains available with external activation unset.
 Fast MMQ remains static pending a separate launch-plan port; its template symbol,
 shared-memory, tile selection and stream-K launch contracts must not be replaced
 with generic GEMM. No CUDA source algorithm has been changed.
+
+## S3.3.1 — Fast MMQ
+
+Adds the eleven original MMQ compilation units without changing CUDA source algorithms.
+Each format requires 16 native C++ entries (eight widths, two boundary variants),
+and the quantizer requires all three Q8_1 layouts. The builder discovers the exact
+Itanium-mangled symbol names from PTX and fails if absent or ambiguous; the loader
+independently reconstructs this inventory. This is a compiler-ABI gate, not an
+assumption that all NVCC versions will emit the same names.
+SM61 uses tile_y=64, 32x8 threads, conventional tiling, exact DP4A shared bytes.
+A last-plan cache per thread retains resolved CUDA functions and geometry;
+no Stream-K fixup allocation is needed in the selected external path.
+Original static routes remain available when the provider is unset. S3.3.1 is
+not compiled or GPU qualified yet; the previous 'MMQ pending' note above is
+superseded at source level only. Total native packages: 21.

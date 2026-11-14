@@ -19,7 +19,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for name in contract::FAMILIES {
         let dir = output.join(name);
         fs::create_dir_all(&dir)?;
-        let cu = source.join(format!("{name}.cu"));
+        let cu = if name.starts_with("mmq_") {
+            source.join("mmq_gguf").join(format!("{name}.cu"))
+        } else {
+            source.join(format!("{name}.cu"))
+        };
         let mut builder = cudaforge::KernelBuilder::new()
             .source_files([&cu]).out_dir(&dir).compute_cap(contract::CC as usize);
         for flag in contract::FLAGS {
@@ -30,10 +34,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if !contract::is_sm61_ptx(&ptx) || (*name == "mmvq_gguf" && !contract::has_mmvq_entries(&ptx)) {
             return Err(format!("invalid SM61 PTX for {name}").into());
         }
+        let mmq_entries = if name.starts_with("mmq_") {
+            Some(contract::mmq_entries(&ptx, name).ok_or_else(|| format!("missing or ambiguous SM61 MMQ entries for {name}"))?)
+        } else { None };
         let manifest = serde_json::json!({
             "schema": contract::SCHEMA, "base_revision": contract::BASE,
             "target_cc": contract::CC, "family": name, "flags": contract::FLAGS,
             "sha256": format!("{:x}", Sha256::digest(ptx.as_bytes())),
+            "mmq_entries": mmq_entries,
         });
         fs::write(dir.join("manifest.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
     }
