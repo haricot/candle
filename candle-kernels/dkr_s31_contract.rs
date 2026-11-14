@@ -28,8 +28,9 @@ pub fn mmvq_entries() -> Vec<String> {
 
 pub fn has_mmvq_entries(ptx: &str) -> bool {
     let entries: std::collections::HashSet<_> = ptx.lines().filter_map(|line| {
-        let (_, tail) = line.split_once(".entry ")?;
-        Some(tail.split(|c: char| c == '(' || c.is_whitespace()).next()?)
+        let mut words = line.split_whitespace();
+        if !words.any(|word| word == ".entry") { return None; }
+        Some(words.next()?.split('(').next()?)
     }).collect();
     mmvq_entries().iter().all(|entry| entries.contains(entry.as_str()))
 }
@@ -45,4 +46,18 @@ pub fn is_sm61_ptx(ptx: &str) -> bool {
     });
     targets.next() == Some("sm_61") && targets.next().is_none()
         && ptx.lines().any(|line| line.split_whitespace().any(|word| word == ".entry"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn mmvq_entry_inventory() {
+        let entries = mmvq_entries();
+        assert_eq!(entries.len(), 243);
+        assert_eq!(entries.iter().collect::<std::collections::HashSet<_>>().len(), 243);
+        let ptx = entries.iter().map(|entry| format!(".visible .entry\t{entry}() {{ ret; }}\n")).collect::<String>();
+        assert!(has_mmvq_entries(&ptx));
+        assert!(!has_mmvq_entries(&ptx.replace(&entries[0], "wrong_symbol")));
+    }
 }
