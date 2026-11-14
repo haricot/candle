@@ -55,6 +55,12 @@ impl Drop for CudaGraphHtodCacheGuard {
     }
 }
 
+#[cfg(feature = "cuda-dkr-s31")]
+struct DkrLoadedModule {
+    module: Arc<cudarc::driver::CudaModule>,
+    functions: HashMap<String, CudaFunction>,
+}
+
 pub struct ModuleStore {
     mdls: [Option<Arc<cudarc::driver::CudaModule>>; kernels::ALL_IDS.len()],
 
@@ -69,7 +75,7 @@ pub struct CudaDevice {
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
     #[cfg(feature = "cuda-dkr-s31")]
-    dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, HashMap<String, CudaFunction>>>>,
+    dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, DkrLoadedModule>>>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
     curand: Arc<Mutex<CudaRng>>,
@@ -356,25 +362,35 @@ impl CudaDevice {
     ) -> Result<(CudaFunc,bool)> {
         if !artifact.has_entry(name) { crate::bail!("DKR entry absent: {name}"); }
         let cached = self.dkr_functions.read().unwrap();
-        if let Some(func) = cached.get(artifact.key()).and_then(|m|m.get(name)) {
+        if let Some(func) = cached.get(artifact.key()).and_then(|m|m.functions.get(name)) {
             return Ok((CudaFunc{func:func.clone(),stream:self.stream.clone()},false));
         }
         drop(cached);
         let mut cached=self.dkr_functions.write().unwrap();
-        if let Some(func)=cached.get(artifact.key()).and_then(|m|m.get(name)){
+        if let Some(func)=cached.get(artifact.key()).and_then(|m|m.functions.get(name)){
             return Ok((CudaFunc{func:func.clone(),stream:self.stream.clone()},false));
         }
         // Context is verified once for each physical module on its cold path.
         let first=!cached.contains_key(artifact.key());
         if first {
             let (major,minor)=self.context.compute_capability().w()?;
-            if (major as u32)*10+minor as u32 < artifact.key().target_cc(){
+            if (major as u32)*10+(minor as u32) < artifact.key().target_cc(){
                 crate::bail!("DKR artifact architecture exceeds device");
             }
         }
-        let func=self.get_or_load_custom_func(name,&artifact.key().module_key(),artifact.ptx())?;
-        cached.entry(artifact.key().clone()).or_default().insert(name.to_owned(),func.func.clone());
-        Ok((func,first))
+        let func = if let Some(loaded)=cached.get_mut(artifact.key()) {
+            let func=loaded.module.load_function(name).w()?;
+            loaded.functions.insert(name.to_owned(),func.clone());
+            func
+        } else {
+            let module=self.context.load_module(artifact.ptx().into()).w()?;
+            let func=module.load_function(name).w()?;
+            let mut functions=HashMap::new();
+            functions.insert(name.to_owned(),func.clone());
+            cached.insert(artifact.key().clone(),DkrLoadedModule{module,functions});
+            func
+        };
+        Ok((CudaFunc{func,stream:self.stream.clone()},first))
     }
 
     pub fn get_or_load_func(&self, fn_name: &str, mdl: &kernels::Module) -> Result<CudaFunc> {

@@ -266,7 +266,6 @@ mod external {
     }
 
     struct Plan {
-        key: Key,
         quant: cudarc::driver::CudaFunction,
         mat: cudarc::driver::CudaFunction,
         qcfg: LaunchConfig,
@@ -275,8 +274,8 @@ mod external {
 
     const PLAN_CAPACITY: usize = 64;
     thread_local! {
-        static PLANS: std::cell::RefCell<std::collections::VecDeque<Plan>> =
-            const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+        static PLANS: std::cell::RefCell<dkr_kernel_registry::PlanCache<Key,Plan,PLAN_CAPACITY>> =
+            const { std::cell::RefCell::new(dkr_kernel_registry::PlanCache::new()) };
     }
 
     fn prepare(dev: &CudaDevice, key: Key) -> Result<Plan> {
@@ -306,7 +305,7 @@ mod external {
         let mat = dev.dkr_mmq_func(&format!("mmq_instance_{codec}"),
             &format!("{}:{}", tile.x, u8::from(tile.checked)))?.into_cuda_function();
         Ok(Plan {
-            key, quant, mat,
+            quant, mat,
             qcfg: LaunchConfig { grid_dim: (key.batch as u32, key.padded.div_ceil(512) as u32, 1),
                 block_dim: (128,1,1), shared_mem_bytes: 0 },
             mcfg: LaunchConfig { grid_dim: tile.grid, block_dim: (32,8,1), shared_mem_bytes: tile.shared },
@@ -326,17 +325,7 @@ mod external {
         { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
         let key = Key { device:dev.id(), dtype,k,padded,rows,batch };
         PLANS.with(|slot| -> Result<()> {
-            let mut slot = slot.borrow_mut();
-            if slot.front().is_none_or(|p| p.key != key) {
-                let plan = if let Some(i) = slot.iter().position(|p| p.key == key) {
-                    slot.remove(i).unwrap()
-                } else {
-                    prepare(dev,key)?
-                };
-                slot.push_front(plan);
-                if slot.len() > PLAN_CAPACITY { slot.pop_back(); }
-            }
-            let p = slot.front().unwrap();
+            slot.borrow_mut().with_plan(key, || prepare(dev,key), |p| {
             let stream = dev.cuda_stream();
             let null = 0u64;
             let zero64 = 0i64;
@@ -361,6 +350,7 @@ mod external {
                 .arg(&one).arg(&one).arg(&zero).arg(&zero).arg(&zero).arg(&batch32);
             unsafe { m.launch(p.mcfg.clone()).w()?; }
             Ok(())
+            })
         })
     }
 }

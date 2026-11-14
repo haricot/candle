@@ -36,10 +36,13 @@ fn family(index: usize) -> Option<&'static str> {
     ].into_iter().find_map(|(id, name)| (id == index).then_some(name))
 }
 
-fn read_text(path: &Path) -> Result<String> {
-    std::fs::read_to_string(path).map_err(|e| {
-        crate::Error::Msg(format!("Candle DKR S3.1 {}: {e}", path.display()))
-    })
+fn read_text(path: &Path, limit: usize) -> Result<String> {
+    use std::io::Read;
+    let file=std::fs::File::open(path).map_err(|e| crate::Error::Msg(format!("Candle DKR {}: {e}",path.display())))?;
+    let mut bytes=Vec::new();
+    file.take((limit+1) as u64).read_to_end(&mut bytes).map_err(|e|crate::Error::Msg(e.to_string()))?;
+    if bytes.len()>limit {crate::bail!("Candle DKR package size exceeded: {}",path.display());}
+    String::from_utf8(bytes).map_err(|e|crate::Error::Msg(e.to_string()))
 }
 
 fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
@@ -102,10 +105,10 @@ impl ExternalModules {
     }
 
     fn read(root: &Path, name: &str) -> Result<VerifiedArtifact> {
-        let manifest = read_text(&root.join(name).join("manifest.json"))?;
+        let manifest = read_text(&root.join(name).join("manifest.json"), 256*1024)?;
         let manifest: Value = serde_json::from_str(&manifest)
             .map_err(|e| crate::Error::Msg(format!("Candle DKR S3.1 manifest: {e}")))?;
-        let ptx = read_text(&root.join(name).join(format!("{name}.ptx")))?;
+        let ptx = read_text(&root.join(name).join(format!("{name}.ptx")), dkr_kernel_registry::MAX_PTX_BYTES)?;
         validate(&manifest, name, &ptx)?;
         VerifiedArtifact::new(ptx, contract::CC, manifest["sha256"].as_str().unwrap_or("")).map_err(crate::Error::Msg)
     }
