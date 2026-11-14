@@ -205,10 +205,12 @@ fn try_dkr_launch(
     let mut q = quant.builder();
     q.arg(&rhs).arg(&scratch).arg(&k_i32).arg(&padded_i32);
     unsafe { q.launch(qcfg).w()?; }
+    quant.record_submission();
     let mut m = mat.builder();
     m.arg(&weight).arg(&scratch).arg(&output).arg(&k_i32).arg(&rows_i32)
         .arg(&stride_col_y).arg(&stride_col_dst);
     unsafe { m.launch(mcfg).w()?; }
+    mat.record_submission();
     Ok(true)
 }
 

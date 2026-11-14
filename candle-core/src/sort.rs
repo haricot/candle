@@ -102,6 +102,7 @@ mod cuda {
             let ncols_pad = ncols_pad as i32;
             builder.arg(&slice).arg(&dst).arg(&ncols).arg(&ncols_pad);
             unsafe { builder.launch(cfg) }.w()?;
+            func.record_submission();
             Ok(S::U32(dst))
         }
     }

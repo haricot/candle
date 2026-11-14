@@ -5,6 +5,8 @@ use sha2::{Digest,Sha256};
 use std::collections::{HashMap,VecDeque};
 use std::hash::Hash;
 
+pub mod telemetry;
+
 pub const NATIVE_ABI: &str = "candle.native.ptx.v1";
 pub const TYPED_ABI: &str = "dkr.typed.v1";
 pub const MAX_PTX_BYTES: usize = 32*1024*1024;
@@ -129,14 +131,24 @@ impl<K:Eq,P,const N:usize> PlanCache<K,P,N>{
     pub fn len(&self)->usize{self.entries.len()}
     pub fn with_plan<T,E>(&mut self,key:K,prepare:impl FnOnce()->Result<P,E>,
                          launch:impl FnOnce(&P)->Result<T,E>)->Result<T,E>{
+        self.with_plan_for("shared","launch_plan",key,prepare,launch)
+    }
+    pub fn with_plan_for<T,E>(&mut self,abi:&str,operation:&str,key:K,prepare:impl FnOnce()->Result<P,E>,
+                         launch:impl FnOnce(&P)->Result<T,E>)->Result<T,E>{
+        use telemetry::Event;
+        let evidence=telemetry::handle(abi,operation,"","",0);
         assert!(N>0,"zero DKR plan cache capacity");
         if self.entries.front().is_none_or(|(k,_)|k!=&key){
             let entry=if let Some(i)=self.entries.iter().position(|(k,_)|k==&key){
+                evidence.record(Event::PlanHit);
                 self.entries.remove(i).expect("existing plan")
-            }else{(key,prepare()?)};
+            }else{
+                evidence.record(Event::PlanMiss);
+                match prepare(){Ok(p)=>(key,p),Err(e)=>{evidence.record(Event::PrepareError);return Err(e)}}
+            };
             self.entries.push_front(entry);
-            if self.entries.len()>N{self.entries.pop_back();}
-        }
+            if self.entries.len()>N{self.entries.pop_back();evidence.record(Event::PlanEvicted);}
+        }else{evidence.record(Event::PlanHit);}
         launch(&self.entries.front().expect("resident plan").1)
     }
 }

@@ -20,7 +20,7 @@ pub(super) struct ExternalModules {
     mmq_symbols: std::collections::HashMap<&'static str, std::collections::BTreeMap<String, String>>,
 }
 
-fn family(index: usize) -> Option<&'static str> {
+pub(super) fn family(index: usize) -> Option<&'static str> {
     [
         (kernels::AFFINE.index(), "affine"),
         (kernels::BINARY.index(), "binary"),

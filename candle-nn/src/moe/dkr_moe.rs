@@ -83,15 +83,18 @@ pub(super) fn simt(input:&Tensor, weights:&Tensor, route:&Option<Tensor>, sorted
     let mut b=stream.launch_builder(&count);
     b.arg(&ep).arg(&cp).arg(&mi);
     unsafe{b.launch(LaunchConfig{grid_dim:(m.div_ceil(256) as u32,1,1),block_dim:(256,1,1),shared_mem_bytes:0}).w()?;}
+    count.record_submission();
     // Same integer prefix sum for prefill and decode, bounded to 1024 experts.
     let scan_threads=e.max(32) as u32;
     let mut b=stream.launch_builder(&scan);
     b.arg(&cp).arg(&op).arg(&ei);
     unsafe{b.launch(LaunchConfig{grid_dim:(1,1,1),block_dim:(scan_threads,1,1),shared_mem_bytes:scan_threads*4}).w()?;}
+    scan.record_submission();
     let mut b=stream.launch_builder(&gemm);
     b.arg(&ip).arg(&wp).arg(&sp).arg(&op).arg(&rp).arg(&yp)
         .arg(&ei).arg(&ti).arg(&mi).arg(&ni).arg(&ki);
     unsafe{b.launch(LaunchConfig{grid_dim:(e as u32,n.div_ceil(32) as u32,1),block_dim:(128,1,1),shared_mem_bytes:2304}).w()?;}
+    gemm.record_submission();
     drop((ig,wg,sg,eg,rg,cg,og,yg));
     result(out,dev,m,n)
 }
@@ -140,10 +143,12 @@ pub(super) fn gguf(input:&Tensor,weights:&QTensor,route:&Option<Tensor>,sorted:&
     let mut b=stream.launch_builder(&quant);
     b.arg(&ip).arg(&qp).arg(&ki).arg(&pi);
     unsafe{b.launch(LaunchConfig{grid_dim:(padded.div_ceil(256) as u32,r as u32,1),block_dim:(256,1,1),shared_mem_bytes:0}).w()?;}
+    quant.record_submission();
     let mut b=stream.launch_builder(&gemm);
     b.arg(&wp).arg(&qp).arg(&sp).arg(&ep).arg(&rp).arg(&yp)
         .arg(&ei).arg(&ti).arg(&mi).arg(&ni).arg(&ki).arg(&pi);
     unsafe{b.launch(LaunchConfig{grid_dim:(n.div_ceil(4) as u32,m as u32,1),block_dim:(32,4,1),shared_mem_bytes:shared as u32}).w()?;}
+    gemm.record_submission();
     drop((ig,sg,eg,wg,rg,qg,yg));
     result(out,dev,m,n)
 }

@@ -121,6 +121,7 @@ impl candle::CustomOp1 for Sigmoid {
                 builder.arg(&out);
                 // SAFETY: ffi.
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 Ok(out)
             }
         }
@@ -372,6 +373,7 @@ impl candle::CustomOp1 for SoftmaxLastDim {
                 candle::builder_arg!(builder, n_cols as i32);
                 // SAFETY: ffi.
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 Ok(dst)
             }
         }
@@ -593,6 +595,7 @@ impl candle::CustomOp2 for RmsNorm {
                 candle::builder_arg!(builder, n_cols as i32, block_size as i32, self.eps);
                 // SAFETY: ffi.
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 Ok(dst)
             }
         }
@@ -838,6 +841,7 @@ impl candle::CustomOp3 for LayerNorm {
                 candle::builder_arg!(builder, n_cols as i32, block_size as i32, self.eps);
                 // SAFETY: ffi.
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 Ok(dst)
             }
         }

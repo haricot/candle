@@ -266,8 +266,8 @@ mod external {
     }
 
     struct Plan {
-        quant: cudarc::driver::CudaFunction,
-        mat: cudarc::driver::CudaFunction,
+        quant: crate::cuda_backend::device::CudaFunc,
+        mat: crate::cuda_backend::device::CudaFunc,
         qcfg: LaunchConfig,
         mcfg: LaunchConfig,
     }
@@ -301,9 +301,9 @@ mod external {
         // Ordinary max shared memory, not opt-in; no function attribute mutation.
         let tile = contract::mmq_tile(codec, key.rows as u32, key.batch as u32, (limit as u32).min(49152))
             .ok_or_else(|| crate::Error::Msg("no legal SM61 MMQ tile".into()))?;
-        let quant = dev.dkr_mmq_func("mmq_quantize", layout)?.into_cuda_function();
+        let quant = dev.dkr_mmq_func("mmq_quantize", layout)?;
         let mat = dev.dkr_mmq_func(&format!("mmq_instance_{codec}"),
-            &format!("{}:{}", tile.x, u8::from(tile.checked)))?.into_cuda_function();
+            &format!("{}:{}", tile.x, u8::from(tile.checked)))?;
         Ok(Plan {
             quant, mat,
             qcfg: LaunchConfig { grid_dim: (key.batch as u32, key.padded.div_ceil(512) as u32, 1),
@@ -325,7 +325,7 @@ mod external {
         { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
         let key = Key { device:dev.id(), dtype,k,padded,rows,batch };
         PLANS.with(|slot| -> Result<()> {
-            slot.borrow_mut().with_plan(key, || prepare(dev,key), |p| {
+            slot.borrow_mut().with_plan_for(dkr_kernel_registry::NATIVE_ABI,"fast_mmq",key, || prepare(dev,key), |p| {
             let stream = dev.cuda_stream();
             let null = 0u64;
             let zero64 = 0i64;
@@ -339,6 +339,7 @@ mod external {
             q.arg(&rhs).arg(&null).arg(&scratch).arg(&k64).arg(&k64)
                 .arg(&zero64).arg(&zero64).arg(&padded64).arg(&batch32).arg(&one);
             unsafe { q.launch(p.qcfg.clone()).w()?; }
+            p.quant.record_submission();
             let k32 = k as i32;
             let rows32 = rows as i32;
             let stride = (k / qk_for(dtype)) as i32;
@@ -349,6 +350,7 @@ mod external {
                 .arg(&one).arg(&one).arg(&zero).arg(&zero).arg(&zero)
                 .arg(&one).arg(&one).arg(&zero).arg(&zero).arg(&zero).arg(&batch32);
             unsafe { m.launch(p.mcfg.clone()).w()?; }
+            p.mat.record_submission();
             Ok(())
             })
         })

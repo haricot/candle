@@ -267,6 +267,8 @@ pub(crate) fn cuda_graph_htod_cache_enabled() -> bool {
 pub struct CudaFunc {
     func: CudaFunction,
     stream: Arc<cudarc::driver::CudaStream>,
+    #[cfg(feature = "cuda-dkr-s31")]
+    evidence: dkr_kernel_registry::telemetry::Handle,
 }
 
 impl std::ops::Deref for CudaFunc {
@@ -278,6 +280,21 @@ impl std::ops::Deref for CudaFunc {
 }
 
 impl CudaFunc {
+    fn new(func:CudaFunction,stream:Arc<cudarc::driver::CudaStream>)->Self {
+        Self{func,stream,#[cfg(feature="cuda-dkr-s31")] evidence:Default::default()}
+    }
+    #[inline] pub fn record_submission(&self){
+        #[cfg(feature="cuda-dkr-s31")]
+        self.evidence.record(dkr_kernel_registry::telemetry::Event::Submitted);
+    }
+    #[cfg(feature="cuda-dkr-s31")]
+    fn native_evidence(mut self,operation:&str,name:&str,artifact:Option<&dkr_kernel_registry::VerifiedArtifact>)->Self{
+        use dkr_kernel_registry::{telemetry::{self,Event},NATIVE_ABI};
+        let (sha,cc)=artifact.map_or(("",0),|a|(a.key().sha256(),a.key().target_cc()));
+        self.evidence=telemetry::handle(NATIVE_ABI,operation,name,sha,cc);
+        self.evidence.record(if artifact.is_some(){Event::Resolved}else{Event::FallbackSelected});
+        self
+    }
     pub fn into_cuda_function(self) -> CudaFunction {
         self.func
     }
@@ -335,23 +352,17 @@ impl CudaDevice {
         let ms = self.custom_modules.read().unwrap();
         if let Some(mdl) = ms.get(module_name).as_ref() {
             let func = mdl.load_function(fn_name).w()?;
-            return Ok(CudaFunc {
-                func,
-                stream: self.stream.clone(),
-            });
+            return Ok(CudaFunc::new(func,self.stream.clone()));
         }
         drop(ms);
         let mut ms = self.custom_modules.write().unwrap();
         if let Some(module) = ms.get(module_name) {
-            return Ok(CudaFunc { func: module.load_function(fn_name).w()?, stream: self.stream.clone() });
+            return Ok(CudaFunc::new(module.load_function(fn_name).w()?,self.stream.clone()));
         }
         let cuda_module = self.context.load_module(ptx.into()).w()?;
         let func = cuda_module.load_function(fn_name).w()?;
         ms.insert(module_name.to_string(), cuda_module);
-        Ok(CudaFunc {
-            func,
-            stream: self.stream.clone(),
-        })
+        Ok(CudaFunc::new(func,self.stream.clone()))
     }
 
     /// Shared content-addressed module/function cache. Both ABI adapters validate
@@ -360,17 +371,22 @@ impl CudaDevice {
     pub fn get_or_load_dkr_func(
         &self, artifact: &dkr_kernel_registry::VerifiedArtifact, name: &str,
     ) -> Result<(CudaFunc,bool)> {
-        if !artifact.has_entry(name) { crate::bail!("DKR entry absent: {name}"); }
+        use dkr_kernel_registry::telemetry::{self,Event};
+        let ev=telemetry::handle("transport","verified_module",name,artifact.key().sha256(),artifact.key().target_cc());
+        if !artifact.has_entry(name) { ev.record(Event::Rejected);crate::bail!("DKR entry absent: {name}"); }
         let cached = self.dkr_functions.read().unwrap();
         if let Some(func) = cached.get(artifact.key()).and_then(|m|m.functions.get(name)) {
-            return Ok((CudaFunc{func:func.clone(),stream:self.stream.clone()},false));
+            ev.record(Event::FunctionHit);
+            return Ok((CudaFunc::new(func.clone(),self.stream.clone()),false));
         }
         drop(cached);
         let mut cached=self.dkr_functions.write().unwrap();
         if let Some(func)=cached.get(artifact.key()).and_then(|m|m.functions.get(name)){
-            return Ok((CudaFunc{func:func.clone(),stream:self.stream.clone()},false));
+            ev.record(Event::FunctionHit);
+            return Ok((CudaFunc::new(func.clone(),self.stream.clone()),false));
         }
         // Context is verified once for each physical module on its cold path.
+        ev.record(Event::FunctionMiss);
         let first=!cached.contains_key(artifact.key());
         if first {
             let (major,minor)=self.context.compute_capability().w()?;
@@ -390,7 +406,8 @@ impl CudaDevice {
             cached.insert(artifact.key().clone(),DkrLoadedModule{module,functions});
             func
         };
-        Ok((CudaFunc{func,stream:self.stream.clone()},first))
+        if first {ev.record(Event::ModuleLoaded);}
+        Ok((CudaFunc::new(func,self.stream.clone()),first))
     }
 
     pub fn get_or_load_func(&self, fn_name: &str, mdl: &kernels::Module) -> Result<CudaFunc> {
@@ -399,22 +416,29 @@ impl CudaDevice {
             if let Some(artifact)=packages.ptx(mdl.index()){
                 let (func,first)=self.get_or_load_dkr_func(artifact,fn_name)?;
                 if first {packages.record_loaded(mdl.index());}
-                return Ok(func);
+                return Ok(func.native_evidence(dkr_s31::family(mdl.index()).unwrap_or("unknown"),fn_name,Some(artifact)));
             }
         }
+        #[cfg(feature="cuda-dkr-s31")] let module_index=mdl.index();
         let ms = self.modules.read().unwrap();
         if let Some(mdl) = ms.mdls[mdl.index()].as_ref() {
-            return Ok(CudaFunc {func:mdl.load_function(fn_name).w()?,stream:self.stream.clone()});
+            let f=CudaFunc::new(mdl.load_function(fn_name).w()?,self.stream.clone());
+            #[cfg(feature="cuda-dkr-s31")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
+            return Ok(f);
         }
         drop(ms);
         let mut ms = self.modules.write().unwrap();
         if let Some(module)=ms.mdls[mdl.index()].as_ref(){
-            return Ok(CudaFunc {func:module.load_function(fn_name).w()?,stream:self.stream.clone()});
+            let f=CudaFunc::new(module.load_function(fn_name).w()?,self.stream.clone());
+            #[cfg(feature="cuda-dkr-s31")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
+            return Ok(f);
         }
         let module=self.context.load_module(mdl.ptx().into()).w()?;
         let func=module.load_function(fn_name).w()?;
         ms.mdls[mdl.index()]=Some(module);
-        Ok(CudaFunc{func,stream:self.stream.clone()})
+        let f=CudaFunc::new(func,self.stream.clone());
+        #[cfg(feature="cuda-dkr-s31")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
+        Ok(f)
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
@@ -423,7 +447,7 @@ impl CudaDevice {
         let artifact=packages.mmvq_ptx().ok_or_else(||crate::Error::Msg("DKR MMVQ package missing".into()))?;
         let (func,first)=self.get_or_load_dkr_func(artifact,name)?;
         if first{packages.record_mmvq_loaded();}
-        Ok(Some(func))
+        Ok(Some(func.native_evidence("mmvq_gguf",name,Some(artifact))))
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
@@ -435,7 +459,7 @@ impl CudaDevice {
         let (artifact,name)=packages.mmq_entry(family,key).ok_or_else(||crate::Error::Msg(format!("unknown native entry {family}/{key}")))?;
         let (func,first)=self.get_or_load_dkr_func(artifact,name)?;
         if first{packages.record_mmq_loaded(family);}
-        Ok(func)
+        Ok(func.native_evidence(family,name,Some(artifact)))
     }
 
     /// Experimental native MoE provider; caller must uphold tensor/stream ABI.
@@ -443,11 +467,11 @@ impl CudaDevice {
     pub fn dkr_moe_enabled(&self) -> bool { self.dkr_s31.is_some() }
 
     #[cfg(feature = "cuda-dkr-s31")]
-    pub fn dkr_moe_function(&self, family: &str, key: &str) -> Result<CudaFunction> {
+    pub fn dkr_moe_function(&self, family: &str, key: &str) -> Result<CudaFunc> {
         if !matches!(family, "moe_simt_f16" | "moe_gguf") {
             crate::bail!("invalid DKR MoE family");
         }
-        Ok(self.dkr_mmq_func(family,key)?.into_cuda_function())
+        self.dkr_mmq_func(family,key)
     }
 
     pub fn cublas_handle(&self) -> Arc<cudarc::cublas::CudaBlas> {

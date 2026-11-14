@@ -95,6 +95,7 @@ fn quantize_q8_1(
         builder.arg(&dst_chunk);
         barg!(builder, k as i32, kx_padded as i32);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
 
         rows_processed += rows_in_chunk;
     }
@@ -149,6 +150,7 @@ fn dequantize_f32(
         builder.arg(&data.inner);
         builder.arg(&dst);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
     } else {
         let nb32 = match dtype {
             GgmlDType::Q5_0 | GgmlDType::Q5_1 => elem_count,
@@ -159,6 +161,7 @@ fn dequantize_f32(
         builder.arg(&dst);
         barg!(builder, nb32 as i32);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
     }
     Ok(CudaStorage::wrap_cuda_slice(dst, dev.clone()))
 }
@@ -210,6 +213,7 @@ fn dequantize_f16(
         builder.arg(&data.inner);
         builder.arg(&dst);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
     } else {
         let nb32 = match dtype {
             GgmlDType::Q5_0 | GgmlDType::Q5_1 => elem_count,
@@ -220,6 +224,7 @@ fn dequantize_f16(
         builder.arg(&dst);
         barg!(builder, nb32 as i32);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
     }
     Ok(CudaStorage::wrap_cuda_slice(dst, dev.clone()))
 }
@@ -314,6 +319,7 @@ fn get_rows(
     builder.arg(&dst);
     barg!(builder, hidden as i64, row_stride);
     unsafe { builder.launch(cfg) }.w()?;
+    func.record_submission();
     Ok(CudaStorage::wrap_cuda_slice(dst, dev.clone()))
 }
 
@@ -360,6 +366,7 @@ fn dequantize_mul_mat_vec(
     builder.arg(&dst);
     barg!(builder, ncols as i32, nrows as i32);
     unsafe { builder.launch(cfg) }.w()?;
+    func.record_submission();
     Ok(CudaStorage::wrap_cuda_slice(dst, dev.clone()))
 }
 
@@ -431,6 +438,7 @@ fn mul_mat_vec_via_q8_1(
         /* nrows_dst */ nrows as i32
     );
     unsafe { builder.launch(cfg) }.w()?;
+    func.record_submission();
     Ok(CudaStorage::wrap_cuda_slice(dst, dev.clone()))
 }
 
@@ -516,6 +524,7 @@ fn mul_mat_via_q8_1(
         /* nrows_dst */ x_rows as i32
     );
     unsafe { builder.launch(cfg) }.w()?;
+    func.record_submission();
     Ok(CudaStorage::wrap_cuda_slice(dst, dev.clone()))
 }
 
@@ -598,6 +607,7 @@ fn indexed_moe_forward_fused_q8_1_input(
         input_dim1 as i32
     );
     unsafe { builder.launch(cfg) }.w()?;
+    func.record_submission();
 
     Ok((
         CudaStorage::wrap_cuda_slice(out, dev.clone()),
@@ -1162,6 +1172,7 @@ mod test {
         builder.arg(&out);
         barg!(builder, 2i32);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
 
         let got = dev.clone_dtoh(&out.as_view())?;
         let e2m1 = [
@@ -1476,6 +1487,7 @@ mod test {
             builder.arg(&out);
             barg!(builder, k as i32, rows as i32, k_padded as i32, rows as i32);
             unsafe { builder.launch(cfg) }.w()?;
+            func.record_submission();
             let got = dev.clone_dtoh(&out.as_view())?;
 
             assert_nvfp4_close(
@@ -1543,6 +1555,7 @@ mod test {
             rows as i32
         );
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         let got = dev.clone_dtoh(&out.as_view())?;
         assert_nvfp4_close(&expected_kernel, &got, "kernel_prefill_batch_17");
         let e2e = nvfp4_metrics(&expected_f32, &got);
@@ -1635,6 +1648,7 @@ mod test {
             k_padded as i32
         );
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         let got_moe = dev.clone_dtoh(&moe_out.as_view())?;
         assert_nvfp4_close(&expected_moe, &got_moe, "kernel_indexed_moe");
 
@@ -1712,6 +1726,7 @@ mod test {
             builder.arg(&kernel_stage_out);
             barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(kernel_stage_cfg) }.w()?;
+            kernel_stage_func.record_submission();
         }
         stream.synchronize().w()?;
         let kernel_start = std::time::Instant::now();
@@ -1724,6 +1739,7 @@ mod test {
             builder.arg(&kernel_stage_out);
             barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(kernel_stage_cfg) }.w()?;
+            kernel_stage_func.record_submission();
             stream.synchronize().w()?;
         }
         let kernel_latency_us = kernel_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
@@ -1754,6 +1770,7 @@ mod test {
             builder.arg(&predecoded_out);
             barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(predecoded_cfg) }.w()?;
+            predecoded_func.record_submission();
         }
         stream.synchronize().w()?;
         let predecoded_start = std::time::Instant::now();
@@ -1765,6 +1782,7 @@ mod test {
             builder.arg(&predecoded_out);
             barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(predecoded_cfg) }.w()?;
+            predecoded_func.record_submission();
             stream.synchronize().w()?;
         }
         let predecoded_kernel_us = predecoded_start.elapsed().as_secs_f64() * 1e6 / runs as f64;
@@ -1792,6 +1810,7 @@ mod test {
             builder.arg(&out);
             barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
             unsafe { builder.launch(cfg) }.w()?;
+            func.record_submission();
             dev.clone_dtoh(&out.as_view()).map_err(Into::into)
         };
 
@@ -1864,6 +1883,7 @@ mod test {
                 builder.arg(&aos_out);
                 barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(aos_cfg) }.w()?;
+                aos_func.record_submission();
             }
             stream.synchronize().w()?;
 
@@ -1877,6 +1897,7 @@ mod test {
                 builder.arg(&aos_out);
                 barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(aos_cfg) }.w()?;
+                aos_func.record_submission();
             }
             stream.synchronize().w()?;
             let aos_us = aos_start.elapsed().as_secs_f64() * 1e6 / aos_launches as f64;
@@ -1918,6 +1939,7 @@ mod test {
                 builder.arg(&split_out);
                 barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(split_cfg) }.w()?;
+                split_func.record_submission();
             }
             stream.synchronize().w()?;
 
@@ -1932,6 +1954,7 @@ mod test {
                 builder.arg(&split_out);
                 barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(split_cfg) }.w()?;
+                split_func.record_submission();
             }
             stream.synchronize().w()?;
             let split_us = split_start.elapsed().as_secs_f64() * 1e6 / split_launches as f64;
@@ -1972,6 +1995,7 @@ mod test {
                 builder.arg(&sweep_out);
                 barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(sweep_cfg) }.w()?;
+                sweep_func.record_submission();
             }
             stream.synchronize().w()?;
 
@@ -1985,6 +2009,7 @@ mod test {
                 builder.arg(&sweep_out);
                 barg!(builder, k as i32, n as i32, k_padded as i32, n as i32);
                 unsafe { builder.launch(sweep_cfg) }.w()?;
+                sweep_func.record_submission();
                 stream.synchronize().w()?;
             }
             let sweep_us = sweep_start.elapsed().as_secs_f64() * 1e6 / runs as f64;

@@ -269,6 +269,7 @@ impl Map1 for Affine {
         barg!(builder, T::from_f64(self.1));
         // SAFETY: ffi.
         unsafe { builder.launch(cfg).w() }?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -299,6 +300,7 @@ impl Map1 for Elu {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -347,6 +349,7 @@ impl Map1 for Im2Col1D {
         builder.arg(&dst);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(dst)
     }
 }
@@ -400,6 +403,7 @@ impl Map1 for Im2Col {
         builder.arg(&dst);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(dst)
     }
 }
@@ -430,6 +434,7 @@ impl Map1 for Powf {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -514,6 +519,7 @@ impl Map1Any for FastReduce<'_> {
             builder.arg(&out);
             // SAFETY: ffi.
             unsafe { builder.launch(cfg) }.w()?;
+            func.record_submission();
             Ok(S::U32(out))
         } else {
             // SAFETY: filled in by the follow up kernel.
@@ -527,6 +533,7 @@ impl Map1Any for FastReduce<'_> {
             builder.arg(&out);
             // SAFETY: ffi.
             unsafe { builder.launch(cfg) }.w()?;
+            func.record_submission();
             Ok(wrap(out))
         }
     }
@@ -556,6 +563,7 @@ impl<U: UnaryOpT> Map1 for U {
         builder.arg(&mut out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -615,6 +623,7 @@ impl Map1 for IndexSelect<'_> {
         barg!(builder, right_size);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -668,6 +677,7 @@ impl Map1 for Gather<'_> {
         barg!(builder, right_sz);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -722,6 +732,7 @@ impl Map2InPlace for IndexAdd<'_> {
         barg!(builder, left_sz, src_dim_sz, dst_dim_sz, right_sz);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(())
     }
 }
@@ -774,6 +785,7 @@ impl Map2InPlace for Scatter<'_> {
         barg!(builder, left_sz, src_dim_sz, dst_dim_sz, right_sz);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(())
     }
 }
@@ -826,6 +838,7 @@ impl Map2InPlace for ScatterAdd<'_> {
         barg!(builder, left_sz, src_dim_sz, dst_dim_sz, right_sz);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(())
     }
 }
@@ -870,6 +883,7 @@ impl Map2 for Conv1D<'_> {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -913,6 +927,7 @@ impl Map2 for Conv2D<'_> {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -941,6 +956,7 @@ impl Map1 for Col2Im1D {
         builder.arg(col);
         builder.arg(&mut im);
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(im)
     }
 }
@@ -989,6 +1005,7 @@ impl Map2 for ConvTranspose1D<'_> {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1038,6 +1055,7 @@ impl Map2 for ConvTranspose2D<'_> {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1095,6 +1113,7 @@ impl Map1 for Pool2D {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1135,6 +1154,7 @@ impl Map1 for UpsampleNearest2D {
         builder.arg(&out);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1187,6 +1207,7 @@ impl Map1 for UpsampleBilinear2D {
 
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1245,6 +1266,7 @@ impl Map2 for WhereCond<'_> {
         builder.arg(&out);
         // SAFETY: ffi
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1281,6 +1303,7 @@ impl<U: crate::op::BinaryOpT> Map2 for U {
         builder.arg(&out);
         // SAFETY: ffi
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(out)
     }
 }
@@ -1326,6 +1349,7 @@ impl Map2Any for Cmp {
         builder.arg(&out);
         // SAFETY: ffi
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(S::U8(out))
     }
 }
@@ -1775,6 +1799,7 @@ impl BackendStorage for CudaStorage {
         barg!(builder, src);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(())
     }
 
@@ -1829,6 +1854,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::U8(out)
             }
             DType::U32 => {
@@ -1840,6 +1866,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::U32(out)
             }
             DType::I64 => {
@@ -1851,6 +1878,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::I64(out)
             }
             DType::BF16 => {
@@ -1862,6 +1890,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::BF16(out)
             }
             DType::F16 => {
@@ -1873,6 +1902,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::F16(out)
             }
             DType::F32 => {
@@ -1884,6 +1914,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::F32(out)
             }
             DType::F64 => {
@@ -1895,6 +1926,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::F64(out)
             }
             DType::F8E4M3 => {
@@ -1906,6 +1938,7 @@ impl BackendStorage for CudaStorage {
                 barg!(builder, *inp);
                 builder.arg(&out);
                 unsafe { builder.launch(cfg) }.w()?;
+                func.record_submission();
                 CudaStorageSlice::F8E4M3(out)
             }
             DType::I16 | DType::I32 => {
@@ -2576,6 +2609,7 @@ impl BackendStorage for CudaStorage {
         builder.arg(&dst_s);
         // SAFETY: ffi.
         unsafe { builder.launch(cfg) }.w()?;
+        func.record_submission();
         Ok(())
     }
 
@@ -2604,6 +2638,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::F16(src), CudaStorageSlice::F16(dst)) => {
@@ -2620,6 +2655,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::F32(src), CudaStorageSlice::F32(dst)) => {
@@ -2636,6 +2672,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::U8(src), CudaStorageSlice::U8(dst)) => {
@@ -2652,6 +2689,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::U32(src), CudaStorageSlice::U32(dst)) => {
@@ -2668,6 +2706,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::I16(src), CudaStorageSlice::I16(dst)) => {
@@ -2684,6 +2723,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::I32(src), CudaStorageSlice::I32(dst)) => {
@@ -2700,6 +2740,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::I64(src), CudaStorageSlice::I64(dst)) => {
@@ -2716,6 +2757,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::F64(src), CudaStorageSlice::F64(dst)) => {
@@ -2732,6 +2774,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             (CudaStorageSlice::F8E4M3(src), CudaStorageSlice::F8E4M3(dst)) => {
@@ -2748,6 +2791,7 @@ impl BackendStorage for CudaStorage {
                     builder.arg(&mut dst);
                     // SAFETY: ffi.
                     unsafe { builder.launch(cfg) }.w()?;
+                    func.record_submission();
                 }
             }
             _ => Err(CudaError::InternalError(
