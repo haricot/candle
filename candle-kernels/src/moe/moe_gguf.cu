@@ -17,6 +17,9 @@
 #include <cassert>
 constexpr int MATRIX_ROW_PADDING = 512;
 
+// DKR package revision marker for the reviewed warp-local tail synchronization.
+extern "C" __global__ void candle_dkr_moe_gguf_warp_tail_v1() {}
+
 constexpr int pad(int size, int padding) {
     if (padding == 0) return size;  // avoid divide-by-zero
     return ((size + padding - 1) / padding) * padding;

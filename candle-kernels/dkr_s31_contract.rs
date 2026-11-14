@@ -2,6 +2,8 @@
 pub const SCHEMA: &str = "CANDLE-DKR-S31-NATIVE-MODULE-V1";
 pub const BASE: &str = "d99f6d77e507688bd9e4b654fbe20ac9e18238fc";
 pub const CC: u32 = 61;
+// The GGUF MoE source differs from BASE only by reviewed warp-tail synchronization.
+pub const MOE_GGUF_ABI: &str = "moe-gguf-warp-tail-v1";
 pub const FLAGS: &[&str] = &[
     "--expt-relaxed-constexpr", "-std=c++17", "-O3",
     "-DCANDLE_CUDA_BF16_FALLBACK=1",
@@ -305,6 +307,7 @@ pub fn moe_entries(ptx: &str, family: &str) -> Option<std::collections::BTreeMap
             add("gemm","moe_gemm_simt_f16_kernel",None,&[64,64,64,64,64,64,32,32,32,32,32])?;
         }
         "moe_gguf" => {
+            if !entries.contains(&"candle_dkr_moe_gguf_warp_tail_v1") { return None; }
             add("quantize","quantize_q8_1",None,&[64,64,32,32])?;
             for (tag, block) in [("q8_0","block_q8_0"),("q4_k","block_q4_K"),
                 ("q2_k","block_q2_K"),("q3_k","block_q3_K"),("q5_k","block_q5_K"),("q6_k","block_q6_K")] {
@@ -314,4 +317,26 @@ pub fn moe_entries(ptx: &str, family: &str) -> Option<std::collections::BTreeMap
         _ => return None,
     }
     Some(map)
+}
+
+#[cfg(test)]
+mod moe_tests {
+    use super::*;
+    fn entry(name:&str, ptr:usize, scalars:usize)->String {
+        let params=(0..ptr+scalars).map(|i|format!(".param .u{} p{i}",if i<ptr{64}else{32})).collect::<Vec<_>>().join(",\n");
+        format!(".entry {name}({params}) {{ ret; }}\n")
+    }
+    #[test]
+    fn moe_symbol_width_and_uniqueness() {
+        let simt=entry("_Zcount_tokens_per_expert_kernel",2,1)+
+            &entry("_Zexpert_prefix_sum_kernel",2,1)+&entry("_Zmoe_gemm_simt_f16_kernel",6,5);
+        assert_eq!(moe_entries(&simt,"moe_simt_f16").unwrap().len(),3);
+        assert!(moe_entries(&simt.replacen(".u64",".u32",1),"moe_simt_f16").is_none());
+        let mut gguf=entry("_Zquantize_q8_1",2,2)+".entry candle_dkr_moe_gguf_warp_tail_v1() { ret; }\n";
+        for tag in ["q8_0","q4_K","q2_K","q3_K","q5_K","q6_K"] {
+            gguf+=&entry(&format!("_Zmoe_gemm_gguf_kernel_block_{tag}"),6,6);
+        }
+        assert_eq!(moe_entries(&gguf,"moe_gguf").unwrap().len(),7);
+        assert!(moe_entries(&(gguf.clone()+&entry("_Zmoe_gemm_gguf_kernel_block_q4_K_duplicate",6,6)),"moe_gguf").is_none());
+    }
 }

@@ -1,6 +1,6 @@
 //! Native external SM61 MoE dispatch. Existing routing contract requires valid
 //! sorted expert IDs and a permutation of token-pair IDs. Values stay on GPU.
-use candle::{CudaDevice, CudaStorage, DType, Device, Result, Tensor};
+use candle::{CudaDevice, CudaStorage, DType, Result, Tensor};
 use candle::cuda_backend::{cudarc::driver::{DevicePtr, DevicePtrMut, LaunchConfig, PushKernelArg}, WrapErr};
 use candle::quantized::{GgmlDType,QTensor};
 
@@ -28,7 +28,7 @@ fn dimensions(input: &Tensor, route: &Option<Tensor>, topk: usize, e: usize,n: u
     Ok((r,m))
 }
 
-fn result<T: candle::cuda_backend::CudaDType>(out: candle::cuda_backend::cudarc::driver::CudaSlice<T>,dev:&CudaDevice,m:usize,n:usize)->Result<Tensor>{
+fn result<T: candle::cuda_backend::CudaDType + candle::cuda_backend::cudarc::driver::DeviceRepr>(out: candle::cuda_backend::cudarc::driver::CudaSlice<T>,dev:&CudaDevice,m:usize,n:usize)->Result<Tensor>{
     Ok(Tensor::from_storage(candle::Storage::Cuda(CudaStorage::wrap_cuda_slice(out,dev.clone())),
         (m,n),candle::op::BackpropOp::none(),false))
 }

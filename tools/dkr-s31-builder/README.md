@@ -109,3 +109,6 @@ Static prefill dispatch is gated by compiled capability and the Rust FFI
 wrapper reports false if WMMA was not linked. No void no-op fallback.
 The three excluded units remain WMMA (2) and cuTile alignment (1).
 GPU, Rust compilation, ABI outputs and static link are unverified.
+
+The GGUF package also requires the explicit warp-tail revision marker entry.
+The marker is never launched; the seven required operational entries remain unchanged.
