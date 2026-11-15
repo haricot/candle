@@ -417,6 +417,20 @@ pub fn try_fwd(
             k.checked_mul(b_size).is_none_or(|v| v > i32::MAX as usize)
         { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
     }
+    // S6.7.8: static MMQ Runtime launches are known to fail silently on
+    // the qualified SM61 configuration. Choose an independent bundled-PTX
+    // reference *before* any static MMQ allocation or submission.
+    // External MMQ and all other architectures retain their original routes.
+    if !use_external {
+        use crate::cuda_backend::WrapErr;
+        if dev.cuda_stream().context().compute_capability().w()? == (6, 1) {
+            #[cfg(feature="cuda-dkr-s31")]
+            dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,
+                "fast_mmq", "legacy_chunked_mmvq_driver", "", 0)
+                .record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
+            return qstorage.sm61_chunked_mmvq(self_shape, rhs, rhs_l).map(Some);
+        }
+    }
     let stream = dev.cuda_stream();
     let stream_ptr = stream.cu_stream() as *mut std::ffi::c_void;
 
