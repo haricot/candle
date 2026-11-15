@@ -3,6 +3,7 @@
 
 #include "mmq_common.cuh"
 #include "mmq_gguf.cuh"
+#include "mmq_launch.cuh"
 
 #define CUDA_QUANTIZE_BLOCK_SIZE_MMQ 128
 
@@ -106,40 +107,39 @@ static __global__ void quantize_mmq_q8_1(
     }
 }
 
-// C-linkage quantize launchers
-
-extern "C" void launch_mmq_quantize_q8_1_D4(
-    const void *x_f32, const int32_t *ids, void *vy, int type_x,
-    int64_t ne00, int64_t s01, int64_t s02, int64_t s03,
-    int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, void *stream) {
-    const int64_t block_num_y = (ne0 + 4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ - 1) / (4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ);
-    const dim3 num_blocks(ne1, block_num_y, ne2*ne3);
-    const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
-    quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4>
-        <<<num_blocks, block_size, 0, (cudaStream_t)stream>>>(
-            (const float *)x_f32, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2);
+template <mmq_q8_1_ds_layout layout>
+static cudaError_t mmq_launch_quantize(
+    const void *x, const int32_t *ids, void *y, int64_t ne00,
+    int64_t s01, int64_t s02, int64_t s03, int64_t ne0, int64_t ne1,
+    int64_t ne2, int64_t ne3, cudaStream_t stream) {
+    const int64_t grid_y = (ne0 + 4 * CUDA_QUANTIZE_BLOCK_SIZE_MMQ - 1) / (4 * CUDA_QUANTIZE_BLOCK_SIZE_MMQ);
+    const dim3 grid(ne1, grid_y, ne2 * ne3);
+    const dim3 block(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
+    return mmq_launch_kernel(
+        quantize_mmq_q8_1<layout>, grid, block, 0, stream,
+        static_cast<const float *>(x), ids, y, ne00, s01, s02, s03, ne0, ne1, ne2);
 }
 
-extern "C" void launch_mmq_quantize_q8_1_DS4(
-    const void *x_f32, const int32_t *ids, void *vy, int type_x,
-    int64_t ne00, int64_t s01, int64_t s02, int64_t s03,
-    int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, void *stream) {
-    const int64_t block_num_y = (ne0 + 4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ - 1) / (4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ);
-    const dim3 num_blocks(ne1, block_num_y, ne2*ne3);
-    const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
-    quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4>
-        <<<num_blocks, block_size, 0, (cudaStream_t)stream>>>(
-            (const float *)x_f32, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2);
+extern "C" int candle_launch_mmq_quantize_q8_1_D4(
+    const void *x, const int32_t *ids, void *y, int /*type_x*/,
+    int64_t ne00, int64_t s01, int64_t s02, int64_t s03, int64_t ne0,
+    int64_t ne1, int64_t ne2, int64_t ne3, void *stream) {
+    return mmq_launch_quantize<MMQ_Q8_1_DS_LAYOUT_D4>(
+        x, ids, y, ne00, s01, s02, s03, ne0, ne1, ne2, ne3, static_cast<cudaStream_t>(stream));
 }
 
-extern "C" void launch_mmq_quantize_q8_1_D2S6(
-    const void *x_f32, const int32_t *ids, void *vy, int type_x,
-    int64_t ne00, int64_t s01, int64_t s02, int64_t s03,
-    int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, void *stream) {
-    const int64_t block_num_y = (ne0 + 4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ - 1) / (4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ);
-    const dim3 num_blocks(ne1, block_num_y, ne2*ne3);
-    const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
-    quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6>
-        <<<num_blocks, block_size, 0, (cudaStream_t)stream>>>(
-            (const float *)x_f32, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2);
+extern "C" int candle_launch_mmq_quantize_q8_1_DS4(
+    const void *x, const int32_t *ids, void *y, int /*type_x*/,
+    int64_t ne00, int64_t s01, int64_t s02, int64_t s03, int64_t ne0,
+    int64_t ne1, int64_t ne2, int64_t ne3, void *stream) {
+    return mmq_launch_quantize<MMQ_Q8_1_DS_LAYOUT_DS4>(
+        x, ids, y, ne00, s01, s02, s03, ne0, ne1, ne2, ne3, static_cast<cudaStream_t>(stream));
+}
+
+extern "C" int candle_launch_mmq_quantize_q8_1_D2S6(
+    const void *x, const int32_t *ids, void *y, int /*type_x*/,
+    int64_t ne00, int64_t s01, int64_t s02, int64_t s03, int64_t ne0,
+    int64_t ne1, int64_t ne2, int64_t ne3, void *stream) {
+    return mmq_launch_quantize<MMQ_Q8_1_DS_LAYOUT_D2S6>(
+        x, ids, y, ne00, s01, s02, s03, ne0, ne1, ne2, ne3, static_cast<cudaStream_t>(stream));
 }

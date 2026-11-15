@@ -456,6 +456,8 @@ extern "C" {
     // ============== Dense GGUF MMQ launchers (from mmq_gguf/) ==============
 
     // MMQ quantize launchers (f32 -> block_q8_1_mmq, 3 scale layouts)
+    // Mistral.rs links its own launch_mmq_* functions with a different matmul ABI.
+    #[link_name = "candle_launch_mmq_quantize_q8_1_D4"]
     pub fn launch_mmq_quantize_q8_1_D4(
         x: *const c_void,
         ids: *const i32,
@@ -470,7 +472,8 @@ extern "C" {
         ne2: i64,
         ne3: i64,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_quantize_q8_1_DS4"]
     pub fn launch_mmq_quantize_q8_1_DS4(
         x: *const c_void,
         ids: *const i32,
@@ -485,7 +488,8 @@ extern "C" {
         ne2: i64,
         ne3: i64,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_quantize_q8_1_D2S6"]
     pub fn launch_mmq_quantize_q8_1_D2S6(
         x: *const c_void,
         ids: *const i32,
@@ -500,9 +504,10 @@ extern "C" {
         ne2: i64,
         ne3: i64,
         stream: *mut c_void,
-    );
+    ) -> i32;
 
     // MMQ matmul launchers (one per quant type)
+    #[link_name = "candle_launch_mmq_gguf_q4_0"]
     pub fn launch_mmq_gguf_q4_0(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -518,7 +523,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q4_1"]
     pub fn launch_mmq_gguf_q4_1(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -534,7 +540,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q5_0"]
     pub fn launch_mmq_gguf_q5_0(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -550,7 +557,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q5_1"]
     pub fn launch_mmq_gguf_q5_1(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -566,7 +574,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q8_0"]
     pub fn launch_mmq_gguf_q8_0(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -582,7 +591,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q2_k"]
     pub fn launch_mmq_gguf_q2_k(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -598,7 +608,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q3_k"]
     pub fn launch_mmq_gguf_q3_k(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -614,7 +625,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q4_k"]
     pub fn launch_mmq_gguf_q4_k(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -630,7 +642,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q5_k"]
     pub fn launch_mmq_gguf_q5_k(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -646,7 +659,8 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
+    #[link_name = "candle_launch_mmq_gguf_q6_k"]
     pub fn launch_mmq_gguf_q6_k(
         tmp_fixup: *mut c_void,
         x: *const c_void,
@@ -662,7 +676,7 @@ extern "C" {
         smpbo: i64,
         warp_size: i32,
         stream: *mut c_void,
-    );
+    ) -> i32;
 }
 
 /// Returns false instead of referencing an unavailable pre-Volta FFI symbol.

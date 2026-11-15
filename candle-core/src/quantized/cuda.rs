@@ -933,65 +933,6 @@ impl QCudaStorage {
 }
 
 impl QCudaStorage {
-    /// Independent SM61 fallback when external MMQ is not enabled.
-    /// Reuse the original bundled QUANTIZED PTX MMVQ entrypoints, not
-    /// the failing static MMQ Runtime launchers or the external provider.
-    /// Bound the activation workspace to eight rows; retain the quantized weights.
-    pub(super) fn sm61_chunked_mmvq(
-        &self,
-        self_shape: &crate::Shape,
-        rhs: &CudaStorage,
-        rhs_l: &crate::Layout,
-    ) -> Result<(CudaStorage, crate::Shape)> {
-        use crate::backend::BackendStorage;
-        let (n, k) = self_shape.dims2()?;
-        let batch = match rhs_l.shape().dims() {
-            [b, m, k2] if *k2 == k => b.checked_mul(*m),
-            [b, k2] if *k2 == k => Some(*b),
-            _ => None,
-        }.ok_or_else(|| crate::Error::Msg("SM61 MMVQ fallback shape mismatch".into()))?;
-        if rhs.device().id() != self.device.id() ||
-           [n, k, batch].iter().any(|&v| v == 0 || v > i32::MAX as usize) ||
-           k % self.dtype.block_size() != 0 ||
-           n.checked_mul(k).is_none_or(|v| v > i32::MAX as usize) ||
-           batch.checked_mul(k).is_none_or(|v| v > i32::MAX as usize) ||
-           batch.checked_mul(n).is_none_or(|v| v > i32::MAX as usize) ||
-           pad(k, MATRIX_ROW_PADDING) > i32::MAX as usize {
-            crate::bail!("SM61 MMVQ fallback unsupported geometry or device");
-        }
-        let (start, end) = rhs_l.contiguous_offsets()
-            .ok_or_else(|| crate::Error::Msg("SM61 MMVQ fallback requires contiguous input".into()))?;
-        let dtype = rhs.dtype();
-        let converted = if dtype != crate::DType::F32 {
-            Some(rhs.to_dtype(rhs_l, crate::DType::F32)?)
-        } else { None };
-        let input = converted.as_ref().unwrap_or(rhs).as_cuda_slice::<f32>()?;
-        let start = if converted.is_some() { 0 } else { start };
-        if input.len() < start + batch*k || (converted.is_none() && end-start != batch*k) {
-            crate::bail!("SM61 MMVQ fallback input extent mismatch");
-        }
-        let dev = self.device();
-        let mut output = unsafe { dev.alloc::<f32>(batch*n)? };
-        for row in (0..batch).step_by(8) {
-            let count = (batch-row).min(8);
-            let src = input.slice(start+row*k..start+(row+count)*k);
-            let part = mul_mat_vec_via_q8_1(&self.data, &src, self.dtype, k, n, count, dev)?;
-            let part = part.as_cuda_slice::<f32>()?;
-            dev.memcpy_dtod(part, &mut output.slice_mut(row*n..(row+count)*n))?;
-        }
-        let mut dims = rhs_l.shape().dims().to_vec();
-        dims.pop();
-        dims.push(n);
-        let shape = crate::Shape::from(dims);
-        let output = CudaStorage::wrap_cuda_slice(output, dev.clone());
-        if dtype == crate::DType::F32 {
-            Ok((output, shape))
-        } else {
-            let cast = output.to_dtype(&crate::Layout::contiguous(shape.clone()), dtype)?;
-            Ok((cast, shape))
-        }
-    }
-
     fn dequantize_matmul_vec(
         &self,
         self_shape: &crate::Shape,

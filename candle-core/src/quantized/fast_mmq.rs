@@ -1,15 +1,17 @@
 //! CUDA fast path for GGUF tiled matmul (prompt/prefill phase).
 //! Handles batch > 8 (complement to fast_mmvq which handles batch 1-8).
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{hash_map::Entry, HashMap};
 use std::sync::{Mutex, OnceLock};
+use std::thread::LocalKey;
 
 use super::cuda::{QCudaStorage, MATRIX_ROW_PADDING};
 use super::GgmlDType;
-use crate::cuda_backend::DeviceId;
+use crate::cuda_backend::{DeviceId, WrapErr};
 use crate::{backend::BackendStorage, CudaDevice, CudaStorage, DType, Result, Shape};
 
-use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 
 const QK8_1: usize = 32;
 const BLOCK_Q8_1_MMQ_SIZE: usize = 4 * QK8_1 + 4 * 4; // 128 qs + 16 scale bytes = 144
@@ -82,7 +84,7 @@ type QuantizeLauncher = unsafe extern "C" fn(
     ne2: i64,
     ne3: i64,
     stream: *mut std::ffi::c_void,
-);
+) -> i32;
 
 fn quantize_launcher(layout: DsLayout) -> QuantizeLauncher {
     use candle_kernels::ffi;
@@ -108,7 +110,7 @@ type MmqLauncher = unsafe extern "C" fn(
     smpbo: i64,
     warp_size: i32,
     stream: *mut std::ffi::c_void,
-);
+) -> i32;
 
 fn mmq_launcher(dtype: GgmlDType) -> Option<MmqLauncher> {
     use candle_kernels::ffi;
@@ -129,48 +131,37 @@ fn mmq_launcher(dtype: GgmlDType) -> Option<MmqLauncher> {
 }
 
 // ---------------------------------------------------------------------------
-// Per-device workspaces (grows-only, reused across calls).
+// The CUDA per-thread stream has the same raw handle on every host thread.
 // ---------------------------------------------------------------------------
 
-struct WorkspaceSlot {
-    slice: CudaSlice<u8>,
-    cap: usize,
+type Workspaces = RefCell<HashMap<DeviceId, CudaSlice<u8>>>;
+
+thread_local! {
+    static MMQ_WORKSPACE: Workspaces = RefCell::new(HashMap::new());
+    static FIXUP_WORKSPACE: Workspaces = RefCell::new(HashMap::new());
 }
 
-type WsMap = Mutex<HashMap<DeviceId, &'static Mutex<WorkspaceSlot>>>;
-
-static MMQ_WORKSPACE: OnceLock<WsMap> = OnceLock::new();
-static FIXUP_WORKSPACE: OnceLock<WsMap> = OnceLock::new();
-
-fn workspace_ensure(
-    ws: &'static OnceLock<WsMap>,
+fn with_workspace<T>(
+    workspaces: &'static LocalKey<Workspaces>,
     dev: &CudaDevice,
+    stream: &CudaStream,
     bytes: usize,
-) -> Result<(u64, std::sync::MutexGuard<'static, WorkspaceSlot>)> {
-    let map = ws.get_or_init(|| Mutex::new(HashMap::new()));
-    let device_key = dev.id();
-    let device_mtx: &'static Mutex<WorkspaceSlot> = {
-        let mut guard = map.lock().unwrap();
-        match guard.get(&device_key).copied() {
-            Some(mtx) => mtx,
-            None => {
-                let slice = unsafe { dev.alloc::<u8>(bytes.max(1))? };
-                let leaked = Box::leak(Box::new(Mutex::new(WorkspaceSlot {
-                    slice,
-                    cap: bytes.max(1),
-                })));
-                guard.insert(device_key, leaked);
-                leaked
+    run: impl FnOnce(u64) -> Result<T>,
+) -> Result<T> {
+    workspaces.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let slice = match cache.entry(dev.id()) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().len() < bytes {
+                    entry.insert(unsafe { dev.alloc::<u8>(bytes)? });
+                }
+                entry.into_mut()
             }
-        }
-    };
-    let mut slot = device_mtx.lock().unwrap();
-    if slot.cap < bytes {
-        slot.slice = unsafe { dev.alloc::<u8>(bytes)? };
-        slot.cap = bytes;
-    }
-    let ptr = slot.slice.device_ptr(slot.slice.stream()).0;
-    Ok((ptr, slot))
+            Entry::Vacant(entry) => entry.insert(unsafe { dev.alloc::<u8>(bytes)? }),
+        };
+        let (ptr, _guard) = slice.device_ptr_mut(stream);
+        run(ptr)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -404,32 +395,18 @@ pub fn try_fwd(
     let dev = qstorage.device();
     #[cfg(feature = "cuda-dkr-s31")]
     let use_external = dev.dkr_mmq_enabled();
-    #[cfg(not(feature = "cuda-dkr-s31"))]
-    let use_external = false;
-    if use_external {
-        if rhs.device().id() != dev.id() {
-            crate::bail!("DKR MMQ requires same-device inputs");
-        }
-        if k == 0 || nrows == 0 ||
-            [k,nrows,b_size].iter().any(|&v| v > i32::MAX as usize) ||
-            nrows.checked_mul(k).is_none_or(|v| v > i32::MAX as usize) ||
-            nrows.checked_mul(b_size).is_none_or(|v| v > i32::MAX as usize) ||
-            k.checked_mul(b_size).is_none_or(|v| v > i32::MAX as usize)
-        { crate::bail!("DKR MMQ geometry exceeds native ABI"); }
+    if rhs.device().id() != dev.id() {
+        crate::bail!("GGUF MMQ requires same-device inputs");
     }
-    // S6.7.8: static MMQ Runtime launches are known to fail silently on
-    // the qualified SM61 configuration. Choose an independent bundled-PTX
-    // reference *before* any static MMQ allocation or submission.
-    // External MMQ and all other architectures retain their original routes.
-    if !use_external {
-        use crate::cuda_backend::WrapErr;
-        if dev.cuda_stream().context().compute_capability().w()? == (6, 1) {
-            #[cfg(feature="cuda-dkr-s31")]
-            dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,
-                "fast_mmq", "legacy_chunked_mmvq_driver", "", 0)
-                .record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
-            return qstorage.sm61_chunked_mmvq(self_shape, rhs, rhs_l).map(Some);
-        }
+    if k == 0
+        || nrows == 0
+        || nrows.checked_mul(k).is_none_or(|v| v > i32::MAX as usize)
+        || nrows
+            .checked_mul(b_size)
+            .is_none_or(|v| v > i32::MAX as usize)
+        || k.checked_mul(b_size).is_none_or(|v| v > i32::MAX as usize)
+    {
+        crate::bail!("GGUF MMQ geometry exceeds native ABI");
     }
     let stream = dev.cuda_stream();
     let stream_ptr = stream.cu_stream() as *mut std::ffi::c_void;
@@ -439,6 +416,12 @@ pub fn try_fwd(
         let layout_for_cast =
             crate::Layout::contiguous_with_offset(rhs_l.shape(), rhs_l.start_offset());
         Some(rhs.to_dtype(&layout_for_cast, DType::F32)?)
+    } else if !o1.is_multiple_of(4) {
+        // The quantizer loads float4, even for an F32 view with a nonzero offset.
+        let src = rhs.as_cuda_slice::<f32>()?.slice(o1..o2);
+        let mut aligned = unsafe { dev.alloc::<f32>(src.len())? };
+        dev.memcpy_dtod(&src, &mut aligned)?;
+        Some(CudaStorage::wrap_cuda_slice(aligned, dev.clone()))
     } else {
         None
     };
@@ -468,16 +451,7 @@ pub fn try_fwd(
     let workspace_extra = 128 * BLOCK_Q8_1_MMQ_SIZE;
     let workspace_bytes = workspace_main + workspace_extra;
 
-    let (scratch_ptr, _workspace_guard) = workspace_ensure(&MMQ_WORKSPACE, dev, workspace_bytes)?;
-    let scratch_ptr = scratch_ptr as *mut std::ffi::c_void;
-
-    // Stream-k fixup workspace
-    const MMQ_X_MAX: usize = 128;
-    const MMQ_Y_MAX: usize = 128;
-    const MAX_SMS: usize = 256;
-    let fixup_bytes = MAX_SMS * MMQ_X_MAX * MMQ_Y_MAX * std::mem::size_of::<f32>();
-
-    let weight_ptr = qstorage.device_ptr()? as *const std::ffi::c_void;
+    let (weight_ptr, weight_guard) = qstorage.device_ptr_with_guard(&stream)?;
     let stride_row_x = (k / qk) as i64;
 
     let mut out = unsafe { dev.alloc::<f32>(nrows * b_size)? };
@@ -486,54 +460,105 @@ pub fn try_fwd(
     let (out_addr, out_guard) = out.device_ptr_mut(&stream);
     let out_ptr = out_addr as *mut std::ffi::c_void;
 
-    #[cfg(feature = "cuda-dkr-s31")]
-    if use_external {
-        external::launch(dev, w_dtype, k, k_padded, nrows, b_size,
-            rhs_addr, scratch_ptr as u64, weight_ptr as u64, out_addr)?;
-    }
-    if !use_external {
-        #[cfg(feature="cuda-dkr-s31")]
-        dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
-        let (fixup_ptr, _fixup_guard) = workspace_ensure(&FIXUP_WORKSPACE, dev, fixup_bytes)?;
-        let fixup_ptr = fixup_ptr as *mut std::ffi::c_void;
-    unsafe {
-        let quantize = quantize_launcher(ds_layout_for(w_dtype));
-        quantize(
-            rhs_ptr,
-            std::ptr::null(),
-            scratch_ptr,
-            0,
-            k as i64,
-            k as i64,
-            0,
-            0,
-            k_padded as i64,
-            b_size as i64,
-            1,
-            1,
-            stream_ptr,
-        );
+    with_workspace(
+        &MMQ_WORKSPACE,
+        dev,
+        &stream,
+        workspace_bytes,
+        |scratch_addr| {
+            #[cfg(feature = "cuda-dkr-s31")]
+            if use_external {
+                return external::launch(
+                    dev,
+                    w_dtype,
+                    k,
+                    k_padded,
+                    nrows,
+                    b_size,
+                    rhs_addr,
+                    scratch_addr,
+                    weight_ptr as u64,
+                    out_addr,
+                );
+            }
 
-        let di = get_device_info(dev);
-        let launcher = mmq_launcher(w_dtype).expect("supports() checked");
-        launcher(
-            fixup_ptr,
-            weight_ptr,
-            scratch_ptr as *const std::ffi::c_void,
-            out_ptr,
-            k as i64,
-            nrows as i64,
-            b_size as i64,
-            stride_row_x,
-            stride_col_dst,
-            di.cc,
-            di.nsm,
-            di.smpbo,
-            di.warp_size,
-            stream_ptr,
-        );
-    }
-    }
+            let di = get_device_info(dev);
+            stream.context().bind_to_thread().w()?;
+            let scratch_ptr = scratch_addr as *mut std::ffi::c_void;
+            let quantize = quantize_launcher(ds_layout_for(w_dtype));
+            let status = unsafe {
+                quantize(
+                    rhs_ptr,
+                    std::ptr::null(),
+                    scratch_ptr,
+                    0,
+                    k as i64,
+                    k as i64,
+                    0,
+                    0,
+                    k_padded as i64,
+                    b_size as i64,
+                    1,
+                    1,
+                    stream_ptr,
+                )
+            };
+            if status != 0 {
+                crate::bail!(
+                    "Candle static MMQ quantize {w_dtype:?} failed (cudaError_t={status})"
+                );
+            }
+
+            let launcher = mmq_launcher(w_dtype).expect("supports() checked");
+            let launch = |fixup_addr| {
+                let status = unsafe {
+                    launcher(
+                        fixup_addr as *mut std::ffi::c_void,
+                        weight_ptr.cast(),
+                        scratch_ptr.cast_const(),
+                        out_ptr,
+                        k as i64,
+                        nrows as i64,
+                        b_size as i64,
+                        stride_row_x,
+                        stride_col_dst,
+                        di.cc,
+                        di.nsm,
+                        di.smpbo,
+                        di.warp_size,
+                        stream_ptr,
+                    )
+                };
+                if status != 0 {
+                    crate::bail!(
+                        "Candle static MMQ matmul {w_dtype:?} failed (cudaError_t={status})"
+                    );
+                }
+                Ok(())
+            };
+            if di.cc >= 700 {
+                const MMQ_X_MAX: usize = 128;
+                const MMQ_Y_MAX: usize = 128;
+                const MAX_SMS: usize = 256;
+                let fixup_bytes = MAX_SMS * MMQ_X_MAX * MMQ_Y_MAX * std::mem::size_of::<f32>();
+                with_workspace(&FIXUP_WORKSPACE, dev, &stream, fixup_bytes, launch)?;
+            } else {
+                launch(0)?;
+            }
+
+            #[cfg(feature = "cuda-dkr-s31")]
+            dkr_kernel_registry::telemetry::handle(
+                dkr_kernel_registry::NATIVE_ABI,
+                "fast_mmq",
+                "static_ffi",
+                "",
+                0,
+            )
+            .record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
+            Ok(())
+        },
+    )?;
+    drop(weight_guard);
     drop(rhs_guard);
     drop(out_guard);
 

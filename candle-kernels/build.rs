@@ -80,6 +80,7 @@ fn main() -> Result<()> {
     let mut moe_builder = KernelBuilder::new()
         .compute_cap(compute_cap)
         .source_files(moe_sources)
+        .watch(["src/mmq_gguf/mmq_launch.cuh"])
         .arg("--expt-relaxed-constexpr")
         .arg("-std=c++17")
         .arg("-O3");
