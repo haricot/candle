@@ -227,7 +227,7 @@ __global__ void moe_gemm_simt_f16_kernel(
 
 } // namespace vllm_rs
 
-extern "C" void moe_gemm_simt_f16(
+extern "C" int moe_gemm_simt_f16(
     const void* input,
     const void* weights,
     const int32_t* sorted_token_ids,
@@ -243,14 +243,28 @@ extern "C" void moe_gemm_simt_f16(
     int size_k,
     bool is_prefill,
     cudaStream_t stream
-) {
+) noexcept {
     using namespace vllm_rs;
 
-    if (is_prefill) {
-        calculate_expert_offsets(expert_ids, size_m, expert_counts, expert_offsets, num_experts, stream);
-    } else {
-        calculate_expert_offsets_light(expert_ids, size_m, expert_counts, expert_offsets, num_experts, stream);
+    // Host-only correction: never let Thrust throw across the Rust FFI.
+    // Both modes use the existing bounded integer prefix scan.
+    (void)is_prefill;
+    if (num_experts <= 0 || num_experts > 1024 || size_m <= 0 ||
+        size_n <= 0 || size_k <= 0 || topk <= 0 || topk > num_experts ||
+        size_k % 2 != 0 || size_n > 65535 * N_BLK) {
+        return static_cast<int>(cudaErrorInvalidValue);
     }
+    cudaError_t status = cudaMemsetAsync(expert_counts, 0, num_experts * sizeof(int32_t), stream);
+    if (status != cudaSuccess) return static_cast<int>(status);
+    count_tokens_per_expert_kernel<<<1 + (size_m - 1) / 256, 256, 0, stream>>>(
+        expert_ids, expert_counts, size_m);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) return static_cast<int>(status);
+    int scan_threads = num_experts < 32 ? 32 : num_experts;
+    expert_prefix_sum_kernel<<<1, scan_threads, scan_threads * sizeof(int32_t), stream>>>(
+        expert_counts, expert_offsets, num_experts);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) return static_cast<int>(status);
 
     int grid_n = CEILDIV(size_n, N_BLK);
     dim3 grid(num_experts, grid_n, 1);
@@ -267,7 +281,7 @@ extern "C" void moe_gemm_simt_f16(
         reinterpret_cast<half*>(output),
         num_experts, topk, size_m, size_n, size_k
     );
-
+    return static_cast<int>(cudaGetLastError());
 }
 
 #ifdef NO_WMMA_KERNEL

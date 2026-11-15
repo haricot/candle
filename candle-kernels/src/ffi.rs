@@ -33,7 +33,7 @@ extern "C" {
         size_k: i32,
         is_prefill: bool,
         stream: i64,
-    );
+    ) -> i32;
 
     // for unquantized models
     pub fn moe_gemm_wmma(

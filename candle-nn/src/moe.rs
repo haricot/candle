@@ -111,7 +111,8 @@ pub fn moe_gemm(
 
         unsafe {
             match backend {
-                MoeBackend::SimtF16 => ffi::moe_gemm_simt_f16(
+                MoeBackend::SimtF16 => {
+                    let status = ffi::moe_gemm_simt_f16(
                     input.device_ptr(input.stream()).0 as *const c_void,
                     weights.device_ptr(weights.stream()).0 as *const c_void,
                     sorted_token_ids.device_ptr(sorted_token_ids.stream()).0 as *const i32,
@@ -127,7 +128,11 @@ pub fn moe_gemm(
                     size_k as i32,
                     is_prefill,
                     stream,
-                ),
+                    );
+                    if status != 0 {
+                        candle::bail!("legacy SIMT MoE CUDA submission failed (cudaError_t={status})");
+                    }
+                }
                 MoeBackend::Wmma => ffi::moe_gemm_wmma(
                     input.device_ptr(input.stream()).0 as *const c_void,
                     weights.device_ptr(weights.stream()).0 as *const c_void,
