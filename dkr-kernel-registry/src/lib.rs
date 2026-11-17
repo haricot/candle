@@ -71,7 +71,11 @@ impl ArtifactKey {
 /// operation name. Different ABI adapters may share identical bytes only after
 /// independently enforcing their own semantic contracts.
 #[derive(Debug)]
-pub struct VerifiedArtifact { key:ArtifactKey, ptx:String, entries:std::collections::BTreeSet<String> }
+pub struct VerifiedArtifact {
+    key: ArtifactKey,
+    ptx: std::borrow::Cow<'static, str>,
+    entries: std::collections::BTreeSet<String>,
+}
 impl VerifiedArtifact {
     pub fn new(ptx:String,target_cc:u32,expected_sha:&str)->Result<Self,String>{
         if ptx.len()>MAX_PTX_BYTES{return Err("PTX artifact budget exceeded".into())}
@@ -116,7 +120,17 @@ impl VerifiedArtifact {
         if target!=Some(wanted.as_str()) || width!=Some("64") || entries.is_empty(){
             return Err("PTX target, address width or entry inventory mismatch".into())
         }
-        Ok(Self{key:ArtifactKey{target_cc,sha256:sha},ptx,entries})
+        Ok(Self{key:ArtifactKey{target_cc,sha256:sha},ptx:ptx.into(),entries})
+    }
+    /// For Rust tables generated after the build script validates these exact bytes.
+    pub fn from_build_verified(
+        ptx: &'static str, target_cc: u32, sha256: &str, entries: impl IntoIterator<Item = String>,
+    ) -> Self {
+        Self { key: ArtifactKey { target_cc, sha256: sha256.to_ascii_lowercase() },
+               ptx: std::borrow::Cow::Borrowed(ptx), entries: entries.into_iter().collect() }
+    }
+    pub fn entry_names(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(String::as_str)
     }
     pub fn key(&self)->&ArtifactKey{&self.key}
     pub fn ptx(&self)->&str{&self.ptx}
@@ -156,6 +170,20 @@ impl<K:Eq,P,const N:usize> PlanCache<K,P,N>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn embedded_artifacts_keep_the_filesystem_transport_identity() {
+        const PTX: &str = ".version 8.0\n.target sm_61\n.address_size 64\n.visible .entry test() { ret; }\n";
+        let digest = format!("{:x}", Sha256::digest(PTX.as_bytes()));
+        let filesystem = VerifiedArtifact::new(PTX.into(), 61, &digest).unwrap();
+        let embedded = VerifiedArtifact::from_build_verified(
+            PTX, 61, &digest.to_ascii_uppercase(), ["test".into()],
+        );
+        assert_eq!(filesystem.key(), embedded.key());
+        assert_eq!(filesystem.ptx(), embedded.ptx());
+        assert!(embedded.has_entry("test"));
+        assert!(!embedded.has_entry("absent"));
+    }
+
     #[test] fn registry_namespaces_and_ambiguity(){
         let mut r=Registry::default();
         r.insert(RegistryKey::new(NATIVE_ABI,"linear","a",61),1).unwrap();

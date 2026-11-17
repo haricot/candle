@@ -48,6 +48,11 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 criterion = { workspace = true }
 
+[build-dependencies]
+serde_json.workspace = true
+sha2 = "0.10"
+dkr-kernel-registry = { path = "../dkr-kernel-registry", version = "0.1.0" }
+
 [features]
 default = []
 cuda = ["cudarc", "dep:candle-kernels"]

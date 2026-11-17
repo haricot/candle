@@ -3,6 +3,7 @@
 //! Reuse Candle's original ABI, context, stream, module cache and launch path.
 
 use std::path::{Path, PathBuf};
+#[cfg(test)]
 use sha2::{Digest, Sha256};
 use serde_json::Value;
 use candle_kernels as kernels;
@@ -11,6 +12,13 @@ use crate::Result;
 use super::WrapErr;
 
 use candle_kernels::dkr_s31_contract as contract;
+#[path = "dkr_s31_validation.rs"]
+mod dkr_s31_validation;
+use dkr_s31_validation::validate;
+mod embedded {
+    use super::*;
+    include!(concat!(env!("OUT_DIR"), "/dkr_native_embedded.rs"));
+}
 use dkr_kernel_registry::{Registry, RegistryKey, VerifiedArtifact, NATIVE_ABI};
 
 pub(super) struct ExternalModules {
@@ -45,34 +53,14 @@ fn read_text(path: &Path, limit: usize) -> Result<String> {
     String::from_utf8(bytes).map_err(|e|crate::Error::Msg(e.to_string()))
 }
 
-fn validate(manifest: &Value, name: &str, ptx: &str) -> Result<()> {
-    let sha = format!("{:x}", Sha256::digest(ptx.as_bytes()));
-    let flags: Vec<&str> = manifest["flags"].as_array()
-        .map(|v| v.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-    if manifest["schema"].as_str() != Some(contract::SCHEMA)
-        || manifest["base_revision"].as_str() != Some(contract::BASE)
-        || manifest["target_cc"].as_u64() != Some(u64::from(contract::CC))
-        || manifest["family"].as_str() != Some(name)
-        || manifest["sha256"].as_str() != Some(sha.as_str())
-        || flags != contract::FLAGS
-        || !contract::is_sm61_ptx(ptx)
-        || (name == "mmvq_gguf" && !contract::has_mmvq_entries(ptx))
-        || (matches!(name, "conv" | "sort") && !contract::has_conv_sort_entries(ptx, name))
-        || (name.starts_with("moe_") && contract::moe_entries(ptx, name)
-            .and_then(|entries| serde_json::to_value(entries).ok())
-            .is_none_or(|entries| entries != manifest["moe_entries"]))
-        || (name.starts_with("mmq_") && contract::mmq_entries(ptx, name)
-            .and_then(|entries| serde_json::to_value(entries).ok())
-            .is_none_or(|entries| entries != manifest["mmq_entries"]))
-    {
-        crate::bail!("Candle DKR S3.1 invalid package for {name}");
-    }
-    Ok(())
-}
 
 impl ExternalModules {
     pub(super) fn from_env(context: &CudaContext) -> Result<Option<Self>> {
-        let Some(root) = std::env::var_os("CANDLE_DKR_S31_DIR") else {
+        let source = std::env::var("MISTRALRS_DKR_ARTIFACT_SOURCE")
+            .unwrap_or_else(|_| if embedded::ROOT.is_some() { "embedded".into() } else { "filesystem".into() });
+        let Some(root) = std::env::var_os("CANDLE_DKR_S31_DIR").or_else(|| {
+            (source == "embedded").then_some(embedded::ROOT).flatten().map(std::ffi::OsString::from)
+        }) else {
             return Ok(None);
         };
         let (major, minor) = context.compute_capability().w()?;
@@ -80,6 +68,29 @@ impl ExternalModules {
             crate::bail!("Candle DKR S3.1 requires SM61, got {major}.{minor}");
         }
         let root = PathBuf::from(root);
+        if source == "embedded" {
+            let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
+            if root != Path::new(compiled_root) {
+                crate::bail!("native directory differs from the embedded build input");
+            }
+            let mut modules = Registry::default();
+            let mut native_keys = std::collections::HashMap::new();
+            let mut mmq_symbols = std::collections::HashMap::new();
+            for (name, artifact, symbols) in embedded::modules() {
+                let key = RegistryKey::new(NATIVE_ABI, name, "native", contract::CC);
+                modules.insert(key.clone(), artifact).map_err(crate::Error::Msg)?;
+                native_keys.insert(name, key);
+                if let Some(symbols) = symbols { mmq_symbols.insert(name, symbols); }
+            }
+            let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
+            if trace {
+                eprintln!("CANDLE_DKR_NATIVE_CATALOG source=embedded manifests={}", modules.len());
+            }
+            return Ok(Some(Self { modules, native_keys, mmq_symbols, trace }));
+        }
+        if source != "filesystem" {
+            crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem");
+        }
         if !root.is_absolute() || !root.is_dir() {
             crate::bail!("CANDLE_DKR_S31_DIR must be an existing absolute directory");
         }
@@ -101,6 +112,9 @@ impl ExternalModules {
                 mmq_symbols.insert(name, symbols);
             }
         }
+        if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+            eprintln!("CANDLE_DKR_NATIVE_CATALOG source=filesystem manifests={}", modules.len());
+        }
         Ok(Some(Self { modules, native_keys, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
     }
 
@@ -109,7 +123,7 @@ impl ExternalModules {
         let manifest: Value = serde_json::from_str(&manifest)
             .map_err(|e| crate::Error::Msg(format!("Candle DKR S3.1 manifest: {e}")))?;
         let ptx = read_text(&root.join(name).join(format!("{name}.ptx")), dkr_kernel_registry::MAX_PTX_BYTES)?;
-        validate(&manifest, name, &ptx)?;
+        validate(&manifest, name, &ptx).map_err(crate::Error::Msg)?;
         VerifiedArtifact::new(ptx, contract::CC, manifest["sha256"].as_str().unwrap_or("")).map_err(crate::Error::Msg)
     }
 
