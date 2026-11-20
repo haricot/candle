@@ -41,6 +41,15 @@ pub mod fp8_linear_sm61;
 pub mod fp8_sm61_dispatch;
 pub mod fp8_sm61_format;
 pub mod fp8_sm61_loader;
+#[path = "../../../candle-kernels/dkr_fp4_recipe.rs"]
+pub(crate) mod fp4_recipe;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+pub mod fp4_linear;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+pub mod nvfp4_native;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+pub mod nvfp4_linear;
+pub mod nvfp4_format;
 #[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
 pub mod fp4_e7c_runtime;
 #[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]

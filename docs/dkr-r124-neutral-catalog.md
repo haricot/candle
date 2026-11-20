@@ -71,6 +71,22 @@ not add native FP8 Tensor Core support or remove the static feature yet.
 The FP8 recipe is frozen in the package-side source, not arbitrary executable
 metadata. New architectures require separately qualified descriptors and ABI.
 
+## S3.2: FP4 / NVFP4 dispatch extraction (candidate)
+
+ModelOpt NVFP4 native, linear, FP4 typed facade and format modules use generic
+names; old APIs remain reexports. The catalogue selects a frozen FP4 descriptor
+for NVFP4 scalar W4A16, FP16 cast, Q8_1 quantization, reference and tiled W4A8,
+plus GGUF MXFP4 GEMV, prefill and indexed MoE. Auto thresholds, DP4A admission,
+entry symbols and launch geometry are in the package-side recipe. Static
+compatibility remains available without a selected catalogue. The index
+optionally records the FP4 descriptor and validates it against its qualified
+ABI; all fifteen required entries must exist in the quantized PTX.
+Embedded and filesystem metadata use the same descriptor. No PTX, packing,
+scale convention, argument ABI or auto thresholds changed. NVFP4 and MXFP4
+remain distinct formats. Launch bounds reject invalid dimensions.
+Generic GGUF Q8_1 staging and the other dtype paths are not migrated here.
+This does not remove the legacy compilation feature or qualify another GPU.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

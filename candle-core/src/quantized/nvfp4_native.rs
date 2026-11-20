@@ -1,0 +1,188 @@
+//! ARCH-E6: local-only native Candle CUDA backend bridge, explicit opt-in.
+//! This is NOT integrated into QMatMul or model forward. The borrowed A16 input
+//! remains FP16; W4A8 quantization is performed by Candle's CUDA Q8_1 kernel.
+use super::nvfp4_format::{
+    checked_launch_shape, validate_modelopt_payload, Nvfp4LaunchShape,
+};
+use crate::cuda_backend::{
+    cudarc::driver::{CudaSlice, LaunchConfig, PushKernelArg},
+    WrapErr,
+};
+use crate::{CudaDevice, Result};
+use super::fp4_recipe::{Fp4Recipe, Fp4Launch};
+use half::f16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum W4A8Variant {
+    Reference,
+    Tiled4x8,
+    Auto,
+}
+
+pub struct Nvfp4Native {
+    device: CudaDevice,
+    recipe: Fp4Recipe,
+    weights: CudaSlice<u8>,
+    scales: CudaSlice<u8>,
+    global_scale: f32,
+    n: usize,
+    k: usize,
+}
+
+impl Nvfp4Native {
+    pub fn from_packed(
+        device: &CudaDevice,
+        n: usize,
+        k: usize,
+        packed: &[u8],
+        scales: &[u8],
+        global_scale: f32,
+    ) -> Result<Self> {
+        validate_modelopt_payload(n, k, packed, scales, global_scale)?;
+        Ok(Self {
+            device: device.clone(),
+            recipe: device.fp4_launch_recipe(),
+            weights: device.clone_htod(packed)?,
+            scales: device.clone_htod(scales)?,
+            global_scale,
+            n,
+            k,
+        })
+    }
+    pub fn weight_shape(&self) -> (usize, usize) {
+        (self.n, self.k)
+    }
+    fn check_batch(&self, input: &CudaSlice<f16>, batch: usize) -> Result<Nvfp4LaunchShape> {
+        let shape = checked_launch_shape(self.n, self.k, batch)?;
+        if input.len() != shape.input_elements {
+            crate::bail!("ARCH-E6 A16 buffer must be contiguous [batch,k]");
+        }
+        self.check_context(input)?;
+        Ok(shape)
+    }
+    fn check_context<T>(&self, input: &CudaSlice<T>) -> Result<()> {
+        if !std::sync::Arc::ptr_eq(
+            input.stream().context(),
+            self.device.cuda_stream().context(),
+        ) {
+            crate::bail!("ARCH-E6 input and weights must use the same CUDA context");
+        }
+        Ok(())
+    }
+    pub fn forward_w4a16_scalar(
+        &self,
+        input: &CudaSlice<f16>,
+        batch: usize,
+    ) -> Result<CudaSlice<f32>> {
+        let shape = self.check_batch(input, batch)?;
+        let out = self.device.alloc_zeros::<f32>(shape.output_elements)?;
+        let plan = self.recipe.scalar_plan(shape.output_elements).map_err(recipe_error)?;
+        let func = self.device.get_or_load_func(plan.symbol, &candle_kernels::QUANTIZED)?;
+        let cfg = launch_config(plan);
+        let ni = self.n as i32;
+        let ki = self.k as i32;
+        let bi = batch as i32;
+        let mut b = func.builder();
+        b.arg(&self.weights);
+        b.arg(&self.scales);
+        b.arg(&self.global_scale);
+        b.arg(input);
+        b.arg(&out);
+        b.arg(&ni);
+        b.arg(&ki);
+        b.arg(&bi);
+        unsafe { b.launch(cfg) }.w()?;
+        func.record_submission();
+        Ok(out)
+    }
+    pub fn quantize_a16_to_q8(
+        &self,
+        input: &CudaSlice<f16>,
+        batch: usize,
+    ) -> Result<CudaSlice<u8>> {
+        let shape = self.check_batch(input, batch)?;
+        let f32buf = self.device.alloc_zeros::<f32>(shape.input_elements)?;
+        let plan = self.recipe.cast_plan(shape.input_elements).map_err(recipe_error)?;
+        let func = self.device.get_or_load_func(plan.symbol, &candle_kernels::QUANTIZED)?;
+        let total = shape.input_elements as i32;
+        let cfg = launch_config(plan);
+        let mut b = func.builder();
+        b.arg(input);
+        b.arg(&f32buf);
+        b.arg(&total);
+        unsafe { b.launch(cfg) }.w()?;
+        func.record_submission();
+        let padded = shape.padded_k;
+        let q8 = self.device.alloc_zeros::<u8>(shape.q8_bytes)?;
+        let plan = self.recipe.quant_plan(padded, batch).map_err(recipe_error)?;
+        let qfunc = self.device.get_or_load_func(plan.symbol, &candle_kernels::QUANTIZED)?;
+        let qc = launch_config(plan);
+        let ki = self.k as i32;
+        let pi = padded as i32;
+        let mut qb = qfunc.builder();
+        qb.arg(&f32buf);
+        qb.arg(&q8);
+        qb.arg(&ki);
+        qb.arg(&pi);
+        unsafe { qb.launch(qc) }.w()?;
+        qfunc.record_submission();
+        Ok(q8)
+    }
+    pub fn forward_q8(
+        &self,
+        q8: &CudaSlice<u8>,
+        batch: usize,
+        variant: W4A8Variant,
+    ) -> Result<CudaSlice<f32>> {
+        let shape = checked_launch_shape(self.n, self.k, batch)?;
+        self.check_context(q8)?;
+        let padded = shape.padded_k;
+        if q8.len() != shape.q8_bytes {
+            crate::bail!("ARCH-E6 Q8_1 buffer byte count mismatch")
+        }
+        let (major, minor) = self.device.cuda_stream().context().compute_capability().w()?;
+        let cc = (major * 10 + minor) as u32;
+        let tiled = match variant {
+            W4A8Variant::Auto => self.recipe.auto_tiled(cc, self.n, self.k, batch),
+            W4A8Variant::Tiled4x8 => true,
+            W4A8Variant::Reference => false,
+        };
+        let plan = self.recipe.native_matrix(cc, tiled, self.n, batch).map_err(recipe_error)?;
+        let out = self.device.alloc_zeros::<f32>(shape.output_elements)?;
+        let func = self.device.get_or_load_func(plan.symbol, &candle_kernels::QUANTIZED)?;
+        let cfg = launch_config(plan);
+        let ki = self.k as i32;
+        let ni = self.n as i32;
+        let bi = batch as i32;
+        let pi = padded as i32;
+        let di = ni;
+        let mut b = func.builder();
+        b.arg(&self.weights);
+        b.arg(&self.scales);
+        b.arg(&self.global_scale);
+        b.arg(q8);
+        b.arg(&out);
+        b.arg(&ki);
+        b.arg(&ni);
+        b.arg(&bi);
+        b.arg(&pi);
+        b.arg(&di);
+        unsafe { b.launch(cfg) }.w()?;
+        func.record_submission();
+        Ok(out)
+    }
+    pub fn forward_w4a8(
+        &self,
+        input: &CudaSlice<f16>,
+        batch: usize,
+        variant: W4A8Variant,
+    ) -> Result<CudaSlice<f32>> {
+        let q8 = self.quantize_a16_to_q8(input, batch)?;
+        self.forward_q8(&q8, batch, variant)
+    }
+}
+
+fn recipe_error(e: &'static str) -> crate::Error { crate::Error::Msg(e.into()) }
+fn launch_config(plan: Fp4Launch) -> LaunchConfig {
+    LaunchConfig { grid_dim: plan.grid, block_dim: plan.block, shared_mem_bytes: 0 }
+}

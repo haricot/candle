@@ -456,6 +456,12 @@ impl CudaDevice {
     #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmq_enabled(&self)->bool{self.dkr_s31.is_some()}
 
+    pub(crate) fn fp4_launch_recipe(&self) -> crate::quantized::fp4_recipe::Fp4Recipe {
+        #[cfg(feature = "cuda-dkr-s31")]
+        if let Some(catalog) = &self.dkr_s31 { return catalog.fp4_recipe(); }
+        crate::quantized::fp4_recipe::S31_FP4
+    }
+
     #[cfg(feature = "cuda-legacy-fp8")]
     pub(crate) fn fp8_launch_recipe(&self) -> crate::quantized::fp8_recipe::Fp8Recipe {
         #[cfg(feature = "cuda-dkr-s31")]

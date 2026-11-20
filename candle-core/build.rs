@@ -10,6 +10,9 @@ mod native_catalog;
 #[allow(dead_code)]
 #[path = "../candle-kernels/dkr_fp8_recipe.rs"]
 mod fp8_recipe;
+#[allow(dead_code)]
+#[path = "../candle-kernels/dkr_fp4_recipe.rs"]
+mod fp4_recipe;
 
 const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 
@@ -23,6 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut root_literal = "None".to_owned();
     let mut recipe_literal = "None".to_owned();
     let mut fp8_literal = "None".to_owned();
+    let mut fp4_literal = "None".to_owned();
+    println!("cargo:rerun-if-changed=../candle-kernels/dkr_fp4_recipe.rs");
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_fp8_recipe.rs");
     if let Some(root) = env::var_os(EMBED_ENV) {
         let root = PathBuf::from(root).canonicalize()?;
@@ -36,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let catalog = native_catalog::NativeCatalog::load(&root)?;
         recipe_literal = format!("Some({:?})", catalog.recipe.id());
         fp8_literal = format!("Some({:?})", catalog.recipe.fp8());
+        fp4_literal = format!("Some({:?})", catalog.recipe.fp4());
         for name in &catalog.families {
             let (manifest, artifact) = native_catalog::NativeCatalog::paths(&root, name);
             println!("cargo:rerun-if-changed={}", manifest.display());
@@ -70,6 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "pub const ROOT: Option<&str> = {root_literal};\n\
          pub const RECIPE: Option<&str> = {recipe_literal};\n\
          pub const FP8_RECIPE: Option<Fp8Recipe> = {fp8_literal};\n\
+         pub const FP4_RECIPE: Option<Fp4Recipe> = {fp4_literal};\n\
          pub fn modules() -> Vec<(&'static str, VerifiedArtifact, \
          Option<std::collections::BTreeMap<String,String>>)> {{ vec![{}] }}\n",
             rows.join(",\n")

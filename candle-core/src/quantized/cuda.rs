@@ -399,7 +399,7 @@ fn mul_mat_vec_via_q8_1(
     let kernel_name = match dtype {
         GgmlDType::Q4_0 => "mul_mat_vec_q4_0_q8_1_cuda",
         GgmlDType::Q4_1 => "mul_mat_vec_q4_1_q8_1_cuda",
-        GgmlDType::Mxfp4 => "mul_mat_vec_mxfp4_q8_1_cuda",
+        GgmlDType::Mxfp4 => "", // resolved by the FP4 recipe below
         GgmlDType::Q5_0 => "mul_mat_vec_q5_0_q8_1_cuda",
         GgmlDType::Q5_1 => "mul_mat_vec_q5_1_q8_1_cuda",
         GgmlDType::Q8_0 => "mul_mat_vec_q8_0_q8_1_cuda",
@@ -410,7 +410,10 @@ fn mul_mat_vec_via_q8_1(
         GgmlDType::Q6K => "mul_mat_vec_q6_K_q8_1_cuda",
         _ => crate::bail!("unsupported dtype for quantized matmul {dtype:?}"),
     };
-    let kernel_name = format!("{kernel_name}{b_size}");
+    let mx_plan = if dtype == GgmlDType::Mxfp4 {
+        Some(dev.fp4_launch_recipe().mx_vector(nrows,b_size).map_err(|e| crate::Error::Msg(e.into()))?)
+    } else { None };
+    let kernel_name = mx_plan.map_or_else(|| format!("{kernel_name}{b_size}"), |p| p.symbol.to_owned());
     let func = dev.get_or_load_func(&kernel_name, &candle_kernels::QUANTIZED)?;
     let dst = dev.alloc_zeros::<f32>(nrows * b_size)?;
     // https://github.com/ggerganov/llama.cpp/blob/facb8b56f8fd3bb10a693bf0943ae9d69d0828ef/ggml-cuda/mmvq.cu#L98
@@ -421,8 +424,8 @@ fn mul_mat_vec_via_q8_1(
         _ => crate::bail!("unexpected bsize {b_size}"),
     };
     let cfg = cudarc::driver::LaunchConfig {
-        grid_dim: (nblocks, 1, 1),
-        block_dim: (WARP_SIZE as u32, nwarps, 1),
+        grid_dim: mx_plan.map_or((nblocks, 1, 1), |p| p.grid),
+        block_dim: mx_plan.map_or((WARP_SIZE as u32, nwarps, 1), |p| p.block),
         shared_mem_bytes: 0,
     };
 
@@ -474,7 +477,7 @@ fn mul_mat_via_q8_1(
     let (kernel_name, mmq_x, mmq_y, nwarps) = match dtype {
         GgmlDType::Q4_0 => ("mul_mat_q4_0", 64, 128, 4),
         GgmlDType::Q4_1 => ("mul_mat_q4_1", 64, 128, 4),
-        GgmlDType::Mxfp4 => ("mul_mat_mxfp4", 1, 1, 4),
+        GgmlDType::Mxfp4 => ("", 1, 1, 4), // resolved by the FP4 recipe below
         GgmlDType::Q5_0 => ("mul_mat_q5_0", 128, 64, 4),
         GgmlDType::Q5_1 => ("mul_mat_q5_1", 128, 64, 4),
         GgmlDType::Q8_0 => ("mul_mat_q8_0", 128, 64, 4),
@@ -485,20 +488,13 @@ fn mul_mat_via_q8_1(
         GgmlDType::Q6K => ("mul_mat_q6_K", 64, 64, 4),
         _ => crate::bail!("unsupported dtype for quantized matmul {dtype:?}"),
     };
-    let func = dev.get_or_load_func(kernel_name, &candle_kernels::QUANTIZED)?;
+    let mx_plan = if dtype == GgmlDType::Mxfp4 {
+        Some(dev.fp4_launch_recipe().mx_matrix(x_rows,y_cols).map_err(|e| crate::Error::Msg(e.into()))?)
+    } else { None };
+    let func = dev.get_or_load_func(mx_plan.map_or(kernel_name, |p| p.symbol), &candle_kernels::QUANTIZED)?;
     let dst = dev.alloc_zeros::<f32>(x_rows * y_cols)?;
-    let cfg = if dtype == GgmlDType::Mxfp4 {
-        if y_cols > u16::MAX as usize {
-            crate::bail!(
-                "MXFP4 SM61 prefill currently supports at most {} rows, got {y_cols}",
-                u16::MAX
-            )
-        }
-        cudarc::driver::LaunchConfig {
-            grid_dim: (x_rows as u32, y_cols as u32, 1),
-            block_dim: (WARP_SIZE as u32, 4, 1),
-            shared_mem_bytes: 0,
-        }
+    let cfg = if let Some(plan) = mx_plan {
+        cudarc::driver::LaunchConfig { grid_dim: plan.grid, block_dim: plan.block, shared_mem_bytes: 0 }
     } else {
         cudarc::driver::LaunchConfig {
             grid_dim: (
@@ -580,14 +576,17 @@ fn indexed_moe_forward_fused_q8_1_input(
         GgmlDType::Q5K => "indexed_moe_forward_q5k_q8_1",
         GgmlDType::Q6K => "indexed_moe_forward_q6k_q8_1",
         GgmlDType::Q8_0 => "indexed_moe_forward_q8_0_q8_1",
-        GgmlDType::Mxfp4 => "indexed_moe_forward_mxfp4_q8_1",
+        GgmlDType::Mxfp4 => "", // resolved by the FP4 recipe below
         _ => crate::bail!("unsupported dtype for indexed_moe_forward {w_dtype:?}"),
     };
-    let func = dev.get_or_load_func(kernel_name, &candle_kernels::QUANTIZED)?;
+    let mx_plan = if w_dtype == GgmlDType::Mxfp4 {
+        Some(dev.fp4_launch_recipe().mx_indexed(n,batch,topk).map_err(|e| crate::Error::Msg(e.into()))?)
+    } else { None };
+    let func = dev.get_or_load_func(mx_plan.map_or(kernel_name, |p| p.symbol), &candle_kernels::QUANTIZED)?;
     let (nblocks, nwarps) = (n as u32, 4);
     let cfg = cudarc::driver::LaunchConfig {
-        grid_dim: (nblocks, batch as u32, topk as u32),
-        block_dim: (WARP_SIZE as u32, nwarps, 1),
+        grid_dim: mx_plan.map_or((nblocks, batch as u32, topk as u32), |p| p.grid),
+        block_dim: mx_plan.map_or((WARP_SIZE as u32, nwarps, 1), |p| p.block),
         shared_mem_bytes: 0,
     };
 

@@ -1,6 +1,6 @@
 //! Native catalogue inventory shared by the build script, runtime and producer.
 //! An inventory describes a qualified host-launch ABI, not just loadable PTX.
-use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}};
+use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}, fp4_recipe::{Fp4Recipe, S31_FP4}};
 use dkr_kernel_registry::VerifiedArtifact;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs, io::Read, path::{Path, PathBuf}};
@@ -33,6 +33,8 @@ impl NativeRecipe {
             _ => Err(format!("unsupported native launch recipe: {id}")),
         }
     }
+
+    pub(super) fn fp4(self) -> Fp4Recipe { match self { Self::S31NativeV1 => S31_FP4 } }
 
     pub(super) fn fp8(self) -> Fp8Recipe {
         match self { Self::S31NativeV1 => S31_FP8 }
@@ -108,13 +110,13 @@ impl NativeCatalog {
             "max_cc": self.target_cc,
             "families": self.families,
             "fp8": fp8_descriptor(self.recipe.fp8()),
+            "fp4": fp4_descriptor(self.recipe.fp4()),
         })
     }
 
     fn parse(value: &Value) -> Result<Self, String> {
         let object = value.as_object().ok_or("native catalogue must be an object")?;
-        if !(object.len() == 7 && !object.contains_key("fp8")
-            || object.len() == 8 && object.contains_key("fp8"))
+        if object.len() != 7 + usize::from(object.contains_key("fp8")) + usize::from(object.contains_key("fp4"))
             || value["schema"].as_str() != Some(SCHEMA)
             || value["abi"].as_str() != Some(dkr_kernel_registry::NATIVE_ABI)
         {
@@ -125,6 +127,9 @@ impl NativeCatalog {
             if *fp8 != fp8_descriptor(recipe.fp8()) {
                 return Err("FP8 descriptor differs from qualified launch ABI".into());
             }
+        }
+        if let Some(fp4) = object.get("fp4") {
+            if *fp4 != fp4_descriptor(recipe.fp4()) { return Err("FP4 descriptor differs from qualified launch ABI".into()); }
         }
         let cc = value["target_cc"].as_u64().and_then(|cc| u32::try_from(cc).ok())
             .ok_or("invalid native catalogue target")?;
@@ -184,9 +189,42 @@ impl NativeCatalog {
         verified.admit_exact_target(self.target_cc)?;
         if family == "quantized" {
             verify_fp8_entries(self.recipe.fp8(), &verified)?;
+            verify_fp4_entries(self.recipe.fp4(), &verified)?;
         }
         Ok((verified, symbols))
     }
+}
+
+fn fp4_descriptor(recipe: Fp4Recipe) -> Value {
+    json!({
+        "scalar": recipe.scalar,
+        "cast": recipe.cast,
+        "quantize": recipe.quantize,
+        "reference": recipe.reference,
+        "tiled": recipe.tiled,
+        "mx_vec": recipe.mx_vec,
+        "mx_mat": recipe.mx_mat,
+        "mx_moe": recipe.mx_moe,
+        "auto_cc": recipe.auto_cc,
+        "min_dp4a_cc": recipe.min_dp4a_cc,
+        "auto_min_n": recipe.auto_min_n,
+        "auto_min_k": recipe.auto_min_k,
+        "auto_min_batch": recipe.auto_min_batch,
+        "scalar_threads": recipe.scalar_threads,
+        "cast_threads": recipe.cast_threads,
+        "quant_threads": recipe.quant_threads,
+        "warp": recipe.warp,
+        "matrix_warps": recipe.matrix_warps,
+        "tile_n": recipe.tile_n,
+        "tile_m": recipe.tile_m,
+    })
+}
+
+fn verify_fp4_entries(recipe: Fp4Recipe, artifact: &VerifiedArtifact) -> Result<(), String> {
+    for symbol in recipe.symbols() {
+        if !artifact.has_entry(symbol) { return Err(format!("native FP4 entry missing: {symbol}")); }
+    }
+    Ok(())
 }
 
 fn fp8_descriptor(recipe: Fp8Recipe) -> Value {
@@ -243,6 +281,32 @@ mod tests {
             bad[field] = value;
             assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
         }
+    }
+
+    #[test]
+    fn dkr_native_catalog_fp4_recipe() {
+        use sha2::{Digest, Sha256};
+        let legacy = NativeCatalog::legacy();
+        let index = legacy.index();
+        assert_eq!(NativeCatalog::parse(&index).unwrap().recipe.fp4(), S31_FP4);
+        let mut old = index.clone();
+        old.as_object_mut().unwrap().remove("fp4");
+        old.as_object_mut().unwrap().remove("fp8");
+        assert_eq!(NativeCatalog::parse(&old).unwrap().recipe.fp4(), S31_FP4);
+        for (field, value) in [("auto_cc",json!(80)), ("tile_n",json!(8)), ("scalar",json!("other"))] {
+            let mut bad = index.clone();
+            bad["fp4"][field] = value;
+            assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
+        }
+        let symbols: Vec<_> = S31_FP4.symbols().collect();
+        let make = |symbols: &[&str]| {
+            let mut ptx = format!(".version 8.0\n.target sm_{}\n.address_size 64\n", legacy.target_cc);
+            for symbol in symbols { ptx += &format!(".visible .entry {symbol}() {{ ret; }}\n"); }
+            let digest = format!("{:x}", Sha256::digest(ptx.as_bytes()));
+            VerifiedArtifact::new(ptx, legacy.target_cc, &digest).unwrap()
+        };
+        assert!(verify_fp4_entries(S31_FP4,&make(&symbols)).is_ok());
+        assert!(verify_fp4_entries(S31_FP4,&make(&symbols[..symbols.len()-1])).is_err());
     }
 
     #[test]
