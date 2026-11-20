@@ -15,6 +15,9 @@ pub(crate) struct Fp8Recipe {
     pub(crate) groups: [usize; 3],
 }
 
+/// F8E-v1 checkpoint/packing contract; independent of launch tile choice.
+pub(crate) const F8E_V1_K_ALIGNMENT: usize = 128;
+
 pub(crate) const S31_FP8: Fp8Recipe = Fp8Recipe {
     simt_gemv: "fp8_sm61_w8a16_gemv",
     simt_prefill: "fp8_sm61_w8a16_prefill4",
@@ -24,7 +27,7 @@ pub(crate) const S31_FP8: Fp8Recipe = Fp8Recipe {
     prefill_tokens: 4,
     rows_per_block: 4,
     threads: 128,
-    k_alignment: 128,
+    k_alignment: F8E_V1_K_ALIGNMENT,
     groups: [32, 64, 128],
 };
 

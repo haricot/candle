@@ -9,7 +9,7 @@
 //! exactly one resident representation. The dispatch is an admission estimate;
 //! actual CUDA allocation can still fail, and must fail closed.
 use std::fmt;
-use super::fp8_recipe::S31_FP8;
+use super::fp8_recipe::F8E_V1_K_ALIGNMENT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Fp8Backend {
@@ -100,7 +100,7 @@ pub fn required_bytes(s: &Fp8LinearSpec) -> Outcome<(usize, usize)> {
         return Err(Fp8DispatchError("invalid FP8 tensor/block geometry"));
     }
     // CUDA F8E kernel requires K divisible by 128; fail early and deterministically.
-    if !s.in_features.is_multiple_of(S31_FP8.k_alignment) {
+    if !s.in_features.is_multiple_of(F8E_V1_K_ALIGNMENT) {
         return Err(Fp8DispatchError("F8E native ABI requires K alignment"));
     }
     if s.out_features > i32::MAX as usize

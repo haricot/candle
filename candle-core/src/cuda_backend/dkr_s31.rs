@@ -166,6 +166,27 @@ impl ExternalModules {
 mod tests {
     use super::*;
     #[test]
+    fn dkr_fp8_recipe_embedded_table() {
+        match embedded::ROOT {
+            Some(_) => {
+                let recipe = NativeRecipe::from_id(embedded::RECIPE.unwrap()).unwrap();
+                let fp8 = embedded::FP8_RECIPE.unwrap();
+                assert_eq!(fp8, recipe.fp8());
+                let rows = embedded::modules();
+                let (_, artifact, _) = rows.iter().find(|(name, _, _)| *name == "quantized").unwrap();
+                for symbol in fp8.symbols() {
+                    assert!(artifact.has_entry(symbol), "missing embedded FP8 entry {symbol}");
+                }
+            }
+            None => {
+                assert!(embedded::RECIPE.is_none());
+                assert!(embedded::FP8_RECIPE.is_none());
+                assert!(embedded::modules().is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn dkr_s31_manifest_contract() {
         let text = ".version 8.0\n.target sm_61\n.address_size 64\n.visible .entry sample() { ret; }\n";
         let mut m = serde_json::json!({

@@ -63,6 +63,9 @@ embeds a verified typed FP8 descriptor and the filesystem path uses the same
 recipe and package checks. The selected descriptor is pinned per linear.
 Historical static execution stays explicit when no native catalogue is selected.
 No automatic DP4A or FP16 admission changes, no PTX edits, no launch ABI changes.
+Submitted telemetry is now recorded explicitly for FP8 launches; this adds
+observability, not a new execution route. The embedded table test checks
+its five entry symbols when built with DKR_EMBED_NATIVE_DIR.
 S3.1 retains F8E-v1 tensor/packing ABI and old custom-op trace names; it does
 not add native FP8 Tensor Core support or remove the static feature yet.
 The FP8 recipe is frozen in the package-side source, not arbitrary executable

@@ -4,7 +4,7 @@
 //! A single instance holds ONE weight representation. DP4A is explicit research
 //! only, never selected in the generic Auto dispatch.
 use super::fp8_dispatch::{Fp8Backend, Fp8DispatchEntry};
-use super::fp8_recipe::{Fp8Recipe, Fp8Launch, S31_FP8};
+use super::fp8_recipe::{Fp8Recipe, Fp8Launch};
 use crate::cuda_backend::{
     cudarc::driver::{CudaSlice, LaunchConfig, PushKernelArg},
     WrapErr,
@@ -25,14 +25,6 @@ pub enum Fp8Mode {
 use super::fp8_dispatch::{required_bytes, Fp8LinearSpec};
 pub use super::fp8_format::e4m3fn_decode;
 use super::fp8_format::{checked_f16_weight, decode_f8e_inverse_scales};
-
-/// Dispatch selection fixed after the F8E v0.4 sm_61 GPU campaign.
-/// The 8-token DP4A tile was slower in ALL tested prefill workloads; only
-/// the 4-token tile is production-selectable in F8E-R1.
-/// For M<4 the GEMV kernel handles one output row per grid-y coordinate.
-pub fn dp4a_launch_for_tokens(tokens: usize) -> (&'static str, usize) {
-    S31_FP8.matrix_symbol(true, tokens)
-}
 
 /// Compatibility entry point for the historical F8E Auto constructor.
 /// R4-C intentionally disables shape-only auto-FP16/DP4A selection: a caller
