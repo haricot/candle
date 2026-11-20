@@ -99,7 +99,7 @@ def main():
     def archived(label, expr, runtime_env):
         return run(["cargo", "nextest", "run", "--archive-file", str(archive),
                     "--workspace-remap", str(ROOT), "--run-ignored", "all",
-                    "--no-fail-fast", "--no-capture", "-E", expr],
+                    "--no-fail-fast", "--no-capture", "--test-threads", "1", "-E", expr],
                    runtime_env, work / (label + ".log"))
     result = archived("embedded-digests",
             "test(dkr_embedded_catalog_digest_inventory)", env)
@@ -118,7 +118,12 @@ def main():
         "dkr_catalog_mmq_cuda_batch_and_dtype", "dkr_routed_gguf_moe_cuda",
         "sm61_simt_decode_weighted_fp16", "sm61_simt_prefill_topk2_fp16",
     ]
-    gpu = archived("embedded-tests", " | ".join(f"test(={t})" for t in tests), env)
+    gpu = archived("embedded-tests", " | ".join(f"test({t})" for t in tests), env)
+    # Unit test names contain Rust module paths; filter by unique suffix and
+    # require evidence of every selected test actually completing.
+    for name in tests:
+        require(re.search(r"test (?:[^\\s]+::)?" + re.escape(name) + r" \\.\\.\\. ok", gpu)
+                is not None, f"missing successful test: {name}")
     require("CANDLE_DKR_NATIVE_CATALOG source=embedded manifests=25" in gpu,
             "missing embedded runtime provenance")
     require("CANDLE_DKR_NATIVE_CATALOG source=filesystem" not in gpu,
@@ -129,10 +134,12 @@ def main():
                    "mmq_instance_q8_0", "moe_gguf", "moe_simt_f16"):
         require(f"CANDLE_DKR_MODULE_LOADED family={family} target=sm61" in gpu,
                 f"missing GPU module provenance: {family}")
-    archived("reject-filesystem", "test(=dkr_embedded_rejects_filesystem)",
-             dict(env, MISTRALRS_DKR_ARTIFACT_SOURCE="filesystem"))
-    archived("reject-directory", "test(=dkr_embedded_rejects_directory_override)",
-             dict(env, CANDLE_DKR_S31_DIR=str(source)))
+    for name, override in [
+        ("dkr_embedded_rejects_filesystem", {"MISTRALRS_DKR_ARTIFACT_SOURCE": "filesystem"}),
+        ("dkr_embedded_rejects_directory_override", {"CANDLE_DKR_S31_DIR": str(source)}),
+    ]:
+        result = archived(name, f"test(={name})", dict(env, **override))
+        require(f"test {name} ... ok" in result, f"missing runtime rejection test: {name}")
     print("DKR_R124_S44_RUNTIME_OVERRIDES=REJECTED", flush=True)
     require(inventory(source) == expected, "original catalogue changed")
     print("DKR_R124_S44_ORIGINAL_CATALOG_UNCHANGED=1", flush=True)
