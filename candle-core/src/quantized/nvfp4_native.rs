@@ -22,6 +22,7 @@ pub enum W4A8Variant {
 pub struct Nvfp4Native {
     device: CudaDevice,
     recipe: Fp4Recipe,
+    device_cc: u32,
     weights: CudaSlice<u8>,
     scales: CudaSlice<u8>,
     global_scale: f32,
@@ -39,9 +40,11 @@ impl Nvfp4Native {
         global_scale: f32,
     ) -> Result<Self> {
         validate_modelopt_payload(n, k, packed, scales, global_scale)?;
+        let (major, minor) = device.cuda_stream().context().compute_capability().w()?;
         Ok(Self {
             device: device.clone(),
             recipe: device.fp4_launch_recipe(),
+            device_cc: (major * 10 + minor) as u32,
             weights: device.clone_htod(packed)?,
             scales: device.clone_htod(scales)?,
             global_scale,
@@ -140,8 +143,7 @@ impl Nvfp4Native {
         if q8.len() != shape.q8_bytes {
             crate::bail!("ARCH-E6 Q8_1 buffer byte count mismatch")
         }
-        let (major, minor) = self.device.cuda_stream().context().compute_capability().w()?;
-        let cc = (major * 10 + minor) as u32;
+        let cc = self.device_cc;
         let tiled = match variant {
             W4A8Variant::Auto => self.recipe.auto_tiled(cc, self.n, self.k, batch),
             W4A8Variant::Tiled4x8 => true,

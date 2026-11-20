@@ -146,3 +146,34 @@ fn modelopt_packed_loader_and_dp4a_gpu_sm61() -> Result<()> {
     assert!(op.forward(&x, Fp4Execution::Mxfp4Existing).is_err());
     Ok(())
 }
+
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[test]
+fn dkr_fp4_auto_matches_selected_route_cuda() -> Result<()> {
+    use candle_core::quantized::nvfp4_native::{Nvfp4Native, W4A8Variant};
+    use half::f16;
+    let device = Device::new_cuda(0)?;
+    let cuda = match &device { Device::Cuda(d) => d, _ => unreachable!() };
+    let (major, minor) = cuda.cuda_stream().context().compute_capability()
+        .map_err(|e| candle_core::Error::Msg(format!("CUDA capability: {e}")))?;
+    let (n,k) = (512usize,1024usize);
+    let packed = (0..n*k/2).map(|i| (i*37+11) as u8).collect::<Vec<_>>();
+    let scales = (0..n*k/16).map(|i| [0x30,0x38,0x40][i%3]).collect::<Vec<_>>();
+    let op = Nvfp4Native::from_packed(cuda,n,k,&packed,&scales,0.5)?;
+    for batch in [8usize,9,17] {
+        let input = (0..batch*k).map(|i| f16::from_f32((i as i32%19-9) as f32/8.)).collect::<Vec<_>>();
+        let input = cuda.clone_htod(&input)?;
+        let q8 = op.quantize_a16_to_q8(&input,batch)?;
+        let auto = op.forward_q8(&q8,batch,W4A8Variant::Auto)?;
+        let expected = if (major,minor)==(6,1) && batch>=9 {
+            W4A8Variant::Tiled4x8
+        } else { W4A8Variant::Reference };
+        let explicit = op.forward_q8(&q8,batch,expected)?;
+        let a: Vec<f32> = cuda.clone_dtoh(&auto)?;
+        let b: Vec<f32> = cuda.clone_dtoh(&explicit)?;
+        assert_eq!(a.len(),batch*n);
+        assert!(a.iter().zip(b.iter()).all(|(a,b)| a.is_finite() && a.to_bits()==b.to_bits()),
+            "auto/explicit mismatch at batch {batch}");
+    }
+    Ok(())
+}

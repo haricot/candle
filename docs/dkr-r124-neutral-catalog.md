@@ -84,7 +84,8 @@ ABI; all fifteen required entries must exist in the quantized PTX.
 Embedded and filesystem metadata use the same descriptor. No PTX, packing,
 scale convention, argument ABI or auto thresholds changed. NVFP4 and MXFP4
 remain distinct formats. Launch bounds reject invalid dimensions.
-Generic GGUF Q8_1 staging and the other dtype paths are not migrated here.
+Generic GGUF Q8_1 staging, MXFP4 dequantization/embedding, experimental NVFP4 probes and the other dtype paths are not migrated here.
+The native instance caches device capability once; a GPU test compares Auto with the expected explicit route at the batch 8/9 boundary.
 This does not remove the legacy compilation feature or qualify another GPU.
 
 ## Migration gates (not yet completed)

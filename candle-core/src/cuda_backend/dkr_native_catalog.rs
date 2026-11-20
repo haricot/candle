@@ -116,7 +116,7 @@ impl NativeCatalog {
 
     fn parse(value: &Value) -> Result<Self, String> {
         let object = value.as_object().ok_or("native catalogue must be an object")?;
-        if object.len() != 7 + usize::from(object.contains_key("fp8")) + usize::from(object.contains_key("fp4"))
+        if object.len() != 7 + (object.contains_key("fp8") as usize) + (object.contains_key("fp4") as usize)
             || value["schema"].as_str() != Some(SCHEMA)
             || value["abi"].as_str() != Some(dkr_kernel_registry::NATIVE_ABI)
         {
