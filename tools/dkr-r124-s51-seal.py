@@ -80,6 +80,46 @@ def check_source():
                            cwd=ROOT).returncode == 0, "production differs from qualified S4.4")
     return git("rev-parse", "HEAD")
 
+def entry_maps(family, data, entries):
+    # S31 serializes Rust Option::None as JSON null for unrelated families.
+    # The qualified validator requires maps only for their own family prefix.
+    maps = {}
+    symbols = set(entries)
+    for prefix, key in (("mmq_", "mmq_entries"), ("moe_", "moe_entries")):
+        value = data.get(key)
+        if family.startswith(prefix):
+            require(isinstance(value, dict) and bool(value)
+                    and all(isinstance(symbol, str) and symbol in symbols
+                            for symbol in value.values()),
+                    "entry map " + family + "/" + key)
+            maps[key] = value
+        else:
+            require(value is None, "unexpected entry map " + family + "/" + key)
+    return maps
+
+def self_test():
+    entries = ["symbol"]
+    require(entry_maps("affine", {"mmq_entries": None, "moe_entries": None}, entries) == {},
+            "null map regression")
+    require(entry_maps("affine", {}, entries) == {}, "absent map regression")
+    for family, key in (("mmq_quantize", "mmq_entries"), ("moe_gguf", "moe_entries")):
+        require(entry_maps(family, {key: {"entry": "symbol"}}, entries)
+                == {key: {"entry": "symbol"}}, "valid map regression")
+        for invalid in (None, {}, [], {"entry": "missing"}, {"entry": []}):
+            try:
+                entry_maps(family, {key: invalid}, entries)
+            except SystemExit:
+                pass
+            else:
+                require(False, "invalid map accepted")
+    try:
+        entry_maps("affine", {"mmq_entries": {"entry": "symbol"}}, entries)
+    except SystemExit:
+        pass
+    else:
+        require(False, "unrelated map accepted")
+    print("DKR_R124_S51_SELF_TEST=PASS")
+
 def catalogue(root):
     rows = {}
     for mf in sorted(root.glob("*/manifest.json")):
@@ -94,9 +134,7 @@ def catalogue(root):
         require(re.findall(r"(?m)^\s*\.target\s+([^\s,]+)", text) == ["sm_61"], "PTX target " + family)
         digest = sha(ptx)
         require(digest == data["sha256"] and entries, "PTX digest/entries " + family)
-        maps = {key: data[key] for key in ("mmq_entries", "moe_entries") if key in data}
-        for key, value in maps.items():
-            require(isinstance(value, dict) and set(value.values()) <= set(entries), "entry map " + family + "/" + key)
+        maps = entry_maps(family, data, entries)
         rows[family] = {"ptx_sha256": digest, "manifest_sha256": sha(mf),
                         "ptx_bytes": ptx.stat().st_size, "entry_count": len(entries),
                         "entry_names_sha256": canonical_sha(entries), "flags": data["flags"],
@@ -235,10 +273,14 @@ def main():
     s=sub.add_parser("seal")
     for name in ("catalog","s44-report","out"):
         s.add_argument("--"+name,type=Path,required=True)
+    sub.add_parser("self-test")
     h=sub.add_parser("headless")
     h.add_argument("--seal",type=Path,required=True)
     args=p.parse_args()
-    (seal if args.mode=="seal" else headless)(args)
+    if args.mode == "self-test":
+        self_test()
+    else:
+        (seal if args.mode=="seal" else headless)(args)
 
 if __name__=="__main__":
     main()
