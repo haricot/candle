@@ -107,3 +107,45 @@ fn dkr_routed_gguf_moe_cuda() -> Result<()> {
     assert!(dev.dkr_moe_admit(false,DType::BF16).is_err());
     Ok(())
 }
+
+
+#[cfg(feature = "cuda-dkr-embedded")]
+#[test]
+#[ignore = "SM61 headless archive only: six native GGUF MoE codecs"]
+fn dkr_s52_gguf_moe_six_codecs() -> Result<()> {
+    use candle::quantized::{GgmlDType, QTensor};
+    use candle_nn::moe::moe_gemm_gguf;
+    let gpu = Device::new_cuda(0)?;
+    assert!(gpu.as_cuda_device()?.dkr_moe_enabled());
+    let (experts, n, k) = (2usize,5usize,256usize);
+    let w = (0..experts*n*k).map(|i| {
+        let expert = i/(n*k);
+        (if expert==0 {0.40f32} else {0.70f32}) +
+            ((i * 7 % 13) as f32)*0.005
+    }).collect::<Vec<_>>();
+    let weights = Tensor::from_vec(w,(experts,n,k),&gpu)?;
+    let x=Tensor::from_vec(vec![0.25f32;2*k],(2,k),&gpu)?;
+    let sorted=Tensor::from_vec(vec![0u32,2,1,3],4,&gpu)?;
+    let experts_id=Tensor::from_vec(vec![0u32,0,1,1],4,&gpu)?;
+    for codec in [GgmlDType::Q8_0,GgmlDType::Q4K,GgmlDType::Q2K,
+                  GgmlDType::Q3K,GgmlDType::Q5K,GgmlDType::Q6K] {
+        let q=QTensor::quantize(&weights,codec)?;
+        let dequant=q.dequantize(&gpu)?.flatten_all()?.to_vec1::<f32>()?;
+        let out=moe_gemm_gguf(&x,&q,&None,&sorted,&experts_id,2,true,DType::F32)?;
+        assert_eq!(out.dims(),&[4,n], "{codec:?}");
+        let values=out.flatten_all()?.to_vec1::<f32>()?;
+        for row in 0..4usize {
+            let expert=row%2;
+            for col in 0..n {
+                let offset=(expert*n+col)*k;
+                let expected=dequant[offset..offset+k].iter().sum::<f32>()*0.25;
+                let got=values[row*n+col];
+                assert!(got.is_finite() && (got-expected).abs()<0.75+expected.abs()*0.025,
+                        "GGUF MoE {codec:?} row={row} col={col} got={got} expected={expected}");
+            }
+        }
+        println!("DKR_R124_S52_GGUF_MOE codec={codec:?} rows=4 n={n} k={k}");
+    }
+    println!("DKR_R124_S52_GGUF_MOE=PASS codecs=6");
+    Ok(())
+}
