@@ -229,7 +229,12 @@ pub fn try_fwd(
     if ncols != k {
         return Ok(None);
     }
-    if b_size == 0 || b_size > MMVQ_MAX_BATCH {
+    let dev = qstorage.device();
+    #[cfg(feature = "cuda-dkr-s31")]
+    let max_batch=dev.dkr_mmvq_max_batch().unwrap_or(MMVQ_MAX_BATCH);
+    #[cfg(not(feature = "cuda-dkr-s31"))]
+    let max_batch=MMVQ_MAX_BATCH;
+    if b_size == 0 || b_size > max_batch {
         return Ok(None);
     }
 
@@ -238,17 +243,21 @@ pub fn try_fwd(
         None => return Ok(None),
     };
 
-    let dev = qstorage.device();
     let stream_ptr = dev.cuda_stream().cu_stream() as *mut std::ffi::c_void;
-
-    let k_padded = pad(k, MATRIX_ROW_PADDING);
-    let num_blocks_per_row = k_padded / Q8_1_BLOCK_SIZE;
-    let dst_row_bytes = num_blocks_per_row * Q8_1_TYPE_SIZE;
-    let scratch_bytes = b_size * dst_row_bytes;
+    let static_workspace=|| {
+        let padded=pad(k,MATRIX_ROW_PADDING);
+        let blocks=padded/Q8_1_BLOCK_SIZE;
+        (padded,blocks,b_size*blocks*Q8_1_TYPE_SIZE)
+    };
+    #[cfg(feature = "cuda-dkr-s31")]
+    let (k_padded,num_blocks_per_row,scratch_bytes)=dev.dkr_mmvq_workspace(k,nrows,b_size)?
+        .unwrap_or_else(static_workspace);
+    #[cfg(not(feature = "cuda-dkr-s31"))]
+    let (k_padded,num_blocks_per_row,scratch_bytes)=static_workspace();
 
     let (scratch_ptr, _workspace_guard) = workspace_ensure(dev, scratch_bytes)?;
     let scratch_ptr = scratch_ptr as *mut std::ffi::c_void;
-    let stride_col_y = (k_padded / Q8_1_BLOCK_SIZE) as i32;
+    let stride_col_y = num_blocks_per_row as i32;
     let stride_col_dst = nrows as i32;
     let weight_ptr = qstorage.device_ptr()? as *const std::ffi::c_void;
 

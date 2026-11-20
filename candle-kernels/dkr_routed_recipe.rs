@@ -47,6 +47,16 @@ pub(crate) struct GgufPlan {
 }
 const LIMIT: usize = i32::MAX as usize;
 impl RoutedRecipe {
+    pub(crate) fn mmvq_workspace(self,k:usize,n:usize,batch:usize)->Result<(usize,usize,usize),&'static str> {
+        if k==0 || n==0 || batch==0 || batch>self.max_batch || k>LIMIT || n>LIMIT {
+            return Err("MMVQ workspace outside native ABI");
+        }
+        let padded=k.div_ceil(self.row_padding)*self.row_padding;
+        let elements=padded.checked_mul(batch).filter(|&v|v<=LIMIT).ok_or("MMVQ padded index overflow")?;
+        if n.checked_mul(batch).is_none_or(|v|v>LIMIT) { return Err("MMVQ output index overflow"); }
+        let scratch=(elements/self.q8_block).checked_mul(self.q8_bytes).ok_or("MMVQ scratch overflow")?;
+        Ok((padded,padded/self.q8_block,scratch))
+    }
     pub(crate) fn mmvq(self, codec:&str, tag:&str,k:usize,padded:usize,n:usize,batch:usize) -> Result<MmvqPlan,&'static str> {
         if !matches!(codec,"q4_0"|"q4_1"|"q5_0"|"q5_1"|"q8_0"|"q2_k"|"q3_k"|"q4_k"|"q5_k"|"q6_k")
             || !matches!(tag,"bf16"|"f16"|"f32")
@@ -117,6 +127,9 @@ mod tests {
                 }
             }
         }
+        assert_eq!(r.mmvq_workspace(768,65,3).unwrap(),(1024,32,3456));
+        assert!(r.mmvq_workspace(i32::MAX as usize,65,1).is_err());
+        assert!(r.mmvq_workspace(1024,65,9).is_err());
         assert!(r.mmvq("q4_k","f16",1024,1024,65,9).is_err());
         assert!(r.mmvq("q4_k","f16",1024,512,65,1).is_err());
         for e in [1,31,32,33,1024]{

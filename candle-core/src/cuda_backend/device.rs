@@ -447,6 +447,17 @@ impl CudaDevice {
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmvq_max_batch(&self) -> Option<usize> {
+        self.dkr_s31.as_ref().map(|c|c.routed_recipe().max_batch)
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmvq_workspace(&self,k:usize,n:usize,batch:usize)->Result<Option<(usize,usize,usize)>> {
+        self.dkr_s31.as_ref().map(|c|c.routed_recipe().mmvq_workspace(k,n,batch)
+            .map_err(|e|crate::Error::Msg(e.into()))).transpose()
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmvq_plan(&self, codec:&str, tag:&str,k:usize,padded:usize,n:usize,batch:usize)
         -> Result<Option<(CudaFunc,CudaFunc,cudarc::driver::LaunchConfig,cudarc::driver::LaunchConfig)>>
     {

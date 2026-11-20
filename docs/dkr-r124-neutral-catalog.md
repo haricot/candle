@@ -120,8 +120,11 @@ catalogue, including its GGUF shared-memory limit and workspace extent.
 Unsupported MoE dtype with a selected catalogue is an explicit error, not
 a static FFI route. Static compatibility without DKR is unchanged.
 No kernel source, argument ABI, routing semantics or native plan cache change.
-The historical static FFI, generic MMVQ workspace preparation and the
-compile-time feature/build topology remain until S4. Only SM61 is qualified.
+Native MMVQ batch admission, padding and workspace sizing also use the recipe
+before allocating scratch. Static FFI and its workspace path, and the
+compile-time feature/build topology, remain until S4. The GPU regression tests
+cover all eight MMVQ batch sizes over three activation types (Q8_0), plus
+native grouped GGUF MoE with a partial output tile and a rejected BF16 route. Only SM61 is qualified.
 
 ## Migration gates (not yet completed)
 

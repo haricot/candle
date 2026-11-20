@@ -1793,3 +1793,24 @@ fn bench_qmatmul_prefill_cpu() -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(feature = "cuda-dkr-s31")]
+#[test]
+fn dkr_routed_mmvq_cuda_batch_and_dtype() -> Result<()> {
+    let gpu=Device::new_cuda(0)?;
+    let (n,k)=(64usize,256usize);
+    let weights=Tensor::from_vec(vec![0.5f32;n*k],(n,k),&gpu)?;
+    let q=quantized::QTensor::quantize(&weights,GgmlDType::Q8_0)?;
+    let mm=quantized::QMatMul::from_qtensor(q)?;
+    for dtype in [DType::F16,DType::BF16,DType::F32] {
+        for batch in 1..=8 {
+            let x=Tensor::from_vec(vec![0.25f32;batch*k],(batch,k),&gpu)?.to_dtype(dtype)?;
+            let y=mm.forward(&x)?;
+            assert_eq!(y.dtype(),dtype);
+            assert_eq!(y.dims(),&[batch,n]);
+            let values=y.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+            assert!(values.iter().all(|&v|(v-32.).abs()<0.25),"MMVQ {dtype:?} batch={batch}");
+        }
+    }
+    Ok(())
+}

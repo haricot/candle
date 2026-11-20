@@ -78,3 +78,31 @@ fn sm61_simt_decode_weighted_fp16() -> Result<()> {
         Some(&[0.5, 0.75, 1.25]), false,
     )
 }
+
+#[cfg(feature = "cuda-dkr-s31")]
+#[test]
+fn dkr_routed_gguf_moe_cuda() -> Result<()> {
+    use candle::quantized::{GgmlDType,QTensor};
+    use candle_nn::moe::moe_gemm_gguf;
+    let gpu=Device::new_cuda(0)?;
+    let dev=gpu.as_cuda_device()?;
+    // This test only qualifies the native route. Static FFI has its own tests.
+    assert!(dev.dkr_moe_enabled(),"set the native DKR catalogue for GGUF MoE qualification");
+    let (e,n,k)=(2usize,5usize,256usize);
+    let weights=(0..e*n*k).map(|i|if i<n*k{0.5f32}else{1.0f32}).collect::<Vec<_>>();
+    let w=Tensor::from_vec(weights,(e,n,k),&gpu)?;
+    let w=QTensor::quantize(&w,GgmlDType::Q8_0)?;
+    let x=Tensor::from_vec(vec![0.25f32;2*k],(2,k),&gpu)?;
+    let sorted=Tensor::from_vec(vec![0u32,2,1,3],4,&gpu)?;
+    let experts=Tensor::from_vec(vec![0u32,0,1,1],4,&gpu)?;
+    let result=moe_gemm_gguf(&x,&w,&None,&sorted,&experts,2,true,DType::F32)?;
+    assert_eq!(result.dims(),&[4,n]);
+    let values=result.flatten_all()?.to_vec1::<f32>()?;
+    for (i,v) in values.iter().enumerate() {
+        let expected=if (i/n)%2==0{32.}else{64.};
+        assert!((v-expected).abs()<0.5,"GGUF MoE row {} got {v}",i/n);
+    }
+    // A selected native SIMT FP16 catalogue cannot dispatch BF16 via static FFI.
+    assert!(dev.dkr_moe_admit(false,DType::BF16).is_err());
+    Ok(())
+}
