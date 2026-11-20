@@ -31,46 +31,55 @@ fn main() -> Result<()> {
         env::var_os(LEGACY_FP4_FEATURE).is_some(),
     );
 
+    println!("cargo:rustc-check-cfg=cfg(candle_static_ffi)");
+    println!("cargo:rustc-check-cfg=cfg(candle_moe_wmma)");
+    // The native consumer needs module identities only, not a CUDA
+    // architecture probe, NVCC, a static archive or a cudart link directive.
+    if !compile_ptx {
+        if env::var_os(CUTILE_FEATURE).is_some() {
+            panic!("cuda-dkr-catalog without legacy static features does not support the cuTile MoE alignment FFI");
+        }
+        println!("cargo:warning=CANDLE_DKR_BUILTIN_PTX=disabled; compiled_ptx_modules=0");
+        println!("cargo:warning=CANDLE_DKR_STATIC_FFI=disabled; compiled_static_units=0");
+        println!("cargo:warning=CANDLE_DKR_CUDA_BUILD=skipped");
+        return Ok(());
+    }
+    println!("cargo:rustc-cfg=candle_static_ffi");
+    println!("cargo:warning=CANDLE_DKR_STATIC_FFI=enabled");
+
     let compute_cap = detect_compute_cap().map(|arch| arch.base()).unwrap_or(80);
     println!("cargo:rustc-env=CANDLE_CUDA_COMPUTE_CAP={compute_cap}");
-    println!("cargo:rustc-check-cfg=cfg(candle_moe_wmma)");
     if compute_cap >= 70 { println!("cargo:rustc-cfg=candle_moe_wmma"); }
     let legacy_bf16 = compute_cap < 80 && env::var_os(LEGACY_BF16_FEATURE).is_some();
     let legacy_fp8 = compute_cap < 89 && env::var_os(LEGACY_FP8_FEATURE).is_some();
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    if compile_ptx {
-        println!("cargo:rustc-cfg=candle_builtin_ptx");
-        println!("cargo:warning=CANDLE_DKR_BUILTIN_PTX=enabled");
-        let ptx_path = out_dir.join("ptx.rs");
-        let mut ptx_builder = KernelBuilder::new()
-            .compute_cap(compute_cap)
-            .source_dir("src")
-            .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"])
-            .arg("--expt-relaxed-constexpr")
-            .arg("-std=c++17")
-            .arg("-O3");
+    println!("cargo:rustc-cfg=candle_builtin_ptx");
+    println!("cargo:warning=CANDLE_DKR_BUILTIN_PTX=enabled");
+    let ptx_path = out_dir.join("ptx.rs");
+    let mut ptx_builder = KernelBuilder::new()
+        .compute_cap(compute_cap)
+        .source_dir("src")
+        .exclude(&["moe_*.cu", "mmvq_gguf.cu", "mmq_*.cu"])
+        .arg("--expt-relaxed-constexpr")
+        .arg("-std=c++17")
+        .arg("-O3");
 
-        if legacy_bf16 {
-            ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
-        }
-        if legacy_fp8 {
-            ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
-        }
-        // Software NVFP4 is opt-in. MXFP4 remains on the standard GGUF path.
-        if env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP4").is_some() {
-            ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP4=1");
-        }
-
-        let bindings = ptx_builder.build_ptx()?;
-        bindings.write(&ptx_path)?;
-    } else {
-        // Do not generate an empty or synthetic PTX module. Rust exposes
-        // module identifiers only. The verified catalogue supplies the bytes.
-        println!("cargo:warning=CANDLE_DKR_BUILTIN_PTX=disabled; compiled_ptx_modules=0");
+    if legacy_bf16 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_BF16_FALLBACK=1");
+    }
+    if legacy_fp8 {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP8=1");
+    }
+    // Software NVFP4 is opt-in. MXFP4 remains on the standard GGUF path.
+    if env::var_os("CARGO_FEATURE_CUDA_LEGACY_FP4").is_some() {
+        ptx_builder = ptx_builder.arg("-DCANDLE_CUDA_LEGACY_FP4=1");
     }
 
-    // S4.3 will remove this independent static FFI producer.
+    let bindings = ptx_builder.build_ptx()?;
+    bindings.write(&ptx_path)?;
+
+    // Static/hybrid compatibility only: native catalogue returned above.
     let mut moe_sources = vec![
         "src/moe/moe_gguf.cu",
         "src/moe/moe_simt_f16.cu",

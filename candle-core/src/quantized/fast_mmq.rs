@@ -3,12 +3,15 @@
 
 use std::cell::RefCell;
 use std::collections::{hash_map::Entry, HashMap};
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 use std::sync::{Mutex, OnceLock};
 use std::thread::LocalKey;
 
 use super::cuda::{QCudaStorage, MATRIX_ROW_PADDING};
 use super::GgmlDType;
-use crate::cuda_backend::{DeviceId, WrapErr};
+use crate::cuda_backend::DeviceId;
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
+use crate::cuda_backend::WrapErr;
 use crate::{backend::BackendStorage, CudaDevice, CudaStorage, DType, Result, Shape};
 
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
@@ -70,6 +73,7 @@ fn ds_layout_for(dtype: GgmlDType) -> DsLayout {
     }
 }
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 type QuantizeLauncher = unsafe extern "C" fn(
     x: *const std::ffi::c_void,
     ids: *const i32,
@@ -86,6 +90,7 @@ type QuantizeLauncher = unsafe extern "C" fn(
     stream: *mut std::ffi::c_void,
 ) -> i32;
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 fn quantize_launcher(layout: DsLayout) -> QuantizeLauncher {
     use candle_kernels::ffi;
     match layout {
@@ -95,6 +100,7 @@ fn quantize_launcher(layout: DsLayout) -> QuantizeLauncher {
     }
 }
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 type MmqLauncher = unsafe extern "C" fn(
     tmp_fixup: *mut std::ffi::c_void,
     x: *const std::ffi::c_void,
@@ -112,6 +118,7 @@ type MmqLauncher = unsafe extern "C" fn(
     stream: *mut std::ffi::c_void,
 ) -> i32;
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 fn mmq_launcher(dtype: GgmlDType) -> Option<MmqLauncher> {
     use candle_kernels::ffi;
     let f: MmqLauncher = match dtype {
@@ -138,6 +145,7 @@ type Workspaces = RefCell<HashMap<DeviceId, CudaSlice<u8>>>;
 
 thread_local! {
     static MMQ_WORKSPACE: Workspaces = RefCell::new(HashMap::new());
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     static FIXUP_WORKSPACE: Workspaces = RefCell::new(HashMap::new());
 }
 
@@ -168,6 +176,7 @@ fn with_workspace<T>(
 // Per-device info cache (compute capability, SM count, etc.)
 // ---------------------------------------------------------------------------
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 #[derive(Clone, Copy)]
 struct DeviceInfo {
     cc: i32,
@@ -176,8 +185,10 @@ struct DeviceInfo {
     warp_size: i32,
 }
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 static DEVICE_INFO: OnceLock<Mutex<HashMap<DeviceId, DeviceInfo>>> = OnceLock::new();
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 fn get_device_info(dev: &CudaDevice) -> DeviceInfo {
     use cudarc::driver::{result, sys};
     let map = DEVICE_INFO.get_or_init(|| Mutex::new(HashMap::new()));
@@ -398,6 +409,7 @@ pub fn try_fwd(
         crate::bail!("GGUF MMQ geometry exceeds native ABI");
     }
     let stream = dev.cuda_stream();
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     let stream_ptr = stream.cu_stream() as *mut std::ffi::c_void;
 
     // MMQ quantize expects f32 input. Convert if needed.
@@ -426,6 +438,7 @@ pub fn try_fwd(
         rhs_f32_slice.slice(o1..o2)
     };
     let (rhs_addr, rhs_guard) = rhs_f32_slice.device_ptr(&stream);
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     let rhs_ptr = rhs_addr as *const std::ffi::c_void;
 
     // Compute padded dimensions
@@ -441,12 +454,15 @@ pub fn try_fwd(
     let workspace_bytes = workspace_main + workspace_extra;
 
     let (weight_ptr, weight_guard) = qstorage.device_ptr_with_guard(&stream)?;
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     let stride_row_x = (k / qk) as i64;
 
     let mut out = unsafe { dev.alloc::<f32>(nrows * b_size)? };
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     let stride_col_dst = nrows as i64;
 
     let (out_addr, out_guard) = out.device_ptr_mut(&stream);
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     let out_ptr = out_addr as *mut std::ffi::c_void;
 
     with_workspace(
@@ -471,80 +487,87 @@ pub fn try_fwd(
                 );
             }
 
-            let di = get_device_info(dev);
-            stream.context().bind_to_thread().w()?;
-            let scratch_ptr = scratch_addr as *mut std::ffi::c_void;
-            let quantize = quantize_launcher(ds_layout_for(w_dtype));
-            let status = unsafe {
-                quantize(
-                    rhs_ptr,
-                    std::ptr::null(),
-                    scratch_ptr,
-                    0,
-                    k as i64,
-                    k as i64,
-                    0,
-                    0,
-                    k_padded as i64,
-                    b_size as i64,
-                    1,
-                    1,
-                    stream_ptr,
-                )
-            };
-            if status != 0 {
-                crate::bail!(
-                    "Candle static MMQ quantize {w_dtype:?} failed (cudaError_t={status})"
-                );
+            #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+            {
+                crate::bail!("native MMQ plan unavailable; static FFI disabled");
             }
-
-            let launcher = mmq_launcher(w_dtype).expect("supports() checked");
-            let launch = |fixup_addr| {
+            #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
+            {
+                let di = get_device_info(dev);
+                stream.context().bind_to_thread().w()?;
+                let scratch_ptr = scratch_addr as *mut std::ffi::c_void;
+                let quantize = quantize_launcher(ds_layout_for(w_dtype));
                 let status = unsafe {
-                    launcher(
-                        fixup_addr as *mut std::ffi::c_void,
-                        weight_ptr.cast(),
-                        scratch_ptr.cast_const(),
-                        out_ptr,
+                    quantize(
+                        rhs_ptr,
+                        std::ptr::null(),
+                        scratch_ptr,
+                        0,
                         k as i64,
-                        nrows as i64,
+                        k as i64,
+                        0,
+                        0,
+                        k_padded as i64,
                         b_size as i64,
-                        stride_row_x,
-                        stride_col_dst,
-                        di.cc,
-                        di.nsm,
-                        di.smpbo,
-                        di.warp_size,
+                        1,
+                        1,
                         stream_ptr,
                     )
                 };
                 if status != 0 {
                     crate::bail!(
-                        "Candle static MMQ matmul {w_dtype:?} failed (cudaError_t={status})"
+                        "Candle static MMQ quantize {w_dtype:?} failed (cudaError_t={status})"
                     );
                 }
-                Ok(())
-            };
-            if di.cc >= 700 {
-                const MMQ_X_MAX: usize = 128;
-                const MMQ_Y_MAX: usize = 128;
-                const MAX_SMS: usize = 256;
-                let fixup_bytes = MAX_SMS * MMQ_X_MAX * MMQ_Y_MAX * std::mem::size_of::<f32>();
-                with_workspace(&FIXUP_WORKSPACE, dev, &stream, fixup_bytes, launch)?;
-            } else {
-                launch(0)?;
-            }
 
-            #[cfg(feature = "cuda-dkr-catalog")]
-            dkr_kernel_registry::telemetry::handle(
-                dkr_kernel_registry::NATIVE_ABI,
-                "fast_mmq",
-                "static_ffi",
-                "",
-                0,
-            )
-            .record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
-            Ok(())
+                let launcher = mmq_launcher(w_dtype).expect("supports() checked");
+                let launch = |fixup_addr| {
+                    let status = unsafe {
+                        launcher(
+                            fixup_addr as *mut std::ffi::c_void,
+                            weight_ptr.cast(),
+                            scratch_ptr.cast_const(),
+                            out_ptr,
+                            k as i64,
+                            nrows as i64,
+                            b_size as i64,
+                            stride_row_x,
+                            stride_col_dst,
+                            di.cc,
+                            di.nsm,
+                            di.smpbo,
+                            di.warp_size,
+                            stream_ptr,
+                        )
+                    };
+                    if status != 0 {
+                        crate::bail!(
+                            "Candle static MMQ matmul {w_dtype:?} failed (cudaError_t={status})"
+                        );
+                    }
+                    Ok(())
+                };
+                if di.cc >= 700 {
+                    const MMQ_X_MAX: usize = 128;
+                    const MMQ_Y_MAX: usize = 128;
+                    const MAX_SMS: usize = 256;
+                    let fixup_bytes = MAX_SMS * MMQ_X_MAX * MMQ_Y_MAX * std::mem::size_of::<f32>();
+                    with_workspace(&FIXUP_WORKSPACE, dev, &stream, fixup_bytes, launch)?;
+                } else {
+                    launch(0)?;
+                }
+
+                #[cfg(feature = "cuda-dkr-catalog")]
+                dkr_kernel_registry::telemetry::handle(
+                    dkr_kernel_registry::NATIVE_ABI,
+                    "fast_mmq",
+                    "static_ffi",
+                    "",
+                    0,
+                )
+                .record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
+                Ok(())
+            }
         },
     )?;
     drop(weight_guard);

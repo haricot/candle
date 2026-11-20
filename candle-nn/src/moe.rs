@@ -4,7 +4,7 @@ pub mod cutile;
 #[cfg(feature = "cuda-dkr-catalog")]
 mod dkr_moe;
 
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31")))]
 use candle::cuda_backend::kernels::{
     ffi,
     moe_selection::{compiled_moe_backend, MoeBackend},
@@ -23,10 +23,14 @@ pub fn moe_gemm(
     topk: usize,
     is_prefill: bool,
 ) -> Result<Tensor> {
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use candle::cuda_backend::cudarc::driver::DevicePtr;
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use candle::DType;
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use half::{bf16, f16};
 
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     fn cuda_fwd<
         T: candle::cuda_backend::CudaDType + candle::cuda_backend::cudarc::driver::DeviceRepr,
     >(
@@ -170,27 +174,35 @@ pub fn moe_gemm(
     if input.device().as_cuda_device()?.dkr_moe_admit(false,input.dtype())? {
         return dkr_moe::simt(input, weights, topk_weights, sorted_token_ids, experts_ids, topk);
     }
-    match input.dtype() {
-        DType::F16 => cuda_fwd::<f16>(
-            input,
-            weights,
-            topk_weights,
-            sorted_token_ids,
-            experts_ids,
-            topk,
-            is_prefill,
-        ),
-        DType::BF16 => cuda_fwd::<bf16>(
-            input,
-            weights,
-            topk_weights,
-            sorted_token_ids,
-            experts_ids,
-            topk,
-            is_prefill,
-        ),
-        _ => {
-            candle::bail!("moe_gemm only accepts f16/bf16 inputs")
+    #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+    {
+        let _ = is_prefill;
+        candle::bail!("native MoE provider unavailable; static FFI disabled");
+    }
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
+    {
+        match input.dtype() {
+            DType::F16 => cuda_fwd::<f16>(
+                input,
+                weights,
+                topk_weights,
+                sorted_token_ids,
+                experts_ids,
+                topk,
+                is_prefill,
+            ),
+            DType::BF16 => cuda_fwd::<bf16>(
+                input,
+                weights,
+                topk_weights,
+                sorted_token_ids,
+                experts_ids,
+                topk,
+                is_prefill,
+            ),
+            _ => {
+                candle::bail!("moe_gemm only accepts f16/bf16 inputs")
+            }
         }
     }
 }
@@ -220,12 +232,17 @@ pub fn moe_gemm_gguf(
     is_prefill: bool,
     dtype: candle::DType,
 ) -> Result<Tensor> {
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use candle::cuda_backend::cudarc::driver::DevicePtr;
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use candle::quantized::GgmlDType;
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use candle::DType;
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use half::{bf16, f16};
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     fn cuda_fwd(
         input: &Tensor,
         weights: &QTensor,
@@ -369,19 +386,28 @@ pub fn moe_gemm_gguf(
     if input.device().as_cuda_device()?.dkr_moe_admit(true,input.dtype())? {
         return dkr_moe::gguf(input, weights, topk_weights, sorted_token_ids, experts_ids, topk);
     }
-    match input.dtype() {
-        DType::F32 => cuda_fwd(
-            input,
-            weights,
-            topk_weights,
-            sorted_token_ids,
-            experts_ids,
-            topk,
-            is_prefill,
-            dtype,
-        ),
-        _ => {
-            candle::bail!("moe_gemm_gguf only accepts f32 inputs")
+    #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+    {
+        let _ = is_prefill;
+        let _ = dtype;
+        candle::bail!("native MoE provider unavailable; static FFI disabled");
+    }
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
+    {
+        match input.dtype() {
+            DType::F32 => cuda_fwd(
+                input,
+                weights,
+                topk_weights,
+                sorted_token_ids,
+                experts_ids,
+                topk,
+                is_prefill,
+                dtype,
+            ),
+            _ => {
+                candle::bail!("moe_gemm_gguf only accepts f32 inputs")
+            }
         }
     }
 }

@@ -84,6 +84,7 @@ fn workspace_ensure(
 // Launcher dispatch by weight dtype and output dtype.
 // ---------------------------------------------------------------------------
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 type PlainLauncher = unsafe extern "C" fn(
     vx: *const std::ffi::c_void,
     vy: *const std::ffi::c_void,
@@ -96,6 +97,7 @@ type PlainLauncher = unsafe extern "C" fn(
     stream: *mut std::ffi::c_void,
 );
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 fn plain_launcher_bf16(dtype: GgmlDType) -> Option<PlainLauncher> {
     use candle_kernels::ffi;
     let f: PlainLauncher = match dtype {
@@ -114,6 +116,7 @@ fn plain_launcher_bf16(dtype: GgmlDType) -> Option<PlainLauncher> {
     Some(f)
 }
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 fn plain_launcher_f16(dtype: GgmlDType) -> Option<PlainLauncher> {
     use candle_kernels::ffi;
     let f: PlainLauncher = match dtype {
@@ -132,6 +135,7 @@ fn plain_launcher_f16(dtype: GgmlDType) -> Option<PlainLauncher> {
     Some(f)
 }
 
+#[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
 fn plain_launcher_f32(dtype: GgmlDType) -> Option<PlainLauncher> {
     use candle_kernels::ffi;
     let f: PlainLauncher = match dtype {
@@ -207,6 +211,7 @@ pub fn try_fwd(
     rhs: &CudaStorage,
     rhs_l: &crate::Layout,
 ) -> Result<Option<(CudaStorage, Shape)>> {
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     use candle_kernels::ffi;
 
     // Gate checks.
@@ -243,6 +248,7 @@ pub fn try_fwd(
         None => return Ok(None),
     };
 
+    #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
     let stream_ptr = dev.cuda_stream().cu_stream() as *mut std::ffi::c_void;
     let static_workspace=|| {
         let padded=pad(k,MATRIX_ROW_PADDING);
@@ -284,6 +290,11 @@ pub fn try_fwd(
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
             #[cfg(not(feature = "cuda-dkr-catalog"))]
             let launched = false;
+            #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+            if !launched {
+                crate::bail!("native MMVQ plan unavailable; static FFI disabled");
+            }
+            #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
             if !launched {
                 #[cfg(feature = "cuda-dkr-catalog")]
                 dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
@@ -331,6 +342,11 @@ pub fn try_fwd(
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
             #[cfg(not(feature = "cuda-dkr-catalog"))]
             let launched = false;
+            #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+            if !launched {
+                crate::bail!("native MMVQ plan unavailable; static FFI disabled");
+            }
+            #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
             if !launched {
                 #[cfg(feature = "cuda-dkr-catalog")]
                 dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
@@ -378,6 +394,11 @@ pub fn try_fwd(
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
             #[cfg(not(feature = "cuda-dkr-catalog"))]
             let launched = false;
+            #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+            if !launched {
+                crate::bail!("native MMVQ plan unavailable; static FFI disabled");
+            }
+            #[cfg(any(not(feature = "cuda-dkr-catalog"), feature = "cuda-dkr-s31"))]
             if !launched {
                 #[cfg(feature = "cuda-dkr-catalog")]
                 dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);

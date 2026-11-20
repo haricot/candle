@@ -172,6 +172,26 @@ native grouped GGUF MoE with a partial output tile and a rejected BF16 route. On
   No PTX source, catalogue bytes, launch recipes or Mistral pins changed.
   CUDA driver JIT of the selected native PTX is not an NVCC build.
 
+## S4.3: static FFI producer elimination (candidate)
+
+- In the decoupled configuration candle-kernels returns before compute-capability
+  detection, KernelBuilder construction or any PTX/archive generation. No
+  `libmoe.a`, `-lmoe`, `-lcudart` or `-lstdc++` is emitted by its build script.
+  Other CUDA dependencies can still have their own SDK/link requirements.
+- The static FFI and static MoE selection modules are not compiled in this mode.
+  Core excludes the static MMVQ/MMQ launchers, MMQ fixup path and FFI fallback
+  blocks; NN excludes the static MoE launchers. Missing native plans are errors.
+  Inapplicable fast-path shapes still use ordinary catalogue-backed operations.
+- Plain CUDA and S31 hybrid retain the original producer and launchers. Adding
+  legacy features can restore the producer, and the absence test catches that.
+  cuTile MoE alignment needs an uncovered static FFI symbol; the decoupled
+  kernel build rejects this combination rather than silently building it.
+- `dkr_catalog_static_ffi_omitted` checks the build marker and no built-in PTX.
+  The dedicated MMQ regression covers batches 9/17 and three activation types
+  for Q8_0 with native provenance. Historical MMVQ and MoE tests remain.
+- No changes to the 25 catalogue artifacts, kernel sources or Mistral pins.
+  Embedded-only admission and final cold/warm measurements remain S4.4/S5.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

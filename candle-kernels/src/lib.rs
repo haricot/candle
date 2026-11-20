@@ -108,11 +108,16 @@ mod tests {
         let expected = !cfg!(feature = "cuda-dkr-catalog") || cfg!(any(
             feature = "cuda-legacy-bf16", feature = "cuda-legacy-fp8", feature = "cuda-legacy-fp4"));
         assert_eq!(BUILTIN_PTX_ENABLED, expected);
+        assert_eq!(STATIC_FFI_ENABLED, expected);
     }
 }
 
 #[path = "../dkr_s31_contract.rs"]
 pub mod dkr_s31_contract;
 
+/// Static CUDA host launchers are not linked in native catalogue mode.
+pub const STATIC_FFI_ENABLED: bool = cfg!(candle_static_ffi);
+#[cfg(candle_static_ffi)]
 pub mod ffi;
+#[cfg(candle_static_ffi)]
 pub mod moe_selection;

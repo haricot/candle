@@ -41,3 +41,12 @@ fn dkr_catalog_builtin_ptx_omitted() {
     }
     println!("DKR_R124_S42_BUILTIN_PTX=0");
 }
+
+#[test]
+fn dkr_catalog_static_ffi_omitted() {
+    use candle_core::cuda_backend::kernels;
+    assert!(!kernels::STATIC_FFI_ENABLED,
+        "static FFI producer unexpectedly enabled");
+    assert!(!kernels::BUILTIN_PTX_ENABLED);
+    println!("DKR_R124_S43_STATIC_FFI=0");
+}
