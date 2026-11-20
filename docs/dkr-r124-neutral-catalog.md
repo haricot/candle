@@ -151,6 +151,27 @@ native grouped GGUF MoE with a partial output tile and a rejected BF16 route. On
   This is not yet a no-NVCC build or an embedded-only engine. No change to
   Mistral.rs pins or the existing 25 native packages.
 
+## S4.2: redundant built-in PTX compilation elimination (candidate)
+
+- Core forwards `cuda-dkr-catalog` to candle-kernels. Its build script skips
+  KernelBuilder::build_ptx entirely when this feature is selected without
+  any explicit legacy features. The eleven built-in module identifiers
+  retain their indices; there are no synthetic/empty PTX payloads.
+- The static payload is optional in the Rust Module API. Compatibility
+  `ptx()` is unchanged for static callers; the runtime uses
+  `static_ptx()` and rejects a missing catalogue entry before loading.
+- Plain CUDA and the S31 hybrid feature still build the original PTX.
+  Explicitly adding any legacy feature restores the built-in PTX producer;
+  feature unification is intentionally visible in the graph and test.
+- The build emits `CANDLE_DKR_BUILTIN_PTX=disabled; compiled_ptx_modules=0`.
+  `dkr_catalog_builtin_ptx_omitted` verifies all eleven module payloads
+  are absent without allocating a GPU. The feature audit includes plain CUDA
+  and the hybrid mode as controls.
+- Static FFI compilation (libmoe.a, 14 sources on SM61 without cutile)
+  remains, as does compute-capability detection for that producer, until S4.3.
+  No PTX source, catalogue bytes, launch recipes or Mistral pins changed.
+  CUDA driver JIT of the selected native PTX is not an NVCC build.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

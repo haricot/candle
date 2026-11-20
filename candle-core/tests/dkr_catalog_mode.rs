@@ -25,3 +25,19 @@ fn dkr_catalog_selected_provider() -> candle_core::Result<()> {
     assert!(dev.dkr_moe_enabled(), "native catalogue not selected");
     Ok(())
 }
+
+#[test]
+fn dkr_catalog_builtin_ptx_omitted() {
+    use candle_core::cuda_backend::kernels;
+    assert!(!kernels::BUILTIN_PTX_ENABLED,
+        "catalogue-only test must not be unified with static legacy producer features");
+    let modules = [kernels::AFFINE, kernels::BINARY, kernels::CAST, kernels::CONV,
+        kernels::FILL, kernels::INDEXING, kernels::QUANTIZED, kernels::REDUCE,
+        kernels::SORT, kernels::TERNARY, kernels::UNARY];
+    assert_eq!(modules.len(), kernels::ALL_IDS.len());
+    for (index, module) in modules.iter().enumerate() {
+        assert_eq!(module.index(), index);
+        assert!(module.static_ptx().is_none(), "static PTX remains at index {index}");
+    }
+    println!("DKR_R124_S42_BUILTIN_PTX=0");
+}

@@ -57,7 +57,7 @@ dkr-kernel-registry = { path = "../dkr-kernel-registry", version = "0.1.0" }
 default = []
 cuda = ["cudarc", "dep:candle-kernels"]
 # Native catalogue consumer. This does not enable any legacy CUDA producer flags.
-cuda-dkr-catalog = ["cuda", "dep:sha2", "dep:serde_json", "dep:dkr-kernel-registry"]
+cuda-dkr-catalog = ["cuda", "candle-kernels/cuda-dkr-catalog", "dep:sha2", "dep:serde_json", "dep:dkr-kernel-registry"]
 # Historical hybrid/static compatibility. Retain the previous public feature.
 cuda-dkr-s31 = ["cuda-dkr-catalog", "cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]

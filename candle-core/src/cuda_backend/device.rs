@@ -424,6 +424,11 @@ impl CudaDevice {
                 return Ok(func.native_evidence(family,fn_name,Some(artifact)));
             }
         }
+        // A catalogue-only build has identifiers but no static PTX payload.
+        // Reject before consulting the old cache or entering the CUDA driver.
+        let static_ptx = mdl.static_ptx().ok_or_else(|| crate::Error::Msg(
+            format!("built-in PTX omitted; no native catalogue entry for module {} / {fn_name}", mdl.index())
+        ))?;
         #[cfg(feature = "cuda-dkr-catalog")] let module_index=mdl.index();
         let ms = self.modules.read().unwrap();
         if let Some(mdl) = ms.mdls[mdl.index()].as_ref() {
@@ -438,7 +443,7 @@ impl CudaDevice {
             #[cfg(feature = "cuda-dkr-catalog")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
             return Ok(f);
         }
-        let module=self.context.load_module(mdl.ptx().into()).w()?;
+        let module=self.context.load_module(static_ptx.into()).w()?;
         let func=module.load_function(fn_name).w()?;
         ms.mdls[mdl.index()]=Some(module);
         let f=CudaFunc::new(func,self.stream.clone());

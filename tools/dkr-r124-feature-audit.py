@@ -28,22 +28,29 @@ def require(ok, message):
         raise SystemExit("DKR_R124_FEATURE_AUDIT_FAIL: " + message)
 
 for package in ("candle-core", "candle-nn"):
-    for mode in ("cuda-dkr-catalog", "cuda-dkr-s31"):
+    for mode in ("cuda-dkr-catalog", "cuda-dkr-s31", "cuda"):
         graph = resolved(package, mode)
         for name in ("candle-core", "candle-kernels", package):
             require(name in graph, f"{package}/{mode}: {name} missing")
         core = graph["candle-core"]
         kernels = graph["candle-kernels"]
-        require({"cuda", "cuda-dkr-catalog"} <= core,
-                f"{package}/{mode}: catalogue runtime missing")
+        require("cuda" in core, f"{package}/{mode}: CUDA runtime missing")
+        if mode == "cuda":
+            require("cuda-dkr-catalog" not in core and "cuda-dkr-catalog" not in kernels
+                    and not (LEGACY & core or LEGACY & kernels),
+                    f"{package}/{mode}: plain CUDA unexpectedly selects DKR or legacy flags")
+        else:
+            require("cuda-dkr-catalog" in core and "cuda-dkr-catalog" in kernels,
+                    f"{package}/{mode}: catalogue runtime/build selection missing")
         if mode == "cuda-dkr-catalog":
             require(not (LEGACY & core or LEGACY & kernels),
                     f"{package}/{mode}: legacy flags leaked")
             require("cuda-dkr-s31" not in core,
                     f"{package}/{mode}: hybrid feature leaked")
-        else:
+        elif mode == "cuda-dkr-s31":
             require(LEGACY <= core and LEGACY <= kernels and mode in core,
                     f"{package}/{mode}: hybrid compatibility changed")
         print(f"DKR_R124_FEATURE_AUDIT_PASS package={package} mode={mode} "
               f"core={','.join(sorted(core))} kernels={','.join(sorted(kernels))}")
 print("DKR_R124_S41_FEATURE_GRAPH=PASS")
+print("DKR_R124_S42_FEATURE_GRAPH=PASS")

@@ -1,3 +1,4 @@
+#[cfg(candle_builtin_ptx)]
 mod ptx {
     include!(concat!(env!("OUT_DIR"), "/ptx.rs"));
 }
@@ -34,7 +35,7 @@ pub const ALL_IDS: [Id; 11] = [
 
 pub struct Module {
     index: usize,
-    ptx: &'static str,
+    ptx: Option<&'static str>,
 }
 
 impl Module {
@@ -42,8 +43,15 @@ impl Module {
         self.index
     }
 
-    pub fn ptx(&self) -> &'static str {
+    /// Static payload, if this feature configuration built one.
+    pub fn static_ptx(&self) -> Option<&'static str> {
         self.ptx
+    }
+
+    /// Compatibility accessor for callers using the static CUDA build.
+    /// Catalogue consumers should resolve the module identifier via DKR.
+    pub fn ptx(&self) -> &'static str {
+        self.static_ptx().expect("built-in PTX omitted in DKR catalogue mode")
     }
 }
 
@@ -62,7 +70,10 @@ macro_rules! mdl {
     ($cst:ident, $id:ident) => {
         pub const $cst: Module = Module {
             index: module_index(Id::$id),
-            ptx: ptx::$cst,
+            #[cfg(candle_builtin_ptx)]
+            ptx: Some(ptx::$cst),
+            #[cfg(not(candle_builtin_ptx))]
+            ptx: None,
         };
     };
 }
@@ -78,6 +89,27 @@ mdl!(REDUCE, Reduce);
 mdl!(SORT, Sort);
 mdl!(TERNARY, Ternary);
 mdl!(UNARY, Unary);
+
+/// Build-time evidence: no static PTX payload is linked in the decoupled mode.
+pub const BUILTIN_PTX_ENABLED: bool = cfg!(candle_builtin_ptx);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn dkr_builtin_ptx_inventory() {
+        let modules = [AFFINE, BINARY, CAST, CONV, FILL, INDEXING, QUANTIZED,
+            REDUCE, SORT, TERNARY, UNARY];
+        for (index, module) in modules.iter().enumerate() {
+            assert_eq!(module.index(), index);
+            assert_eq!(module.static_ptx().is_some(), BUILTIN_PTX_ENABLED);
+            if let Some(ptx) = module.static_ptx() { assert!(!ptx.is_empty()); }
+        }
+        let expected = !cfg!(feature = "cuda-dkr-catalog") || cfg!(any(
+            feature = "cuda-legacy-bf16", feature = "cuda-legacy-fp8", feature = "cuda-legacy-fp4"));
+        assert_eq!(BUILTIN_PTX_ENABLED, expected);
+    }
+}
 
 #[path = "../dkr_s31_contract.rs"]
 pub mod dkr_s31_contract;

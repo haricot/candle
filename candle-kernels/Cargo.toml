@@ -12,6 +12,9 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 
 [features]
+# Omit the built-in PTX compiler for the native catalogue consumer.
+# Explicit legacy features retain the hybrid/static compatibility path.
+cuda-dkr-catalog = []
 cutile = []
 cuda-legacy-bf16 = []
 cuda-legacy-fp8 = []
