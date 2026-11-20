@@ -81,6 +81,7 @@ fn sm61_simt_decode_weighted_fp16() -> Result<()> {
 
 #[cfg(feature = "cuda-dkr-s31")]
 #[test]
+#[ignore = "requires a selected verified native DKR catalogue"]
 fn dkr_routed_gguf_moe_cuda() -> Result<()> {
     use candle::quantized::{GgmlDType,QTensor};
     use candle_nn::moe::moe_gemm_gguf;
