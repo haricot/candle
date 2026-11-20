@@ -52,10 +52,10 @@ fn dkr_catalog_static_ffi_omitted() {
     println!("DKR_R124_S43_STATIC_FFI=0");
 }
 
-#[cfg(feature = "cuda-dkr-embedded")]
 #[test]
-#[ignore = "requires embedded deployment with runtime overrides unset"]
-fn dkr_embedded_catalog_device() -> candle_core::Result<()> {
+#[ignore = "requires a selected native catalogue"]
+fn dkr_catalog_device_sample() -> candle_core::Result<()> {
+    #[cfg(feature = "cuda-dkr-embedded")]
     assert!(std::env::var_os("CANDLE_DKR_S31_DIR").is_none());
     let started = std::time::Instant::now();
     let gpu = Device::new_cuda(0)?;
