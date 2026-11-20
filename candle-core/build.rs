@@ -1,4 +1,3 @@
-use dkr_kernel_registry::VerifiedArtifact;
 use std::{env, fs, path::PathBuf};
 
 #[allow(dead_code)]
@@ -38,9 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let metadata: serde_json::Value = serde_json::from_slice(&fs::read(manifest)?)?;
             let ptx = fs::read_to_string(artifact)?;
-            validation::validate(&metadata, name, &ptx)?;
-            let verified =
-                VerifiedArtifact::new(ptx, contract::CC, metadata["sha256"].as_str().unwrap())?;
+            let (verified, symbols) = validation::verify_package(&metadata, name, ptx)?;
             let copy = out.join(format!("dkr-native-{name}.ptx"));
             fs::write(&copy, verified.ptx())?;
             let entries = verified
@@ -48,13 +45,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|s| format!("{s:?}.into()"))
                 .collect::<Vec<_>>()
                 .join(",");
-            let symbols = if name.starts_with("moe_") {
-                Some(contract::moe_entries(verified.ptx(), name).ok_or("invalid MoE entries")?)
-            } else if name.starts_with("mmq_") {
-                Some(contract::mmq_entries(verified.ptx(), name).ok_or("invalid MMQ entries")?)
-            } else {
-                None
-            };
             let symbols = symbols
                 .map(|pairs| {
                     let pairs = pairs
@@ -67,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or("None".into());
             rows.push(format!(
                 "({name:?}, VerifiedArtifact::from_build_verified(include_str!({copy:?}), {}, {:?}, \
-                 vec![{entries}]), {symbols})", contract::CC, verified.key().sha256()
+                 vec![{entries}]), {symbols})", verified.key().target_cc(), verified.key().sha256()
             ));
         }
     }

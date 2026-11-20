@@ -132,6 +132,15 @@ impl VerifiedArtifact {
     pub fn entry_names(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().map(String::as_str)
     }
+    /// Native launch contracts are exact-target until their ABI and launch plans
+    /// have been qualified for an explicit compatibility range.
+    pub fn admit_exact_target(&self, device_cc: u32) -> Result<(), String> {
+        if self.key.target_cc() != device_cc {
+            return Err(format!("DKR native package target sm_{} does not admit device sm_{}",
+                self.key.target_cc(), device_cc));
+        }
+        Ok(())
+    }
     pub fn key(&self)->&ArtifactKey{&self.key}
     pub fn ptx(&self)->&str{&self.ptx}
     pub fn has_entry(&self,name:&str)->bool{self.entries.contains(name)}
@@ -182,6 +191,23 @@ mod tests{
         assert_eq!(filesystem.ptx(), embedded.ptx());
         assert!(embedded.has_entry("test"));
         assert!(!embedded.has_entry("absent"));
+    }
+
+    #[test]
+    fn native_exact_target_admission_is_artifact_driven() {
+        for target in [61, 80, 120] {
+            let ptx = format!(".version 8.0\n.target sm_{target}\n.address_size 64\n.visible .entry test() {{ ret; }}\n");
+            let digest = format!("{:x}", Sha256::digest(ptx.as_bytes()));
+            let filesystem = VerifiedArtifact::new(ptx, target, &digest).unwrap();
+            assert!(filesystem.admit_exact_target(target).is_ok());
+            assert!(filesystem.admit_exact_target(target + 1).is_err());
+            assert!(filesystem.admit_exact_target(target - 1).is_err());
+        }
+        const PTX: &str = ".version 8.0\n.target sm_61\n.address_size 64\n.visible .entry test() { ret; }\n";
+        let digest = format!("{:x}", Sha256::digest(PTX.as_bytes()));
+        let embedded = VerifiedArtifact::from_build_verified(PTX, 61, &digest, ["test".into()]);
+        assert!(embedded.admit_exact_target(61).is_ok());
+        assert!(embedded.admit_exact_target(80).is_err());
     }
 
     #[test] fn registry_namespaces_and_ambiguity(){

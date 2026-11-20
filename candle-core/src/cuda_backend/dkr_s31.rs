@@ -14,6 +14,8 @@ use super::WrapErr;
 use candle_kernels::dkr_s31_contract as contract;
 #[path = "dkr_s31_validation.rs"]
 mod dkr_s31_validation;
+use dkr_s31_validation::{verify_package, NativeSymbols};
+#[cfg(test)]
 use dkr_s31_validation::validate;
 mod embedded {
     use super::*;
@@ -25,6 +27,7 @@ pub(super) struct ExternalModules {
     modules: Registry<VerifiedArtifact>,
     native_keys: std::collections::HashMap<&'static str, RegistryKey>,
     trace: bool,
+    device_cc: u32,
     mmq_symbols: std::collections::HashMap<&'static str, std::collections::BTreeMap<String, String>>,
 }
 
@@ -64,9 +67,7 @@ impl ExternalModules {
             return Ok(None);
         };
         let (major, minor) = context.compute_capability().w()?;
-        if (major, minor) != (6, 1) {
-            crate::bail!("Candle DKR S3.1 requires SM61, got {major}.{minor}");
-        }
+        let device_cc = (major * 10 + minor) as u32;
         let root = PathBuf::from(root);
         if source == "embedded" {
             let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
@@ -77,7 +78,8 @@ impl ExternalModules {
             let mut native_keys = std::collections::HashMap::new();
             let mut mmq_symbols = std::collections::HashMap::new();
             for (name, artifact, symbols) in embedded::modules() {
-                let key = RegistryKey::new(NATIVE_ABI, name, "native", contract::CC);
+                artifact.admit_exact_target(device_cc).map_err(crate::Error::Msg)?;
+                let key = RegistryKey::new(NATIVE_ABI, name, "native", artifact.key().target_cc());
                 modules.insert(key.clone(), artifact).map_err(crate::Error::Msg)?;
                 native_keys.insert(name, key);
                 if let Some(symbols) = symbols { mmq_symbols.insert(name, symbols); }
@@ -86,7 +88,7 @@ impl ExternalModules {
             if trace {
                 eprintln!("CANDLE_DKR_NATIVE_CATALOG source=embedded manifests={}", modules.len());
             }
-            return Ok(Some(Self { modules, native_keys, mmq_symbols, trace }));
+            return Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc }));
         }
         if source != "filesystem" {
             crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem");
@@ -97,34 +99,27 @@ impl ExternalModules {
         // Fail before inference if a selected module is absent or corrupt.
         let mut modules = Registry::default();
         let mut native_keys = std::collections::HashMap::new();
-        for &name in contract::FAMILIES {
-            let key = RegistryKey::new(NATIVE_ABI, name, "native", contract::CC);
-            modules.insert(key.clone(), Self::read(&root, name)?).map_err(crate::Error::Msg)?;
-            native_keys.insert(name,key);
-        }
         let mut mmq_symbols = std::collections::HashMap::new();
-        for (&name, key) in &native_keys {
-            let ptx = modules.get(key).expect("registered native module").ptx();
-            if name.starts_with("mmq_") || name.starts_with("moe_") {
-                let symbols = if name.starts_with("moe_") { contract::moe_entries(ptx, name) }
-                    else { contract::mmq_entries(ptx, name) }
-                    .ok_or_else(|| crate::Error::Msg(format!("invalid MMQ entries: {name}")))?;
-                mmq_symbols.insert(name, symbols);
-            }
+        for &name in contract::FAMILIES {
+            let (artifact, symbols) = Self::read(&root, name)?;
+            artifact.admit_exact_target(device_cc).map_err(crate::Error::Msg)?;
+            let key = RegistryKey::new(NATIVE_ABI, name, "native", artifact.key().target_cc());
+            modules.insert(key.clone(), artifact).map_err(crate::Error::Msg)?;
+            native_keys.insert(name, key);
+            if let Some(symbols) = symbols { mmq_symbols.insert(name, symbols); }
         }
         if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source=filesystem manifests={}", modules.len());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some() }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some(), device_cc }))
     }
 
-    fn read(root: &Path, name: &str) -> Result<VerifiedArtifact> {
+    fn read(root: &Path, name: &str) -> Result<(VerifiedArtifact, NativeSymbols)> {
         let manifest = read_text(&root.join(name).join("manifest.json"), 256*1024)?;
         let manifest: Value = serde_json::from_str(&manifest)
             .map_err(|e| crate::Error::Msg(format!("Candle DKR S3.1 manifest: {e}")))?;
         let ptx = read_text(&root.join(name).join(format!("{name}.ptx")), dkr_kernel_registry::MAX_PTX_BYTES)?;
-        validate(&manifest, name, &ptx).map_err(crate::Error::Msg)?;
-        VerifiedArtifact::new(ptx, contract::CC, manifest["sha256"].as_str().unwrap_or("")).map_err(crate::Error::Msg)
+        verify_package(&manifest, name, ptx).map_err(crate::Error::Msg)
     }
 
     fn artifact(&self, name: &str) -> Option<&VerifiedArtifact> {
@@ -141,7 +136,7 @@ impl ExternalModules {
 
     pub(super) fn record_mmq_loaded(&self, family: &str) {
         if self.trace {
-            eprintln!("CANDLE_DKR_MODULE_LOADED family={family} target=sm61 source=external");
+            eprintln!("CANDLE_DKR_MODULE_LOADED family={family} target=sm{} source=external", self.device_cc);
         }
     }
 
@@ -151,14 +146,14 @@ impl ExternalModules {
 
     pub(super) fn record_mmvq_loaded(&self) {
         if self.trace {
-            eprintln!("CANDLE_DKR_MODULE_LOADED family=mmvq_gguf target=sm61 source=external");
+            eprintln!("CANDLE_DKR_MODULE_LOADED family=mmvq_gguf target=sm{} source=external", self.device_cc);
         }
     }
 
     pub(super) fn record_loaded(&self, index: usize) {
         if self.trace {
             if let Some(name) = family(index) {
-                eprintln!("CANDLE_DKR_MODULE_LOADED family={name} target=sm61 source=external");
+                eprintln!("CANDLE_DKR_MODULE_LOADED family={name} target=sm{} source=external", self.device_cc);
             }
         }
     }
@@ -176,6 +171,14 @@ mod tests {
             "sha256": format!("{:x}", Sha256::digest(text.as_bytes())),
         });
         assert!(validate(&m, "unary", text).is_ok());
+        let (artifact, symbols) = verify_package(&m, "unary", text.to_owned()).unwrap();
+        assert_eq!(artifact.key().target_cc(), 61);
+        assert!(artifact.admit_exact_target(61).is_ok());
+        assert!(artifact.admit_exact_target(80).is_err());
+        assert!(symbols.is_none());
+        let mut wrong_target = m.clone();
+        wrong_target["target_cc"] = serde_json::json!(80);
+        assert!(verify_package(&wrong_target, "unary", text.to_owned()).is_err());
         assert!(validate(&m, "cast", text).is_err());
         assert!(validate(&m, "unary", &text.replace("sm_61", "sm_80")).is_err());
         m["sha256"] = serde_json::json!("bad");
