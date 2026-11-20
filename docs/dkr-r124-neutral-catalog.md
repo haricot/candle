@@ -11,11 +11,36 @@ The legacy S3.1 validation rules still intentionally accept SM61 only; a new
 schema must carry independently qualified ABI and launch metadata, not relax
 the old schema. Synthetic registry tests are not GPU qualifications.
 
+## S2A: explicit native inventory (candidate)
+
+The optional root-level `native-catalog.json` declares schema, native ABI,
+launch recipe, exact architecture bounds and the list of required families.
+The build script, filesystem provider and standalone cudaforge producer share
+the same inventory parser and package validation. Absence of an index invokes
+the strict legacy S3.1 adapter; an invalid or incomplete index never falls back.
+Both transport sources now converge on one registration path. No CUDA kernel
+or launch geometry is changed.
+
+The only admitted recipe is currently `s31-native-v1` (SM61 exact target).
+A new recipe must supply separately qualified argument ABI and launch geometry;
+the generic index does not confer compatibility with an unqualified device.
+
+To index an existing qualified package directory without recompiling PTX:
+
+    cargo run --manifest-path tools/dkr-s31-builder/Cargo.toml --release -- --index-existing /absolute/native/package/directory
+
+New packages built with `--output` also emit the index. The index does not
+modify per-family manifests or PTX, and old R1.23 readers ignore it.
+
+S2A CPU tests exercise complete inventory, reordered inventory, duplicates,
+missing families, traversal, unknown ABI/recipe, mismatched target/range,
+absent package and invalid index. These are not GPU qualification.
+
 ## Migration gates (not yet completed)
 
-- S2: manifest-driven native family inventory, stable operation/entry ABI, explicit
-  target and compatibility bounds; separate legacy S3.1 builder/validator and
-  MMQ launch recipes into package-specific adapters. Reject unsupported recipes.
+- S2B: extract the S3.1 MMQ launch geometry into an explicitly selected recipe
+  adapter; extend typed operation/entry ABI metadata without weakening S3.1.
+  Reject unsupported recipes. S2A only establishes the inventory/transport layer.
 - S3: migrate FP8 residence/dispatch, FP4/BF16 and MMQ/MMVQ/MoE host launch
   specialization behind typed contracts. Keep tensor checks and memory safety
   in Candle. Preserve static compatibility mode explicitly.

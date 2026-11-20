@@ -5,7 +5,6 @@
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use sha2::{Digest, Sha256};
-use serde_json::Value;
 use candle_kernels as kernels;
 use cudarc::driver::CudaContext;
 use crate::Result;
@@ -13,10 +12,12 @@ use super::WrapErr;
 
 use candle_kernels::dkr_s31_contract as contract;
 #[path = "dkr_s31_validation.rs"]
-mod dkr_s31_validation;
-use dkr_s31_validation::{verify_package, NativeSymbols};
+mod validation;
+#[path = "dkr_native_catalog.rs"]
+mod native_catalog;
+use native_catalog::NativeCatalog;
 #[cfg(test)]
-use dkr_s31_validation::validate;
+use validation::{validate, verify_package};
 mod embedded {
     use super::*;
     include!(concat!(env!("OUT_DIR"), "/dkr_native_embedded.rs"));
@@ -25,10 +26,10 @@ use dkr_kernel_registry::{Registry, RegistryKey, VerifiedArtifact, NATIVE_ABI};
 
 pub(super) struct ExternalModules {
     modules: Registry<VerifiedArtifact>,
-    native_keys: std::collections::HashMap<&'static str, RegistryKey>,
+    native_keys: std::collections::HashMap<String, RegistryKey>,
     trace: bool,
     device_cc: u32,
-    mmq_symbols: std::collections::HashMap<&'static str, std::collections::BTreeMap<String, String>>,
+    mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
 pub(super) fn family(index: usize) -> Option<&'static str> {
@@ -47,16 +48,6 @@ pub(super) fn family(index: usize) -> Option<&'static str> {
     ].into_iter().find_map(|(id, name)| (id == index).then_some(name))
 }
 
-fn read_text(path: &Path, limit: usize) -> Result<String> {
-    use std::io::Read;
-    let file=std::fs::File::open(path).map_err(|e| crate::Error::Msg(format!("Candle DKR {}: {e}",path.display())))?;
-    let mut bytes=Vec::new();
-    file.take((limit+1) as u64).read_to_end(&mut bytes).map_err(|e|crate::Error::Msg(e.to_string()))?;
-    if bytes.len()>limit {crate::bail!("Candle DKR package size exceeded: {}",path.display());}
-    String::from_utf8(bytes).map_err(|e|crate::Error::Msg(e.to_string()))
-}
-
-
 impl ExternalModules {
     pub(super) fn from_env(context: &CudaContext) -> Result<Option<Self>> {
         let source = std::env::var("MISTRALRS_DKR_ARTIFACT_SOURCE")
@@ -69,57 +60,46 @@ impl ExternalModules {
         let (major, minor) = context.compute_capability().w()?;
         let device_cc = (major * 10 + minor) as u32;
         let root = PathBuf::from(root);
-        if source == "embedded" {
-            let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
-            if root != Path::new(compiled_root) {
-                crate::bail!("native directory differs from the embedded build input");
+        let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
+        let rows = match source.as_str() {
+            "embedded" => {
+                let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
+                if root != Path::new(compiled_root) {
+                    crate::bail!("native directory differs from the embedded build input");
+                }
+                embedded::modules().into_iter()
+                    .map(|(name, artifact, symbols)| (name.to_owned(), artifact, symbols))
+                    .collect::<Vec<_>>()
             }
-            let mut modules = Registry::default();
-            let mut native_keys = std::collections::HashMap::new();
-            let mut mmq_symbols = std::collections::HashMap::new();
-            for (name, artifact, symbols) in embedded::modules() {
-                artifact.admit_exact_target(device_cc).map_err(crate::Error::Msg)?;
-                let key = RegistryKey::new(NATIVE_ABI, name, "native", artifact.key().target_cc());
-                modules.insert(key.clone(), artifact).map_err(crate::Error::Msg)?;
-                native_keys.insert(name, key);
-                if let Some(symbols) = symbols { mmq_symbols.insert(name, symbols); }
+            "filesystem" => {
+                if !root.is_absolute() || !root.is_dir() {
+                    crate::bail!("CANDLE_DKR_S31_DIR must be an existing absolute directory");
+                }
+                let root = root.canonicalize().map_err(|e| crate::Error::Msg(e.to_string()))?;
+                let catalog = NativeCatalog::load(&root).map_err(crate::Error::Msg)?;
+                let mut rows = Vec::with_capacity(catalog.families.len());
+                for name in &catalog.families {
+                    let (artifact, symbols) = catalog.read_package(&root, name).map_err(crate::Error::Msg)?;
+                    rows.push((name.clone(), artifact, symbols));
+                }
+                rows
             }
-            let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
-            if trace {
-                eprintln!("CANDLE_DKR_NATIVE_CATALOG source=embedded manifests={}", modules.len());
-            }
-            return Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc }));
-        }
-        if source != "filesystem" {
-            crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem");
-        }
-        if !root.is_absolute() || !root.is_dir() {
-            crate::bail!("CANDLE_DKR_S31_DIR must be an existing absolute directory");
-        }
-        // Fail before inference if a selected module is absent or corrupt.
+            _ => crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem"),
+        };
         let mut modules = Registry::default();
         let mut native_keys = std::collections::HashMap::new();
         let mut mmq_symbols = std::collections::HashMap::new();
-        for &name in contract::FAMILIES {
-            let (artifact, symbols) = Self::read(&root, name)?;
+        for (name, artifact, symbols) in rows {
             artifact.admit_exact_target(device_cc).map_err(crate::Error::Msg)?;
-            let key = RegistryKey::new(NATIVE_ABI, name, "native", artifact.key().target_cc());
+            let key = RegistryKey::new(NATIVE_ABI, &name, "native", artifact.key().target_cc());
             modules.insert(key.clone(), artifact).map_err(crate::Error::Msg)?;
-            native_keys.insert(name, key);
+            native_keys.insert(name.clone(), key);
             if let Some(symbols) = symbols { mmq_symbols.insert(name, symbols); }
         }
-        if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
-            eprintln!("CANDLE_DKR_NATIVE_CATALOG source=filesystem manifests={}", modules.len());
+        if trace {
+            eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace: std::env::var_os("CANDLE_DKR_TRACE").is_some(), device_cc }))
-    }
-
-    fn read(root: &Path, name: &str) -> Result<(VerifiedArtifact, NativeSymbols)> {
-        let manifest = read_text(&root.join(name).join("manifest.json"), 256*1024)?;
-        let manifest: Value = serde_json::from_str(&manifest)
-            .map_err(|e| crate::Error::Msg(format!("Candle DKR S3.1 manifest: {e}")))?;
-        let ptx = read_text(&root.join(name).join(format!("{name}.ptx")), dkr_kernel_registry::MAX_PTX_BYTES)?;
-        verify_package(&manifest, name, ptx).map_err(crate::Error::Msg)
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc }))
     }
 
     fn artifact(&self, name: &str) -> Option<&VerifiedArtifact> {

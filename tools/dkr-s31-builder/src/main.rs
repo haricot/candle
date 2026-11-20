@@ -4,15 +4,22 @@ use sha2::{Digest, Sha256};
 
 #[path = "../../../candle-kernels/dkr_s31_contract.rs"]
 mod contract;
+#[path = "../../../candle-core/src/cuda_backend/dkr_s31_validation.rs"]
+mod validation;
+#[path = "../../../candle-core/src/cuda_backend/dkr_native_catalog.rs"]
+mod native_catalog;
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 2 || args[0] != "--output" {
-        return Err("usage: candle-dkr-s31-builder --output ABSOLUTE_DIRECTORY".into());
+    if args.len() != 2 || (args[0] != "--output" && args[0] != "--index-existing") {
+        return Err("usage: candle-dkr-s31-builder (--output | --index-existing) ABSOLUTE_DIRECTORY".into());
     }
     let output = PathBuf::from(&args[1]);
     if !output.is_absolute() {
         return Err("--output must be absolute".into());
+    }
+    if args[0] == "--index-existing" {
+        return write_index(&output);
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize()?;
     let source = root.join("candle-kernels/src");
@@ -54,7 +61,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         });
         fs::write(dir.join("manifest.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
     }
+    write_index(&output)?;
     println!("CANDLE_DKR_S31_PACKAGES=STAGED target=sm61 families={}", contract::FAMILIES.len());
+    Ok(())
+}
+
+// Reuse the loader verification before publishing an inventory. No CUDA
+// compiler is invoked by --index-existing; all PTX bytes remain unchanged.
+fn write_index(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let root = output.canonicalize()?;
+    let catalog = native_catalog::NativeCatalog::legacy();
+    for family in &catalog.families {
+        catalog.read_package(&root, family)?;
+    }
+    let path = root.join(native_catalog::INDEX);
+    let temp = root.join(format!(".native-catalog-{}.tmp", std::process::id()));
+    {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temp)?;
+        if let Err(e) = file.write_all((serde_json::to_string_pretty(&catalog.index())? + "\n").as_bytes()) {
+            let _ = fs::remove_file(&temp);
+            return Err(e.into());
+        }
+    }
+    if let Err(e) = fs::rename(&temp, &path) {
+        let _ = fs::remove_file(&temp);
+        return Err(e.into());
+    }
+    println!("CANDLE_DKR_NATIVE_INDEX=STAGED target=sm{} families={}", catalog.target_cc, catalog.families.len());
     Ok(())
 }
 

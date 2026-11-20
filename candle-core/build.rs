@@ -5,12 +5,15 @@ use std::{env, fs, path::PathBuf};
 mod contract;
 #[path = "src/cuda_backend/dkr_s31_validation.rs"]
 mod validation;
+#[path = "src/cuda_backend/dkr_native_catalog.rs"]
+mod native_catalog;
 
 const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed={EMBED_ENV}");
     println!("cargo:rerun-if-changed=src/cuda_backend/dkr_s31_validation.rs");
+    println!("cargo:rerun-if-changed=src/cuda_backend/dkr_native_catalog.rs");
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_s31_contract.rs");
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut rows = Vec::new();
@@ -22,22 +25,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "{EMBED_ENV} requires cuda-dkr-s31"
         );
         root_literal = format!("Some({:?})", root.to_str().ok_or("non-UTF8 embedded path")?);
-        for name in contract::FAMILIES {
-            let manifest = root.join(name).join("manifest.json");
-            let artifact = root.join(name).join(format!("{name}.ptx"));
+        // Watch the directory as well, so adding an index invalidates a legacy build.
+        println!("cargo:rerun-if-changed={}", root.display());
+        let catalog = native_catalog::NativeCatalog::load(&root)?;
+        for name in &catalog.families {
+            let (manifest, artifact) = native_catalog::NativeCatalog::paths(&root, name);
             println!("cargo:rerun-if-changed={}", manifest.display());
             println!("cargo:rerun-if-changed={}", artifact.display());
-            assert!(
-                fs::metadata(&manifest)?.len() <= 256 * 1024,
-                "native manifest exceeds budget"
-            );
-            assert!(
-                fs::metadata(&artifact)?.len() <= dkr_kernel_registry::MAX_PTX_BYTES as u64,
-                "native PTX exceeds budget"
-            );
-            let metadata: serde_json::Value = serde_json::from_slice(&fs::read(manifest)?)?;
-            let ptx = fs::read_to_string(artifact)?;
-            let (verified, symbols) = validation::verify_package(&metadata, name, ptx)?;
+            let (verified, symbols) = catalog.read_package(&root, name)?;
             let copy = out.join(format!("dkr-native-{name}.ptx"));
             fs::write(&copy, verified.ptx())?;
             let entries = verified
