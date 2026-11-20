@@ -17,6 +17,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 pub mod cudnn;
 #[cfg(feature = "cutile")]
 pub mod cutile;
+#[allow(dead_code)]
+#[path = "../../../candle-kernels/dkr_bf16_recipe.rs"]
+pub(crate) mod bf16_recipe;
 mod device;
 mod error;
 mod utils;
@@ -2499,9 +2502,9 @@ impl BackendStorage for CudaStorage {
         if matches!(
             (&self.slice, &rhs.slice),
             (CudaStorageSlice::BF16(_), CudaStorageSlice::BF16(_))
-        ) && dev.cuda_stream().context().compute_capability().w()?.0 < 8
+        ) && dev.bf16_matmul_route() == bf16_recipe::Bf16MatmulRoute::WidenF32
         {
-            // Pre-Ampere cuBLAS cannot consume CUDA_R_16BF. BF16 -> F32
+            // The admitted BF16 recipe requires widening before SGEMM. BF16 -> F32
             // is exact and preserves BF16's exponent range (unlike FP16).
             // to_dtype materializes the logical layout, including offsets,
             // transposes and broadcast strides, into a contiguous buffer.

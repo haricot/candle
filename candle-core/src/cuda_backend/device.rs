@@ -73,6 +73,8 @@ pub struct CudaDevice {
     modules: Arc<std::sync::RwLock<ModuleStore>>,
     #[cfg(feature = "cuda-dkr-s31")]
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
+    #[cfg(feature = "cuda-legacy-bf16")]
+    bf16_matmul_route: super::bf16_recipe::Bf16MatmulRoute,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
     #[cfg(feature = "cuda-dkr-s31")]
     dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, DkrLoadedModule>>>,
@@ -456,6 +458,11 @@ impl CudaDevice {
     #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmq_enabled(&self)->bool{self.dkr_s31.is_some()}
 
+    #[cfg(feature = "cuda-legacy-bf16")]
+    pub(crate) fn bf16_matmul_route(&self) -> super::bf16_recipe::Bf16MatmulRoute {
+        self.bf16_matmul_route
+    }
+
     pub(crate) fn fp4_launch_recipe(&self) -> crate::quantized::fp4_recipe::Fp4Recipe {
         #[cfg(feature = "cuda-dkr-s31")]
         if let Some(catalog) = &self.dkr_s31 { return catalog.fp4_recipe(); }
@@ -520,6 +527,20 @@ impl CudaDevice {
     ) -> Result<Self> {
         #[cfg(feature = "cuda-dkr-s31")]
         let dkr_s31 = dkr_s31::ExternalModules::from_env(&context)?.map(Arc::new);
+        #[cfg(feature = "cuda-legacy-bf16")]
+        let bf16_matmul_route = {
+            #[cfg(feature = "cuda-dkr-s31")]
+            let catalogue_route = dkr_s31.as_ref().map(|c| c.bf16_recipe().matmul);
+            #[cfg(not(feature = "cuda-dkr-s31"))]
+            let catalogue_route: Option<super::bf16_recipe::Bf16MatmulRoute> = None;
+            match catalogue_route {
+                Some(route) => route,
+                None => {
+                    let (major, minor) = context.compute_capability().w()?;
+                    super::bf16_recipe::legacy_static_matmul((major * 10 + minor) as u32)
+                }
+            }
+        };
         let blas = cudarc::cublas::CudaBlas::new(stream.clone()).w()?;
         let curand = cudarc::curand::CudaRng::new(299792458, stream.clone()).w()?;
         let module_store = ModuleStore {
@@ -535,6 +556,8 @@ impl CudaDevice {
             modules: Arc::new(std::sync::RwLock::new(module_store)),
             #[cfg(feature = "cuda-dkr-s31")]
             dkr_s31,
+            #[cfg(feature = "cuda-legacy-bf16")]
+            bf16_matmul_route,
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
             #[cfg(feature = "cuda-dkr-s31")]
             dkr_functions: Arc::new(RwLock::new(HashMap::new())),

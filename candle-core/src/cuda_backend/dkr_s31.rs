@@ -18,6 +18,7 @@ mod native_catalog;
 use native_catalog::{NativeCatalog, NativeRecipe};
 use crate::quantized::fp8_recipe::{self, Fp8Recipe};
 use crate::quantized::fp4_recipe::{self, Fp4Recipe};
+use crate::cuda_backend::bf16_recipe::{self, Bf16Recipe};
 #[cfg(test)]
 use validation::{validate, verify_package};
 mod embedded {
@@ -34,6 +35,7 @@ pub(super) struct ExternalModules {
     recipe: NativeRecipe,
     fp8: Fp8Recipe,
     fp4: Fp4Recipe,
+    bf16: Bf16Recipe,
     mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
@@ -66,7 +68,7 @@ impl ExternalModules {
         let device_cc = (major * 10 + minor) as u32;
         let root = PathBuf::from(root);
         let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
-        let (recipe, fp8, fp4, rows) = match source.as_str() {
+        let (recipe, fp8, fp4, bf16, rows) = match source.as_str() {
             "embedded" => {
                 let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
                 if root != Path::new(compiled_root) {
@@ -81,7 +83,9 @@ impl ExternalModules {
                 if fp8 != recipe.fp8() { crate::bail!("embedded FP8 recipe differs from native ABI"); }
                 let fp4 = embedded::FP4_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded FP4 recipe".into()))?;
                 if fp4 != recipe.fp4() { crate::bail!("embedded FP4 recipe differs from native ABI"); }
-                (recipe, fp8, fp4, rows)
+                let bf16 = embedded::BF16_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded BF16 recipe".into()))?;
+                if bf16 != recipe.bf16() { crate::bail!("embedded BF16 recipe differs from native ABI"); }
+                (recipe, fp8, fp4, bf16, rows)
             }
             "filesystem" => {
                 if !root.is_absolute() || !root.is_dir() {
@@ -94,7 +98,7 @@ impl ExternalModules {
                     let (artifact, symbols) = catalog.read_package(&root, name).map_err(crate::Error::Msg)?;
                     rows.push((name.clone(), artifact, symbols));
                 }
-                (catalog.recipe, catalog.recipe.fp8(), catalog.recipe.fp4(), rows)
+                (catalog.recipe, catalog.recipe.fp8(), catalog.recipe.fp4(), catalog.recipe.bf16(), rows)
             }
             _ => crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem"),
         };
@@ -111,8 +115,10 @@ impl ExternalModules {
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4 }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16 }))
     }
+
+    pub(super) fn bf16_recipe(&self) -> Bf16Recipe { self.bf16 }
 
     pub(super) fn fp4_recipe(&self) -> Fp4Recipe { self.fp4 }
 
@@ -171,6 +177,23 @@ impl ExternalModules {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dkr_bf16_recipe_embedded_table() {
+        match embedded::ROOT {
+            Some(_) => {
+                let recipe = NativeRecipe::from_id(embedded::RECIPE.unwrap()).unwrap();
+                let bf16 = embedded::BF16_RECIPE.unwrap();
+                assert_eq!(bf16, recipe.bf16());
+                let rows = embedded::modules();
+                let (_, artifact, _) = rows.iter().find(|(name, _, _)| *name == "cast").unwrap();
+                for symbol in bf16.cast_symbols() {
+                    assert!(artifact.has_entry(symbol), "missing embedded BF16 entry {symbol}");
+                }
+            }
+            None => assert!(embedded::BF16_RECIPE.is_none()),
+        }
+    }
+
     #[test]
     fn dkr_fp4_recipe_embedded_table() {
         match embedded::ROOT {

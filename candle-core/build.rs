@@ -13,6 +13,9 @@ mod fp8_recipe;
 #[allow(dead_code)]
 #[path = "../candle-kernels/dkr_fp4_recipe.rs"]
 mod fp4_recipe;
+#[allow(dead_code)]
+#[path = "../candle-kernels/dkr_bf16_recipe.rs"]
+mod bf16_recipe;
 
 const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 
@@ -27,6 +30,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut recipe_literal = "None".to_owned();
     let mut fp8_literal = "None".to_owned();
     let mut fp4_literal = "None".to_owned();
+    let mut bf16_literal = "None".to_owned();
+    println!("cargo:rerun-if-changed=../candle-kernels/dkr_bf16_recipe.rs");
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_fp4_recipe.rs");
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_fp8_recipe.rs");
     if let Some(root) = env::var_os(EMBED_ENV) {
@@ -42,6 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         recipe_literal = format!("Some({:?})", catalog.recipe.id());
         fp8_literal = format!("Some({:?})", catalog.recipe.fp8());
         fp4_literal = format!("Some({:?})", catalog.recipe.fp4());
+        let bf16 = catalog.recipe.bf16();
+        bf16_literal = format!(
+            "Some(Bf16Recipe {{ matmul: bf16_recipe::Bf16MatmulRoute::{:?}, cast_to_f32: {:?}, cast_from_f32: {:?} }})",
+            bf16.matmul, bf16.cast_to_f32, bf16.cast_from_f32
+        );
         for name in &catalog.families {
             let (manifest, artifact) = native_catalog::NativeCatalog::paths(&root, name);
             println!("cargo:rerun-if-changed={}", manifest.display());
@@ -77,6 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          pub const RECIPE: Option<&str> = {recipe_literal};\n\
          pub const FP8_RECIPE: Option<Fp8Recipe> = {fp8_literal};\n\
          pub const FP4_RECIPE: Option<Fp4Recipe> = {fp4_literal};\n\
+         pub const BF16_RECIPE: Option<Bf16Recipe> = {bf16_literal};\n\
          pub fn modules() -> Vec<(&'static str, VerifiedArtifact, \
          Option<std::collections::BTreeMap<String,String>>)> {{ vec![{}] }}\n",
             rows.join(",\n")

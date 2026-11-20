@@ -1,6 +1,6 @@
 //! Native catalogue inventory shared by the build script, runtime and producer.
 //! An inventory describes a qualified host-launch ABI, not just loadable PTX.
-use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}, fp4_recipe::{Fp4Recipe, S31_FP4}};
+use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}, fp4_recipe::{Fp4Recipe, S31_FP4}, bf16_recipe::{Bf16Recipe, S31_BF16}};
 use dkr_kernel_registry::VerifiedArtifact;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs, io::Read, path::{Path, PathBuf}};
@@ -33,6 +33,8 @@ impl NativeRecipe {
             _ => Err(format!("unsupported native launch recipe: {id}")),
         }
     }
+
+    pub(super) fn bf16(self) -> Bf16Recipe { match self { Self::S31NativeV1 => S31_BF16 } }
 
     pub(super) fn fp4(self) -> Fp4Recipe { match self { Self::S31NativeV1 => S31_FP4 } }
 
@@ -111,12 +113,13 @@ impl NativeCatalog {
             "families": self.families,
             "fp8": fp8_descriptor(self.recipe.fp8()),
             "fp4": fp4_descriptor(self.recipe.fp4()),
+            "bf16": bf16_descriptor(self.recipe.bf16()),
         })
     }
 
     fn parse(value: &Value) -> Result<Self, String> {
         let object = value.as_object().ok_or("native catalogue must be an object")?;
-        if object.len() != 7 + (object.contains_key("fp8") as usize) + (object.contains_key("fp4") as usize)
+        if object.len() != 7 + (object.contains_key("fp8") as usize) + (object.contains_key("fp4") as usize) + (object.contains_key("bf16") as usize)
             || value["schema"].as_str() != Some(SCHEMA)
             || value["abi"].as_str() != Some(dkr_kernel_registry::NATIVE_ABI)
         {
@@ -130,6 +133,11 @@ impl NativeCatalog {
         }
         if let Some(fp4) = object.get("fp4") {
             if *fp4 != fp4_descriptor(recipe.fp4()) { return Err("FP4 descriptor differs from qualified launch ABI".into()); }
+        }
+        if let Some(bf16) = object.get("bf16") {
+            if *bf16 != bf16_descriptor(recipe.bf16()) {
+                return Err("BF16 descriptor differs from qualified launch ABI".into());
+            }
         }
         let cc = value["target_cc"].as_u64().and_then(|cc| u32::try_from(cc).ok())
             .ok_or("invalid native catalogue target")?;
@@ -187,12 +195,32 @@ impl NativeCatalog {
         let ptx = read_bounded(root, &artifact, dkr_kernel_registry::MAX_PTX_BYTES)?;
         let (verified, symbols) = validation::verify_package(&metadata, family, ptx)?;
         verified.admit_exact_target(self.target_cc)?;
+        if family == "cast" {
+            verify_bf16_entries(self.recipe.bf16(), &verified)?;
+        }
         if family == "quantized" {
             verify_fp8_entries(self.recipe.fp8(), &verified)?;
             verify_fp4_entries(self.recipe.fp4(), &verified)?;
         }
         Ok((verified, symbols))
     }
+}
+
+fn bf16_descriptor(recipe: Bf16Recipe) -> Value {
+    json!({
+        "matmul": recipe.route_id(),
+        "cast_to_f32": recipe.cast_to_f32,
+        "cast_from_f32": recipe.cast_from_f32,
+    })
+}
+
+fn verify_bf16_entries(recipe: Bf16Recipe, artifact: &VerifiedArtifact) -> Result<(), String> {
+    for symbol in recipe.cast_symbols() {
+        if !artifact.has_entry(symbol) {
+            return Err(format!("native BF16 conversion entry missing: {symbol}"));
+        }
+    }
+    Ok(())
 }
 
 fn fp4_descriptor(recipe: Fp4Recipe) -> Value {
@@ -281,6 +309,35 @@ mod tests {
             bad[field] = value;
             assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
         }
+    }
+
+    #[test]
+    fn dkr_native_catalog_bf16_recipe() {
+        use sha2::{Digest, Sha256};
+        let legacy = NativeCatalog::legacy();
+        let index = legacy.index();
+        assert_eq!(NativeCatalog::parse(&index).unwrap().recipe.bf16(), S31_BF16);
+        let mut old = index.clone();
+        for field in ["bf16", "fp4", "fp8"] { old.as_object_mut().unwrap().remove(field); }
+        assert_eq!(NativeCatalog::parse(&old).unwrap().recipe.bf16(), S31_BF16);
+        for (field, replacement) in [
+            ("matmul", json!("cublas-native-bf16")),
+            ("cast_to_f32", json!("cast_bf16_f16")),
+            ("cast_from_f32", json!("other")),
+        ] {
+            let mut bad = index.clone();
+            bad["bf16"][field] = replacement;
+            assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
+        }
+        let make = |symbols: &[&str]| {
+            let mut ptx = format!(".version 8.0\n.target sm_{}\n.address_size 64\n", legacy.target_cc);
+            for symbol in symbols { ptx += &format!(".visible .entry {symbol}() {{ ret; }}\n"); }
+            let digest = format!("{:x}", Sha256::digest(ptx.as_bytes()));
+            VerifiedArtifact::new(ptx, legacy.target_cc, &digest).unwrap()
+        };
+        let symbols = S31_BF16.cast_symbols();
+        assert!(verify_bf16_entries(S31_BF16, &make(&symbols)).is_ok());
+        assert!(verify_bf16_entries(S31_BF16, &make(&symbols[..1])).is_err());
     }
 
     #[test]

@@ -14,6 +14,9 @@ mod fp8_recipe;
 #[allow(dead_code)]
 #[path = "../../../candle-kernels/dkr_fp4_recipe.rs"]
 mod fp4_recipe;
+#[allow(dead_code)]
+#[path = "../../../candle-kernels/dkr_bf16_recipe.rs"]
+mod bf16_recipe;
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();

@@ -88,6 +88,25 @@ Generic GGUF Q8_1 staging, MXFP4 dequantization/embedding, experimental NVFP4 pr
 The native instance caches device capability once; a GPU test compares Auto with the expected explicit route at the batch 8/9 boundary.
 This does not remove the legacy compilation feature or qualify another GPU.
 
+## S3.3: BF16 hardware dispatch extraction (candidate)
+
+The native inventory supplies a typed BF16 GEMM route and the two required
+conversion entry symbols. The S3.1 recipe selects exact BF16 to F32 widening,
+cuBLAS SGEMM and rounding once to BF16. The build verifies both cast entries
+and embeds the recipe; filesystem and embedded runtime use the same rules.
+Earlier indexes lacking the BF16 descriptor use the frozen S3.1 adapter.
+An edited descriptor cannot admit a different matmul/convert ABI.
+CudaDevice resolves and caches the selected route at device construction.
+The legacy static path (when no DKR catalogue is selected) retains its
+pre-Ampere boundary, in the package-side adapter. Native BF16 on SM80+
+remains the old static route; no new GPU architecture is qualified.
+Tensor layout materialization, strides, broadcast, exponent range, output
+rounding and ordinary F32 GEMM behavior are unchanged. The cast entry names
+are fixed by the generic Candle cast ABI, not arbitrary manifest aliases.
+Other BF16 kernels are already routed through native module lookup; no CUDA
+source or PTX changes. cuDNN failure policy, MoE and legacy build flags are
+outside this stage; catalogue-only compilation remains S4.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional
