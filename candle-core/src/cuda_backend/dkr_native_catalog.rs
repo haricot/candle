@@ -1,6 +1,6 @@
 //! Native catalogue inventory shared by the build script, runtime and producer.
 //! An inventory describes a qualified host-launch ABI, not just loadable PTX.
-use super::{contract, validation};
+use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}};
 use dkr_kernel_registry::VerifiedArtifact;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs, io::Read, path::{Path, PathBuf}};
@@ -32,6 +32,10 @@ impl NativeRecipe {
             LEGACY_RECIPE => Ok(Self::S31NativeV1),
             _ => Err(format!("unsupported native launch recipe: {id}")),
         }
+    }
+
+    pub(super) fn fp8(self) -> Fp8Recipe {
+        match self { Self::S31NativeV1 => S31_FP8 }
     }
 
     pub(super) fn id(self) -> &'static str {
@@ -103,18 +107,25 @@ impl NativeCatalog {
             "min_cc": self.target_cc,
             "max_cc": self.target_cc,
             "families": self.families,
+            "fp8": fp8_descriptor(self.recipe.fp8()),
         })
     }
 
     fn parse(value: &Value) -> Result<Self, String> {
         let object = value.as_object().ok_or("native catalogue must be an object")?;
-        if object.len() != 7
+        if !(object.len() == 7 && !object.contains_key("fp8")
+            || object.len() == 8 && object.contains_key("fp8"))
             || value["schema"].as_str() != Some(SCHEMA)
             || value["abi"].as_str() != Some(dkr_kernel_registry::NATIVE_ABI)
         {
             return Err("unsupported native catalogue schema/ABI/launch recipe".into());
         }
         let recipe = NativeRecipe::from_id(value["launch_recipe"].as_str().ok_or("missing native launch recipe")?)?;
+        if let Some(fp8) = object.get("fp8") {
+            if *fp8 != fp8_descriptor(recipe.fp8()) {
+                return Err("FP8 descriptor differs from qualified launch ABI".into());
+            }
+        }
         let cc = value["target_cc"].as_u64().and_then(|cc| u32::try_from(cc).ok())
             .ok_or("invalid native catalogue target")?;
         // S3.1 still consumes a qualified Pascal host-launch recipe.
@@ -171,8 +182,35 @@ impl NativeCatalog {
         let ptx = read_bounded(root, &artifact, dkr_kernel_registry::MAX_PTX_BYTES)?;
         let (verified, symbols) = validation::verify_package(&metadata, family, ptx)?;
         verified.admit_exact_target(self.target_cc)?;
+        if family == "quantized" {
+            verify_fp8_entries(self.recipe.fp8(), &verified)?;
+        }
         Ok((verified, symbols))
     }
+}
+
+fn fp8_descriptor(recipe: Fp8Recipe) -> Value {
+    json!({
+        "simt_gemv": recipe.simt_gemv,
+        "simt_prefill": recipe.simt_prefill,
+        "dp4a_gemv": recipe.dp4a_gemv,
+        "dp4a_prefill": recipe.dp4a_prefill,
+        "quantize": recipe.quantize,
+        "prefill_tokens": recipe.prefill_tokens,
+        "rows_per_block": recipe.rows_per_block,
+        "threads": recipe.threads,
+        "k_alignment": recipe.k_alignment,
+        "groups": recipe.groups,
+    })
+}
+
+fn verify_fp8_entries(recipe: Fp8Recipe, artifact: &VerifiedArtifact) -> Result<(), String> {
+    for symbol in recipe.symbols() {
+        if !artifact.has_entry(symbol) {
+            return Err(format!("native FP8 entry missing: {symbol}"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -205,6 +243,34 @@ mod tests {
             bad[field] = value;
             assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
         }
+    }
+
+    #[test]
+    fn dkr_native_catalog_fp8_recipe() {
+        use sha2::{Digest, Sha256};
+        let legacy = NativeCatalog::legacy();
+        let index = legacy.index();
+        assert_eq!(NativeCatalog::parse(&index).unwrap().recipe.fp8(), S31_FP8);
+        let mut old = index.clone();
+        old.as_object_mut().unwrap().remove("fp8");
+        assert_eq!(NativeCatalog::parse(&old).unwrap().recipe.fp8(), S31_FP8);
+        for (field, replacement) in [("threads", json!(256)), ("simt_gemv", json!("other")),
+            ("groups", json!([1, 2, 3])), ("prefill_tokens", json!(8))] {
+            let mut bad = index.clone();
+            bad["fp8"][field] = replacement;
+            assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
+        }
+        let make_artifact = |symbols: &[&str]| {
+            let mut ptx = format!(".version 8.0\n.target sm_{}\n.address_size 64\n", legacy.target_cc);
+            for symbol in symbols {
+                ptx += &format!(".visible .entry {symbol}() {{ ret; }}\n");
+            }
+            let digest = format!("{:x}", Sha256::digest(ptx.as_bytes()));
+            VerifiedArtifact::new(ptx, legacy.target_cc, &digest).unwrap()
+        };
+        let symbols = S31_FP8.symbols();
+        assert!(verify_fp8_entries(S31_FP8, &make_artifact(&symbols)).is_ok());
+        assert!(verify_fp8_entries(S31_FP8, &make_artifact(&symbols[..4])).is_err());
     }
 
     #[test]

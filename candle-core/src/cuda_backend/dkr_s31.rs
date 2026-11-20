@@ -16,6 +16,7 @@ mod validation;
 #[path = "dkr_native_catalog.rs"]
 mod native_catalog;
 use native_catalog::{NativeCatalog, NativeRecipe};
+use crate::quantized::fp8_recipe::{self, Fp8Recipe};
 #[cfg(test)]
 use validation::{validate, verify_package};
 mod embedded {
@@ -30,6 +31,7 @@ pub(super) struct ExternalModules {
     trace: bool,
     device_cc: u32,
     recipe: NativeRecipe,
+    fp8: Fp8Recipe,
     mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
@@ -62,7 +64,7 @@ impl ExternalModules {
         let device_cc = (major * 10 + minor) as u32;
         let root = PathBuf::from(root);
         let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
-        let (recipe, rows) = match source.as_str() {
+        let (recipe, fp8, rows) = match source.as_str() {
             "embedded" => {
                 let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
                 if root != Path::new(compiled_root) {
@@ -73,7 +75,9 @@ impl ExternalModules {
                 let rows = embedded::modules().into_iter()
                     .map(|(name, artifact, symbols)| (name.to_owned(), artifact, symbols))
                     .collect::<Vec<_>>();
-                (recipe, rows)
+                let fp8 = embedded::FP8_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded FP8 recipe".into()))?;
+                if fp8 != recipe.fp8() { crate::bail!("embedded FP8 recipe differs from native ABI"); }
+                (recipe, fp8, rows)
             }
             "filesystem" => {
                 if !root.is_absolute() || !root.is_dir() {
@@ -86,7 +90,7 @@ impl ExternalModules {
                     let (artifact, symbols) = catalog.read_package(&root, name).map_err(crate::Error::Msg)?;
                     rows.push((name.clone(), artifact, symbols));
                 }
-                (catalog.recipe, rows)
+                (catalog.recipe, catalog.recipe.fp8(), rows)
             }
             _ => crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem"),
         };
@@ -103,8 +107,10 @@ impl ExternalModules {
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8 }))
     }
+
+    pub(super) fn fp8_recipe(&self) -> Fp8Recipe { self.fp8 }
 
     pub(super) fn mmq_configs(&self, codec: &str, rows: u32, batch: u32,
         padded: u32, warp: i32, limit: i32)

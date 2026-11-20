@@ -29,6 +29,13 @@ pub mod cuda;
 pub mod fast_mmq;
 #[cfg(feature = "cuda")]
 pub mod fast_mmvq;
+#[path = "../../../candle-kernels/dkr_fp8_recipe.rs"]
+pub(crate) mod fp8_recipe;
+#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+pub mod fp8_linear;
+pub mod fp8_dispatch;
+pub mod fp8_format;
+pub mod fp8_loader;
 #[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
 pub mod fp8_linear_sm61;
 pub mod fp8_sm61_dispatch;

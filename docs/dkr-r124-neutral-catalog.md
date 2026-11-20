@@ -49,6 +49,25 @@ not silently fall back to static PTX if a validated catalogue is selected.
 CPU tests compare 200 recipe configurations against the historical selector
 and reject invalid device limits, shapes and codecs.
 
+## S3.1: FP8 native dispatch extraction (candidate)
+
+The generic F8E linear, residency planner, format and loader now live under
+`fp8_linear`, `fp8_dispatch`, `fp8_format` and `fp8_loader`. The former public
+SM61 module and type names remain compatibility reexports; no Mistral pin
+change is needed for these names. The native recipe supplies the five entry
+symbols, token tile, rows per block, block width, K alignment and DP4A groups.
+The producer writes explicit FP8 metadata in the optional native index field.
+Existing manifests/indexes without it resolve the exact frozen S3.1 recipe;
+edited descriptors or missing required PTX entries fail closed. The build
+embeds a verified typed FP8 descriptor and the filesystem path uses the same
+recipe and package checks. The selected descriptor is pinned per linear.
+Historical static execution stays explicit when no native catalogue is selected.
+No automatic DP4A or FP16 admission changes, no PTX edits, no launch ABI changes.
+S3.1 retains F8E-v1 tensor/packing ABI and old custom-op trace names; it does
+not add native FP8 Tensor Core support or remove the static feature yet.
+The FP8 recipe is frozen in the package-side source, not arbitrary executable
+metadata. New architectures require separately qualified descriptors and ABI.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

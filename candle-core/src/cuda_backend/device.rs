@@ -456,6 +456,16 @@ impl CudaDevice {
     #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmq_enabled(&self)->bool{self.dkr_s31.is_some()}
 
+    #[cfg(feature = "cuda-legacy-fp8")]
+    pub(crate) fn fp8_launch_recipe(&self) -> crate::quantized::fp8_recipe::Fp8Recipe {
+        #[cfg(feature = "cuda-dkr-s31")]
+        if let Some(catalog) = &self.dkr_s31 {
+            return catalog.fp8_recipe();
+        }
+        // Explicit historical static compatibility route when DKR is not selected.
+        crate::quantized::fp8_recipe::S31_FP8
+    }
+
     #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmq_configs(&self, codec: &str, rows: u32, batch: u32,
         padded: u32, warp: i32, limit: i32)

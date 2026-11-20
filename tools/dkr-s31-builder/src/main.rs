@@ -8,6 +8,9 @@ mod contract;
 mod validation;
 #[path = "../../../candle-core/src/cuda_backend/dkr_native_catalog.rs"]
 mod native_catalog;
+#[allow(dead_code)]
+#[path = "../../../candle-kernels/dkr_fp8_recipe.rs"]
+mod fp8_recipe;
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
