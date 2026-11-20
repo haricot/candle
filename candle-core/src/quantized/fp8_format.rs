@@ -20,7 +20,7 @@ pub fn e4m3fn_decode(byte: u8) -> f32 {
     }
 }
 
-#[cfg(any(test, all(feature = "cuda", feature = "cuda-legacy-fp8")))]
+#[cfg(any(test, all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8"))))]
 pub(crate) fn checked_f16_weight(value: f32) -> Result<f16> {
     let rounded = f16::from_f32(value);
     if !value.is_finite() || !rounded.is_finite() {

@@ -9,7 +9,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 /// Counts shared by host validation and the kernels' signed 32-bit indexing.
-#[cfg_attr(not(feature = "cuda-legacy-fp4"), allow(dead_code))]
+#[cfg_attr(not(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")), allow(dead_code))]
 pub(crate) struct Nvfp4LaunchShape {
     pub input_elements: usize,
     pub output_elements: usize,
