@@ -167,7 +167,7 @@ pub fn moe_gemm(
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
-    if input.device().as_cuda_device()?.dkr_moe_enabled() && input.dtype() == DType::F16 {
+    if input.device().as_cuda_device()?.dkr_moe_admit(false,input.dtype())? {
         return dkr_moe::simt(input, weights, topk_weights, sorted_token_ids, experts_ids, topk);
     }
     match input.dtype() {
@@ -366,7 +366,7 @@ pub fn moe_gemm_gguf(
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
-    if input.device().as_cuda_device()?.dkr_moe_enabled() && input.dtype() == DType::F32 {
+    if input.device().as_cuda_device()?.dkr_moe_admit(true,input.dtype())? {
         return dkr_moe::gguf(input, weights, topk_weights, sorted_token_ids, experts_ids, topk);
     }
     match input.dtype() {

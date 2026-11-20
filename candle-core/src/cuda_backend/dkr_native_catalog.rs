@@ -1,6 +1,6 @@
 //! Native catalogue inventory shared by the build script, runtime and producer.
 //! An inventory describes a qualified host-launch ABI, not just loadable PTX.
-use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}, fp4_recipe::{Fp4Recipe, S31_FP4}, bf16_recipe::{Bf16Recipe, S31_BF16}};
+use super::{contract, validation, fp8_recipe::{Fp8Recipe, S31_FP8}, fp4_recipe::{Fp4Recipe, S31_FP4}, bf16_recipe::{Bf16Recipe, S31_BF16}, routed_recipe::{RoutedRecipe,S31_ROUTED}};
 use dkr_kernel_registry::VerifiedArtifact;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs, io::Read, path::{Path, PathBuf}};
@@ -33,6 +33,8 @@ impl NativeRecipe {
             _ => Err(format!("unsupported native launch recipe: {id}")),
         }
     }
+
+    pub(super) fn routed(self)->RoutedRecipe { match self {Self::S31NativeV1=>S31_ROUTED} }
 
     pub(super) fn bf16(self) -> Bf16Recipe { match self { Self::S31NativeV1 => S31_BF16 } }
 
@@ -114,12 +116,13 @@ impl NativeCatalog {
             "fp8": fp8_descriptor(self.recipe.fp8()),
             "fp4": fp4_descriptor(self.recipe.fp4()),
             "bf16": bf16_descriptor(self.recipe.bf16()),
+            "routed": routed_descriptor(self.recipe.routed()),
         })
     }
 
     fn parse(value: &Value) -> Result<Self, String> {
         let object = value.as_object().ok_or("native catalogue must be an object")?;
-        if object.len() != 7 + (object.contains_key("fp8") as usize) + (object.contains_key("fp4") as usize) + (object.contains_key("bf16") as usize)
+        if object.len() != 7 + (object.contains_key("fp8") as usize) + (object.contains_key("fp4") as usize) + (object.contains_key("bf16") as usize) + (object.contains_key("routed") as usize)
             || value["schema"].as_str() != Some(SCHEMA)
             || value["abi"].as_str() != Some(dkr_kernel_registry::NATIVE_ABI)
         {
@@ -138,6 +141,9 @@ impl NativeCatalog {
             if *bf16 != bf16_descriptor(recipe.bf16()) {
                 return Err("BF16 descriptor differs from qualified launch ABI".into());
             }
+        }
+        if let Some(routed) = object.get("routed") {
+            if *routed != routed_descriptor(recipe.routed()) { return Err("MMVQ/MoE descriptor differs from qualified ABI".into()); }
         }
         let cc = value["target_cc"].as_u64().and_then(|cc| u32::try_from(cc).ok())
             .ok_or("invalid native catalogue target")?;
@@ -204,6 +210,33 @@ impl NativeCatalog {
         }
         Ok((verified, symbols))
     }
+}
+
+fn routed_descriptor(recipe:RoutedRecipe)->Value {
+    json!({
+        "max_batch": recipe.max_batch,
+        "quant_threads": recipe.quant_threads,
+        "warp": recipe.warp,
+        "small_warps": recipe.small_warps,
+        "large_warps": recipe.large_warps,
+        "small_batch": recipe.small_batch,
+        "row_padding": recipe.row_padding,
+        "q8_block": recipe.q8_block,
+        "q8_bytes": recipe.q8_bytes,
+        "max_experts": recipe.max_experts,
+        "simt_threads": recipe.simt_threads,
+        "simt_tile_n": recipe.simt_tile_n,
+        "simt_shared": recipe.simt_shared,
+        "gguf_tile_n": recipe.gguf_tile_n,
+        "gguf_shared_base": recipe.gguf_shared_base,
+        "gguf_shared_limit": recipe.gguf_shared_limit,
+        "mmvq_family": "mmvq_gguf",
+        "simt_family": "moe_simt_f16",
+        "gguf_family": "moe_gguf",
+        "simt_input": "f16",
+        "gguf_input": "f32",
+        "gguf_abi": contract::MOE_GGUF_ABI,
+    })
 }
 
 fn bf16_descriptor(recipe: Bf16Recipe) -> Value {
@@ -308,6 +341,20 @@ mod tests {
             let mut bad = index.clone();
             bad[field] = value;
             assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
+        }
+    }
+
+    #[test]
+    fn dkr_native_catalog_routed_recipe() {
+        let index=NativeCatalog::legacy().index();
+        assert_eq!(NativeCatalog::parse(&index).unwrap().recipe.routed(),S31_ROUTED);
+        let mut old=index.clone();
+        old.as_object_mut().unwrap().remove("routed");
+        assert_eq!(NativeCatalog::parse(&old).unwrap().recipe.routed(),S31_ROUTED);
+        for (field,value) in [("max_batch",json!(16)),("gguf_shared_limit",json!(98304)),
+            ("simt_input",json!("bf16")),("gguf_abi",json!("other"))] {
+            let mut bad=index.clone(); bad["routed"][field]=value;
+            assert!(NativeCatalog::parse(&bad).is_err(),"{field}");
         }
     }
 

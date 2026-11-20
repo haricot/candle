@@ -20,6 +20,9 @@ pub mod cutile;
 #[allow(dead_code)]
 #[path = "../../../candle-kernels/dkr_bf16_recipe.rs"]
 pub(crate) mod bf16_recipe;
+#[cfg(feature = "cuda-dkr-s31")]
+#[path = "../../../candle-kernels/dkr_routed_recipe.rs"]
+mod routed_recipe;
 mod device;
 mod error;
 mod utils;

@@ -19,6 +19,7 @@ use native_catalog::{NativeCatalog, NativeRecipe};
 use crate::quantized::fp8_recipe::{self, Fp8Recipe};
 use crate::quantized::fp4_recipe::{self, Fp4Recipe};
 use crate::cuda_backend::bf16_recipe::{self, Bf16Recipe};
+use crate::cuda_backend::routed_recipe::{self,RoutedRecipe};
 #[cfg(test)]
 use validation::{validate, verify_package};
 mod embedded {
@@ -36,6 +37,7 @@ pub(super) struct ExternalModules {
     fp8: Fp8Recipe,
     fp4: Fp4Recipe,
     bf16: Bf16Recipe,
+    routed:RoutedRecipe,
     mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
@@ -68,7 +70,7 @@ impl ExternalModules {
         let device_cc = (major * 10 + minor) as u32;
         let root = PathBuf::from(root);
         let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
-        let (recipe, fp8, fp4, bf16, rows) = match source.as_str() {
+        let (recipe, fp8, fp4, bf16, routed, rows) = match source.as_str() {
             "embedded" => {
                 let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
                 if root != Path::new(compiled_root) {
@@ -85,7 +87,9 @@ impl ExternalModules {
                 if fp4 != recipe.fp4() { crate::bail!("embedded FP4 recipe differs from native ABI"); }
                 let bf16 = embedded::BF16_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded BF16 recipe".into()))?;
                 if bf16 != recipe.bf16() { crate::bail!("embedded BF16 recipe differs from native ABI"); }
-                (recipe, fp8, fp4, bf16, rows)
+                let routed=embedded::ROUTED_RECIPE.ok_or_else(||crate::Error::Msg("missing embedded MMVQ/MoE recipe".into()))?;
+                if routed!=recipe.routed(){crate::bail!("embedded MMVQ/MoE recipe differs from native ABI");}
+                (recipe, fp8, fp4, bf16,routed, rows)
             }
             "filesystem" => {
                 if !root.is_absolute() || !root.is_dir() {
@@ -98,7 +102,7 @@ impl ExternalModules {
                     let (artifact, symbols) = catalog.read_package(&root, name).map_err(crate::Error::Msg)?;
                     rows.push((name.clone(), artifact, symbols));
                 }
-                (catalog.recipe, catalog.recipe.fp8(), catalog.recipe.fp4(), catalog.recipe.bf16(), rows)
+                (catalog.recipe, catalog.recipe.fp8(), catalog.recipe.fp4(), catalog.recipe.bf16(),catalog.recipe.routed(), rows)
             }
             _ => crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem"),
         };
@@ -115,8 +119,10 @@ impl ExternalModules {
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16 }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16,routed }))
     }
+
+    pub(super) fn routed_recipe(&self)->RoutedRecipe {self.routed}
 
     pub(super) fn bf16_recipe(&self) -> Bf16Recipe { self.bf16 }
 
@@ -177,6 +183,25 @@ impl ExternalModules {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dkr_routed_recipe_embedded_table(){
+        match embedded::ROOT {
+            Some(_) => {
+                let recipe=NativeRecipe::from_id(embedded::RECIPE.unwrap()).unwrap();
+                assert_eq!(embedded::ROUTED_RECIPE.unwrap(),recipe.routed());
+                let rows=embedded::modules();
+                let (_,artifact,_)=rows.iter().find(|(name,_,_)|*name=="mmvq_gguf").unwrap();
+                for symbol in contract::mmvq_entries(){assert!(artifact.has_entry(&symbol));}
+                for (family,count) in [("moe_simt_f16",3),("moe_gguf",7)] {
+                    let (_,artifact,map)=rows.iter().find(|(name,_,_)|*name==family).unwrap();
+                    let map=map.as_ref().unwrap(); assert_eq!(map.len(),count);
+                    for symbol in map.values(){assert!(artifact.has_entry(symbol));}
+                }
+            }
+            None=>assert!(embedded::ROUTED_RECIPE.is_none()),
+        }
+    }
+
     #[test]
     fn dkr_bf16_recipe_embedded_table() {
         match embedded::ROOT {

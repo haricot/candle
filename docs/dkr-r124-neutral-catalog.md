@@ -107,6 +107,22 @@ Other BF16 kernels are already routed through native module lookup; no CUDA
 source or PTX changes. cuDNN failure policy, MoE and legacy build flags are
 outside this stage; catalogue-only compilation remains S4.
 
+## S3.4: MMVQ / MoE hardware dispatch extraction (candidate)
+
+The routed recipe describes the native MMVQ, SIMT FP16 MoE and GGUF MoE
+geometry. The build and filesystem inventory validate optional routed metadata
+against the frozen S3.1 ABI; the typed descriptor is embedded with the PTX.
+The 243 MMVQ symbols and existing MoE entry maps (3 SIMT, 7 GGUF) retain
+their strict manifest verification. The embedded table test checks them.
+Native MMVQ resolves both entry symbols and launch geometry before submission.
+Native MoE gets count/scan/GEMM and quantize/GEMM configurations from the
+catalogue, including its GGUF shared-memory limit and workspace extent.
+Unsupported MoE dtype with a selected catalogue is an explicit error, not
+a static FFI route. Static compatibility without DKR is unchanged.
+No kernel source, argument ABI, routing semantics or native plan cache change.
+The historical static FFI, generic MMVQ workspace preparation and the
+compile-time feature/build topology remain until S4. Only SM61 is qualified.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

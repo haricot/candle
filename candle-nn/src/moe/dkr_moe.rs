@@ -1,7 +1,7 @@
-//! Native external SM61 MoE dispatch. Existing routing contract requires valid
+//! Native catalogue-selected MoE dispatch. Existing routing contract requires valid
 //! sorted expert IDs and a permutation of token-pair IDs. Values stay on GPU.
 use candle::{CudaDevice, CudaStorage, DType, Result, Tensor};
-use candle::cuda_backend::{cudarc::driver::{DevicePtr, DevicePtrMut, LaunchConfig, PushKernelArg}, WrapErr};
+use candle::cuda_backend::{cudarc::driver::{DevicePtr, DevicePtrMut, PushKernelArg}, WrapErr};
 use candle::quantized::{GgmlDType,QTensor};
 
 fn layout(t: &Tensor, dev: &CudaDevice, dtype: DType, len: usize) -> Result<()> {
@@ -55,7 +55,7 @@ pub(super) fn simt(input:&Tensor, weights:&Tensor, route:&Option<Tensor>, sorted
     let dev=input.device().as_cuda_device()?;
     let (e,n,k)=weights.dims3()?;
     let (r,m)=dimensions(input,route,topk,e,n,k)?;
-    if e>1024 || k%2!=0 || n.div_ceil(32)>65535 { candle::bail!("DKR SIMT MoE unsupported geometry"); }
+    let [count_cfg,scan_cfg,gemm_cfg]=dev.dkr_moe_simt_plan(e,n,k,m)?;
     layout(input,dev,DType::F16,r*k)?;
     layout(weights,dev,DType::F16,e.checked_mul(n*k).ok_or_else(||candle::Error::Msg("MoE weight size overflow".into()))?)?;
     routing(dev,route,sorted,experts,m)?;
@@ -82,18 +82,16 @@ pub(super) fn simt(input:&Tensor, weights:&Tensor, route:&Option<Tensor>, sorted
     let (ei,ti,mi,ni,ki)=(e as i32,topk as i32,m as i32,n as i32,k as i32);
     let mut b=stream.launch_builder(&count);
     b.arg(&ep).arg(&cp).arg(&mi);
-    unsafe{b.launch(LaunchConfig{grid_dim:(m.div_ceil(256) as u32,1,1),block_dim:(256,1,1),shared_mem_bytes:0}).w()?;}
+    unsafe{b.launch(count_cfg).w()?;}
     count.record_submission();
-    // Same integer prefix sum for prefill and decode, bounded to 1024 experts.
-    let scan_threads=e.max(32) as u32;
     let mut b=stream.launch_builder(&scan);
     b.arg(&cp).arg(&op).arg(&ei);
-    unsafe{b.launch(LaunchConfig{grid_dim:(1,1,1),block_dim:(scan_threads,1,1),shared_mem_bytes:scan_threads*4}).w()?;}
+    unsafe{b.launch(scan_cfg).w()?;}
     scan.record_submission();
     let mut b=stream.launch_builder(&gemm);
     b.arg(&ip).arg(&wp).arg(&sp).arg(&op).arg(&rp).arg(&yp)
         .arg(&ei).arg(&ti).arg(&mi).arg(&ni).arg(&ki);
-    unsafe{b.launch(LaunchConfig{grid_dim:(e as u32,n.div_ceil(32) as u32,1),block_dim:(128,1,1),shared_mem_bytes:2304}).w()?;}
+    unsafe{b.launch(gemm_cfg).w()?;}
     gemm.record_submission();
     drop((ig,wg,sg,eg,rg,cg,og,yg));
     result(out,dev,m,n)
@@ -103,28 +101,21 @@ pub(super) fn gguf(input:&Tensor,weights:&QTensor,route:&Option<Tensor>,sorted:&
     let dev=input.device().as_cuda_device()?;
     let (e,n,k)=weights.shape().dims3()?;
     let (r,m)=dimensions(input,route,topk,e,n,k)?;
-    if weights.device().as_cuda_device()?.id()!=dev.id() || m>65535 { candle::bail!("DKR GGUF MoE device/grid mismatch"); }
-    let (codec,qk,bytes)=match weights.dtype(){
-        GgmlDType::Q8_0=>("q8_0",32,34),
-        GgmlDType::Q4K=>("q4_k",256,144),
-        GgmlDType::Q2K=>("q2_k",256,84),
-        GgmlDType::Q3K=>("q3_k",256,110),
-        GgmlDType::Q5K=>("q5_k",256,176),
-        GgmlDType::Q6K=>("q6_k",256,210),
+    if weights.device().as_cuda_device()?.id()!=dev.id() { candle::bail!("DKR GGUF MoE device mismatch"); }
+    let codec=match weights.dtype(){
+        GgmlDType::Q8_0=>"q8_0", GgmlDType::Q4K=>"q4_k",
+        GgmlDType::Q2K=>"q2_k", GgmlDType::Q3K=>"q3_k",
+        GgmlDType::Q5K=>"q5_k", GgmlDType::Q6K=>"q6_k",
         _=>candle::bail!("unsupported DKR GGUF MoE codec"),
     };
-    if k%qk!=0 { candle::bail!("invalid GGUF MoE block shape"); }
-    let padded=k.div_ceil(512)*512;
-    if padded.checked_mul(r).is_none_or(|v|v>i32::MAX as usize) { candle::bail!("GGUF MoE padded index overflow"); }
-    let shared=(k/qk)*bytes*4+1024;
-    if shared>49152 { candle::bail!("GGUF MoE exceeds SM61 shared memory"); }
+    let (padded,scratch_bytes,quant_cfg,gemm_cfg)=dev.dkr_moe_gguf_plan(codec,n,k,r,m)?;
     layout(input,dev,DType::F32,r*k)?;
     routing(dev,route,sorted,experts,m)?;
     let stream=dev.cuda_stream();
     let quant=dev.dkr_moe_function("moe_gguf","quantize")?;
     let gemm=dev.dkr_moe_function("moe_gguf",codec)?;
     // Candle's stream-ordered allocations, no direct cudaMallocAsync FFI.
-    let mut scratch=unsafe{dev.alloc::<u8>(r*(padded/32)*36)?};
+    let mut scratch=unsafe{dev.alloc::<u8>(scratch_bytes)?};
     let mut out=unsafe{dev.alloc::<f32>(m*n)?};
     ptr!(input,f32,&stream,is,ix,ip,ig);
     ptr!(sorted,u32,&stream,ss,sx,sp,sg);
@@ -142,12 +133,12 @@ pub(super) fn gguf(input:&Tensor,weights:&QTensor,route:&Option<Tensor>,sorted:&
     let (ei,ti,mi,ni,ki,pi)=(e as i32,topk as i32,m as i32,n as i32,k as i32,padded as i32);
     let mut b=stream.launch_builder(&quant);
     b.arg(&ip).arg(&qp).arg(&ki).arg(&pi);
-    unsafe{b.launch(LaunchConfig{grid_dim:(padded.div_ceil(256) as u32,r as u32,1),block_dim:(256,1,1),shared_mem_bytes:0}).w()?;}
+    unsafe{b.launch(quant_cfg).w()?;}
     quant.record_submission();
     let mut b=stream.launch_builder(&gemm);
     b.arg(&wp).arg(&qp).arg(&sp).arg(&ep).arg(&rp).arg(&yp)
         .arg(&ei).arg(&ti).arg(&mi).arg(&ni).arg(&ki).arg(&pi);
-    unsafe{b.launch(LaunchConfig{grid_dim:(n.div_ceil(4) as u32,m as u32,1),block_dim:(32,4,1),shared_mem_bytes:shared as u32}).w()?;}
+    unsafe{b.launch(gemm_cfg).w()?;}
     gemm.record_submission();
     drop((ig,sg,eg,wg,rg,qg,yg));
     result(out,dev,m,n)

@@ -447,6 +447,51 @@ impl CudaDevice {
     }
 
     #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmvq_plan(&self, codec:&str, tag:&str,k:usize,padded:usize,n:usize,batch:usize)
+        -> Result<Option<(CudaFunc,CudaFunc,cudarc::driver::LaunchConfig,cudarc::driver::LaunchConfig)>>
+    {
+        let Some(catalog) = &self.dkr_s31 else { return Ok(None); };
+        let p = catalog.routed_recipe().mmvq(codec,tag,k,padded,n,batch)
+            .map_err(|e| crate::Error::Msg(e.into()))?;
+        let quant = self.dkr_mmvq_func(&p.quant)?.ok_or_else(|| crate::Error::Msg("missing MMVQ provider".into()))?;
+        let matrix = self.dkr_mmvq_func(&p.matrix)?.ok_or_else(|| crate::Error::Msg("missing MMVQ provider".into()))?;
+        Ok(Some((quant,matrix, Self::routed_config(p.qcfg),Self::routed_config(p.mcfg))))
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    fn routed_config(p:super::routed_recipe::Geometry)->cudarc::driver::LaunchConfig {
+        cudarc::driver::LaunchConfig { grid_dim:p.grid,block_dim:p.block,shared_mem_bytes:p.shared }
+    }
+
+    /// A selected catalogue never silently falls back for unsupported MoE dtypes.
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub fn dkr_moe_admit(&self,gguf:bool,dtype:DType)->Result<bool> {
+        let Some(catalog)=&self.dkr_s31 else {return Ok(false)};
+        let tag=match dtype {DType::F16=>"f16",DType::F32=>"f32",DType::BF16=>"bf16",_=>"unsupported"};
+        if !catalog.routed_recipe().moe_accepts(gguf,tag) {
+            crate::bail!("selected native MoE catalogue does not admit {dtype:?}");
+        }
+        Ok(true)
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub fn dkr_moe_simt_plan(&self,e:usize,n:usize,k:usize,m:usize)
+        ->Result<[cudarc::driver::LaunchConfig;3]>
+    {
+        let c=self.dkr_s31.as_ref().ok_or_else(||crate::Error::Msg("external MoE not selected".into()))?;
+        Ok(c.routed_recipe().simt(e,n,k,m).map_err(|e|crate::Error::Msg(e.into()))?.map(Self::routed_config))
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub fn dkr_moe_gguf_plan(&self,codec:&str,n:usize,k:usize,r:usize,m:usize)
+        ->Result<(usize,usize,cudarc::driver::LaunchConfig,cudarc::driver::LaunchConfig)>
+    {
+        let c=self.dkr_s31.as_ref().ok_or_else(||crate::Error::Msg("external MoE not selected".into()))?;
+        let p=c.routed_recipe().gguf(codec,n,k,r,m).map_err(|e|crate::Error::Msg(e.into()))?;
+        Ok((p.padded,p.scratch,Self::routed_config(p.qcfg),Self::routed_config(p.mcfg)))
+    }
+
+    #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmvq_func(&self,name:&str)->Result<Option<CudaFunc>>{
         let Some(packages)=&self.dkr_s31 else{return Ok(None)};
         let artifact=packages.mmvq_ptx().ok_or_else(||crate::Error::Msg("DKR MMVQ package missing".into()))?;

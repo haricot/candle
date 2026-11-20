@@ -165,7 +165,7 @@ fn try_dkr_launch(
     k: usize, k_padded: usize, nrows: usize, batch: usize,
     stride_col_y: i32, stride_col_dst: i32,
 ) -> Result<bool> {
-    use cudarc::driver::{LaunchConfig, PushKernelArg};
+    use cudarc::driver::PushKernelArg;
     use crate::cuda_backend::WrapErr;
     let codec = match dtype {
         GgmlDType::Q4_0 => "q4_0", GgmlDType::Q4_1 => "q4_1",
@@ -179,29 +179,12 @@ fn try_dkr_launch(
         DType::BF16 => "bf16", DType::F16 => "f16", DType::F32 => "f32",
         _ => return Ok(false),
     };
-    let Some(quant) = dev.dkr_mmvq_func(&format!("mmvq_gguf_quantize_q8_1_{tag}"))? else {
+    let Some((quant,mat,qcfg,mcfg))=dev.dkr_mmvq_plan(codec,tag,k,k_padded,nrows,batch)? else {
         return Ok(false);
     };
-    let mat = dev.dkr_mmvq_func(&format!("mmvq_gguf_{codec}_{tag}_plain_cuda{batch}"))?
-        .ok_or_else(|| crate::Error::Msg("DKR MMVQ provider changed during launch".into()))?;
-    if k == 0 || nrows == 0 || !(1..=8).contains(&batch)
-        || [k, k_padded, nrows].iter().any(|n| *n > i32::MAX as usize)
-        || k_padded.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
-        || nrows.checked_mul(batch).is_none_or(|n| n > i32::MAX as usize)
-    {
-        crate::bail!("DKR MMVQ geometry exceeds native ABI");
-    }
-    let k_i32 = k as i32;
-    let padded_i32 = k_padded as i32;
-    let rows_i32 = nrows as i32;
-    let qcfg = LaunchConfig {
-        grid_dim: (k_padded.div_ceil(256) as u32, batch as u32, 1),
-        block_dim: (256, 1, 1), shared_mem_bytes: 0,
-    };
-    let mcfg = LaunchConfig {
-        grid_dim: (nrows.div_ceil(if batch == 1 { 1 } else { 2 }) as u32, 1, 1),
-        block_dim: (32, if batch <= 4 { 4 } else { 2 }, 1), shared_mem_bytes: 0,
-    };
+    let k_i32=k as i32;
+    let padded_i32=k_padded as i32;
+    let rows_i32=nrows as i32;
     let mut q = quant.builder();
     q.arg(&rhs).arg(&scratch).arg(&k_i32).arg(&padded_i32);
     unsafe { q.launch(qcfg).w()?; }
