@@ -15,7 +15,7 @@ use candle_kernels::dkr_s31_contract as contract;
 mod validation;
 #[path = "dkr_native_catalog.rs"]
 mod native_catalog;
-use native_catalog::NativeCatalog;
+use native_catalog::{NativeCatalog, NativeRecipe};
 #[cfg(test)]
 use validation::{validate, verify_package};
 mod embedded {
@@ -29,6 +29,7 @@ pub(super) struct ExternalModules {
     native_keys: std::collections::HashMap<String, RegistryKey>,
     trace: bool,
     device_cc: u32,
+    recipe: NativeRecipe,
     mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
@@ -61,15 +62,18 @@ impl ExternalModules {
         let device_cc = (major * 10 + minor) as u32;
         let root = PathBuf::from(root);
         let trace = std::env::var_os("CANDLE_DKR_TRACE").is_some();
-        let rows = match source.as_str() {
+        let (recipe, rows) = match source.as_str() {
             "embedded" => {
                 let compiled_root = embedded::ROOT.ok_or_else(|| crate::Error::Msg("native artifacts were not embedded".into()))?;
                 if root != Path::new(compiled_root) {
                     crate::bail!("native directory differs from the embedded build input");
                 }
-                embedded::modules().into_iter()
+                let id = embedded::RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded native launch recipe".into()))?;
+                let recipe = NativeRecipe::from_id(id).map_err(crate::Error::Msg)?;
+                let rows = embedded::modules().into_iter()
                     .map(|(name, artifact, symbols)| (name.to_owned(), artifact, symbols))
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                (recipe, rows)
             }
             "filesystem" => {
                 if !root.is_absolute() || !root.is_dir() {
@@ -82,7 +86,7 @@ impl ExternalModules {
                     let (artifact, symbols) = catalog.read_package(&root, name).map_err(crate::Error::Msg)?;
                     rows.push((name.clone(), artifact, symbols));
                 }
-                rows
+                (catalog.recipe, rows)
             }
             _ => crate::bail!("MISTRALRS_DKR_ARTIFACT_SOURCE must be embedded or filesystem"),
         };
@@ -99,7 +103,20 @@ impl ExternalModules {
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe }))
+    }
+
+    pub(super) fn mmq_configs(&self, codec: &str, rows: u32, batch: u32,
+        padded: u32, warp: i32, limit: i32)
+        -> Result<(String, cudarc::driver::LaunchConfig, cudarc::driver::LaunchConfig)>
+    {
+        use cudarc::driver::LaunchConfig;
+        let geometry = self.recipe.mmq_geometry(codec, rows, batch, padded, warp, limit)
+            .map_err(crate::Error::Msg)?;
+        Ok((geometry.matrix_key,
+            LaunchConfig { grid_dim: geometry.quant_grid, block_dim: geometry.quant_block, shared_mem_bytes: 0 },
+            LaunchConfig { grid_dim: geometry.matrix_grid, block_dim: geometry.matrix_block,
+                shared_mem_bytes: geometry.matrix_shared }))
     }
 
     fn artifact(&self, name: &str) -> Option<&VerifiedArtifact> {

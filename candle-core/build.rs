@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut rows = Vec::new();
     let mut root_literal = "None".to_owned();
+    let mut recipe_literal = "None".to_owned();
     if let Some(root) = env::var_os(EMBED_ENV) {
         let root = PathBuf::from(root).canonicalize()?;
         assert!(
@@ -28,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Watch the directory as well, so adding an index invalidates a legacy build.
         println!("cargo:rerun-if-changed={}", root.display());
         let catalog = native_catalog::NativeCatalog::load(&root)?;
+        recipe_literal = format!("Some({:?})", catalog.recipe.id());
         for name in &catalog.families {
             let (manifest, artifact) = native_catalog::NativeCatalog::paths(&root, name);
             println!("cargo:rerun-if-changed={}", manifest.display());
@@ -60,6 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         out.join("dkr_native_embedded.rs"),
         format!(
             "pub const ROOT: Option<&str> = {root_literal};\n\
+         pub const RECIPE: Option<&str> = {recipe_literal};\n\
          pub fn modules() -> Vec<(&'static str, VerifiedArtifact, \
          Option<std::collections::BTreeMap<String,String>>)> {{ vec![{}] }}\n",
             rows.join(",\n")

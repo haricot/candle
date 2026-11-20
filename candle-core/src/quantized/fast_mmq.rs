@@ -236,13 +236,12 @@ fn get_device_info(dev: &CudaDevice) -> DeviceInfo {
 // Public entry point
 // ---------------------------------------------------------------------------
 
-// SM61 only: mirror the historical C++ tile selector. Retain a bounded
+// The catalogue selects the qualified native launch recipe. Retain a bounded
 // thread-local plan cache, including resolved functions and launch configs.
 // No static fixup buffer is needed for conventional tiling.
 #[cfg(feature = "cuda-dkr-s31")]
 mod external {
     use super::*;
-    use candle_kernels::dkr_s31_contract as contract;
     use cudarc::driver::{LaunchConfig, PushKernelArg};
     use crate::cuda_backend::WrapErr;
 
@@ -273,14 +272,11 @@ mod external {
         use cudarc::driver::{result, sys};
         let stream = dev.cuda_stream();
         let context = stream.context();
-        let (major, minor) = context.compute_capability().w()?;
-        if (major, minor) != (6,1) { crate::bail!("DKR MMQ requires SM61"); }
         let cu = context.cu_device();
         let limit = unsafe { result::device::get_attribute(cu,
             sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK) }.w()?;
         let warp = unsafe { result::device::get_attribute(cu,
             sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE) }.w()?;
-        if warp != 32 || limit <= 0 { crate::bail!("invalid SM61 MMQ device limits"); }
         let codec = match key.dtype {
             GgmlDType::Q4_0 => "q4_0", GgmlDType::Q4_1 => "q4_1",
             GgmlDType::Q5_0 => "q5_0", GgmlDType::Q5_1 => "q5_1", GgmlDType::Q8_0 => "q8_0",
@@ -289,18 +285,11 @@ mod external {
             _ => crate::bail!("unsupported MMQ format"),
         };
         let layout = match ds_layout_for(key.dtype) { DsLayout::D4 => "D4", DsLayout::DS4 => "DS4", DsLayout::D2S6 => "D2S6" };
-        // Ordinary max shared memory, not opt-in; no function attribute mutation.
-        let tile = contract::mmq_tile(codec, key.rows as u32, key.batch as u32, (limit as u32).min(49152))
-            .ok_or_else(|| crate::Error::Msg("no legal SM61 MMQ tile".into()))?;
+        let (matrix_key, qcfg, mcfg) = dev.dkr_mmq_configs(codec, key.rows as u32,
+            key.batch as u32, key.padded as u32, warp, limit)?;
         let quant = dev.dkr_mmq_func("mmq_quantize", layout)?;
-        let mat = dev.dkr_mmq_func(&format!("mmq_instance_{codec}"),
-            &format!("{}:{}", tile.x, u8::from(tile.checked)))?;
-        Ok(Plan {
-            quant, mat,
-            qcfg: LaunchConfig { grid_dim: (key.batch as u32, key.padded.div_ceil(512) as u32, 1),
-                block_dim: (128,1,1), shared_mem_bytes: 0 },
-            mcfg: LaunchConfig { grid_dim: tile.grid, block_dim: (32,8,1), shared_mem_bytes: tile.shared },
-        })
+        let mat = dev.dkr_mmq_func(&format!("mmq_instance_{codec}"), &matrix_key)?;
+        Ok(Plan { quant, mat, qcfg, mcfg })
     }
 
     #[allow(clippy::too_many_arguments)]

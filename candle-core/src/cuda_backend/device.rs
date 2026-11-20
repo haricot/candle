@@ -414,10 +414,12 @@ impl CudaDevice {
     pub fn get_or_load_func(&self, fn_name: &str, mdl: &kernels::Module) -> Result<CudaFunc> {
         #[cfg(feature = "cuda-dkr-s31")]
         if let Some(packages)=&self.dkr_s31 {
-            if let Some(artifact)=packages.ptx(mdl.index()){
+            if let Some(family) = dkr_s31::family(mdl.index()) {
+                let artifact = packages.ptx(mdl.index()).ok_or_else(||
+                    crate::Error::Msg(format!("native DKR catalogue missing required family {family}")))?;
                 let (func,first)=self.get_or_load_dkr_func(artifact,fn_name)?;
                 if first {packages.record_loaded(mdl.index());}
-                return Ok(func.native_evidence(dkr_s31::family(mdl.index()).unwrap_or("unknown"),fn_name,Some(artifact)));
+                return Ok(func.native_evidence(family,fn_name,Some(artifact)));
             }
         }
         #[cfg(feature="cuda-dkr-s31")] let module_index=mdl.index();
@@ -453,6 +455,15 @@ impl CudaDevice {
 
     #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmq_enabled(&self)->bool{self.dkr_s31.is_some()}
+
+    #[cfg(feature = "cuda-dkr-s31")]
+    pub(crate) fn dkr_mmq_configs(&self, codec: &str, rows: u32, batch: u32,
+        padded: u32, warp: i32, limit: i32)
+        -> Result<(String, cudarc::driver::LaunchConfig, cudarc::driver::LaunchConfig)>
+    {
+        let packages = self.dkr_s31.as_ref().ok_or_else(|| crate::Error::Msg("external MMQ not selected".into()))?;
+        packages.mmq_configs(codec, rows, batch, padded, warp, limit)
+    }
 
     #[cfg(feature = "cuda-dkr-s31")]
     pub(crate) fn dkr_mmq_func(&self,family:&str,key:&str)->Result<CudaFunc>{

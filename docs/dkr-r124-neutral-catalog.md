@@ -36,11 +36,24 @@ S2A CPU tests exercise complete inventory, reordered inventory, duplicates,
 missing families, traversal, unknown ABI/recipe, mismatched target/range,
 absent package and invalid index. These are not GPU qualification.
 
+## S2B: catalogue-selected MMQ recipe (candidate)
+
+The selected recipe ID is embedded with the verified table or parsed from the
+filesystem inventory. Native MMQ plan preparation delegates tile selection,
+shared-memory caps and launch dimensions to the admitted recipe. The direct
+SM61 check in fast_mmq is removed; device admission occurs at catalogue load.
+The S3.1 recipe still deliberately uses the same DP4A formulas, entry keys and
+launch geometry. Argument packing remains the existing native ABI.
+The plan cache and CUDA launch path are unchanged. Known native modules must
+not silently fall back to static PTX if a validated catalogue is selected.
+CPU tests compare 200 recipe configurations against the historical selector
+and reject invalid device limits, shapes and codecs.
+
 ## Migration gates (not yet completed)
 
-- S2B: extract the S3.1 MMQ launch geometry into an explicitly selected recipe
-  adapter; extend typed operation/entry ABI metadata without weakening S3.1.
-  Reject unsupported recipes. S2A only establishes the inventory/transport layer.
+- Extend stable typed operation/argument ABI and recipes for additional
+  architectures only after independent qualification. S2 does not authorize
+  arbitrary manifest-driven launch geometry or change the S3.1 argument ABI.
 - S3: migrate FP8 residence/dispatch, FP4/BF16 and MMQ/MMVQ/MoE host launch
   specialization behind typed contracts. Keep tensor checks and memory safety
   in Candle. Preserve static compatibility mode explicitly.

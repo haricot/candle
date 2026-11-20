@@ -10,10 +10,64 @@ const SCHEMA: &str = "CANDLE-DKR-NATIVE-CATALOG-V1";
 const LEGACY_RECIPE: &str = "s31-native-v1";
 const MAX_MANIFEST: usize = 256 * 1024;
 
+/// Typed host-launch recipe admitted by the inventory. Do not execute
+/// arbitrary geometry or argument ABI supplied by an untrusted manifest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum NativeRecipe {
+    S31NativeV1,
+}
+
+pub(super) struct MmqGeometry {
+    pub matrix_key: String,
+    pub quant_grid: (u32, u32, u32),
+    pub quant_block: (u32, u32, u32),
+    pub matrix_grid: (u32, u32, u32),
+    pub matrix_block: (u32, u32, u32),
+    pub matrix_shared: u32,
+}
+
+impl NativeRecipe {
+    pub(super) fn from_id(id: &str) -> Result<Self, String> {
+        match id {
+            LEGACY_RECIPE => Ok(Self::S31NativeV1),
+            _ => Err(format!("unsupported native launch recipe: {id}")),
+        }
+    }
+
+    pub(super) fn id(self) -> &'static str {
+        match self { Self::S31NativeV1 => LEGACY_RECIPE }
+    }
+
+    pub(super) fn mmq_geometry(self, codec: &str, rows: u32, batch: u32,
+        padded: u32, warp: i32, limit: i32) -> Result<MmqGeometry, String>
+    {
+        match self {
+            Self::S31NativeV1 => {
+                // Qualified S3.1 DP4A recipe: ordinary shared memory, no opt-in,
+                // no Stream-K, no fixup buffer. Preserve the original geometry.
+                if warp != 32 || limit <= 0 || padded == 0 || padded.div_ceil(512) > 65535 {
+                    return Err("invalid S3.1 MMQ device limits or geometry".into());
+                }
+                let tile = contract::mmq_tile(codec, rows, batch, (limit as u32).min(49152))
+                    .ok_or("no legal S3.1 MMQ tile")?;
+                Ok(MmqGeometry {
+                    matrix_key: format!("{}:{}", tile.x, u8::from(tile.checked)),
+                    quant_grid: (batch, padded.div_ceil(512), 1),
+                    quant_block: (128, 1, 1),
+                    matrix_grid: tile.grid,
+                    matrix_block: (32, 8, 1),
+                    matrix_shared: tile.shared,
+                })
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct NativeCatalog {
     pub target_cc: u32,
     pub families: Vec<String>,
+    pub recipe: NativeRecipe,
 }
 
 fn read_bounded(root: &Path, path: &Path, limit: usize) -> Result<String, String> {
@@ -35,6 +89,7 @@ impl NativeCatalog {
     pub(super) fn legacy() -> Self {
         Self {
             target_cc: contract::CC,
+            recipe: NativeRecipe::S31NativeV1,
             families: contract::FAMILIES.iter().map(|name| (*name).to_owned()).collect(),
         }
     }
@@ -43,7 +98,7 @@ impl NativeCatalog {
         json!({
             "schema": SCHEMA,
             "abi": dkr_kernel_registry::NATIVE_ABI,
-            "launch_recipe": LEGACY_RECIPE,
+            "launch_recipe": self.recipe.id(),
             "target_cc": self.target_cc,
             "min_cc": self.target_cc,
             "max_cc": self.target_cc,
@@ -56,10 +111,10 @@ impl NativeCatalog {
         if object.len() != 7
             || value["schema"].as_str() != Some(SCHEMA)
             || value["abi"].as_str() != Some(dkr_kernel_registry::NATIVE_ABI)
-            || value["launch_recipe"].as_str() != Some(LEGACY_RECIPE)
         {
             return Err("unsupported native catalogue schema/ABI/launch recipe".into());
         }
+        let recipe = NativeRecipe::from_id(value["launch_recipe"].as_str().ok_or("missing native launch recipe")?)?;
         let cc = value["target_cc"].as_u64().and_then(|cc| u32::try_from(cc).ok())
             .ok_or("invalid native catalogue target")?;
         // S3.1 still consumes a qualified Pascal host-launch recipe.
@@ -83,7 +138,7 @@ impl NativeCatalog {
         if seen != required {
             return Err("incomplete native family inventory; refusing static fallback".into());
         }
-        Ok(Self { target_cc: cc, families })
+        Ok(Self { target_cc: cc, families, recipe })
     }
 
     /// Root must be canonical. Only an absent index enables the legacy adapter.
@@ -150,6 +205,31 @@ mod tests {
             bad[field] = value;
             assert!(NativeCatalog::parse(&bad).is_err(), "{field}");
         }
+    }
+
+    #[test]
+    fn dkr_native_catalog_mmq_recipe() {
+        let recipe = NativeRecipe::from_id(LEGACY_RECIPE).unwrap();
+        assert_eq!(NativeCatalog::parse(&NativeCatalog::legacy().index()).unwrap().recipe, recipe);
+        assert!(NativeRecipe::from_id("unknown").is_err());
+        for codec in contract::MMVQ_CODECS {
+            for rows in [1, 64, 65, 129] {
+                for batch in [1, 9, 64, 65, 1024] {
+                    let old = contract::mmq_tile(codec, rows, batch, 49152).unwrap();
+                    let plan = recipe.mmq_geometry(codec, rows, batch, 1024, 32, 65536).unwrap();
+                    assert_eq!(plan.matrix_key, format!("{}:{}", old.x, u8::from(old.checked)));
+                    assert_eq!(plan.matrix_grid, old.grid);
+                    assert_eq!(plan.matrix_shared, old.shared);
+                    assert_eq!(plan.quant_grid, (batch, 2, 1));
+                    assert_eq!(plan.quant_block, (128, 1, 1));
+                    assert_eq!(plan.matrix_block, (32, 8, 1));
+                }
+            }
+        }
+        assert!(recipe.mmq_geometry("q4_0", 64, 9, 1024, 16, 49152).is_err());
+        assert!(recipe.mmq_geometry("q4_0", 64, 9, 1024, 32, 1).is_err());
+        assert!(recipe.mmq_geometry("q4_0", 64, 9, 0, 32, 49152).is_err());
+        assert!(recipe.mmq_geometry("unknown", 64, 9, 1024, 32, 49152).is_err());
     }
 
     #[test]
