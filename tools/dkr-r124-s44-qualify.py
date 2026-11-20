@@ -37,6 +37,15 @@ def run(args, env, log, expect_failure=None):
         require(rc == 0, f"exit {rc}: {log}")
     return result
 
+def successful_tests(output):
+    # libtest reports full module paths for unit tests and bare names for
+    # integration tests. Match complete success lines, not escaped regexes.
+    return {
+        line.strip()[5:-7].rsplit("::", 1)[-1]
+        for line in output.splitlines()
+        if line.strip().startswith("test ") and line.strip().endswith(" ... ok")
+    }
+
 def inventory(root):
     rows = {}
     for manifest in sorted(root.glob("*/manifest.json")):
@@ -55,51 +64,69 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", required=True, type=Path)
     parser.add_argument("--skip-filesystem-sample", action="store_true")
+    parser.add_argument("--resume", type=Path, help="reuse an existing S4.4 report directory and archive; no compilation")
     args = parser.parse_args()
     source = args.catalog.resolve(strict=True)
     require(source.is_dir(), "catalogue must be a directory")
     expected = inventory(source)
     target = ROOT / "target"
     target.mkdir(exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="dkr-r124-s44-", dir=target))
+    if args.resume:
+        work = args.resume.resolve(strict=True)
+        require(work.is_dir() and work.parent == target.resolve()
+                and work.name.startswith("dkr-r124-s44-"), "invalid S4.4 resume directory")
+    else:
+        work = Path(tempfile.mkdtemp(prefix="dkr-r124-s44-", dir=target))
     print(f"DKR_R124_S44_REPORT_DIR={work}", flush=True)
     stage = work / "native-input"
-    shutil.copytree(source, stage, symlinks=False)
-    require(inventory(stage) == expected, "private copy differs from original")
-    (work / "expected-digests.json").write_text(json.dumps(expected, indent=2, sort_keys=True))
+    archive = work / "tests.tar.zst"
+    if args.resume:
+        require(archive.is_file(), "resume archive missing")
+        require(not stage.exists() and not stage.is_symlink(), "private build input still present")
+        require(json.loads((work / "expected-digests.json").read_text()) == expected,
+                "source inventory differs from original qualification")
+        require("cuda-dkr-embedded requires DKR_EMBED_NATIVE_DIR at build time"
+                in (work / "missing-build-input.log").read_text(), "missing negative build evidence")
+        print("DKR_R124_S44_RESUME_ARCHIVE=1", flush=True)
+    else:
+        shutil.copytree(source, stage, symlinks=False)
+        require(inventory(stage) == expected, "private copy differs from original")
+        (work / "expected-digests.json").write_text(json.dumps(expected, indent=2, sort_keys=True))
     env = os.environ.copy()
     for key in ("CUDA_COMPUTE_CAP", "DKR_EMBED_NATIVE_DIR",
                 "CANDLE_DKR_S31_DIR", "MISTRALRS_DKR_ARTIFACT_SOURCE"):
         env.pop(key, None)
     env["CANDLE_DKR_TRACE"] = "1"
-    run(["cargo", "check", "-p", "candle-core", "--no-default-features",
-         "--features", "cuda-dkr-embedded"], env, work / "missing-build-input.log",
-        expect_failure="cuda-dkr-embedded requires DKR_EMBED_NATIVE_DIR at build time")
-    print("DKR_R124_S44_MISSING_BUILD_INPUT=PASS", flush=True)
-    if not args.skip_filesystem_sample:
-        fsenv = dict(env, CANDLE_DKR_S31_DIR=str(stage),
-                     MISTRALRS_DKR_ARTIFACT_SOURCE="filesystem")
-        run(["cargo", "nextest", "run", "-p", "candle-core", "--no-default-features",
-             "--features", "cuda-dkr-catalog", "--test", "dkr_catalog_mode",
-             "--run-ignored", "all", "-E", "test(dkr_catalog_device_sample)",
-             "--no-capture"], fsenv, work / "filesystem-sample.log")
-    archive = work / "tests.tar.zst"
-    buildenv = dict(env, DKR_EMBED_NATIVE_DIR=str(stage))
-    run(["cargo", "nextest", "archive", "-p", "candle-core", "-p", "candle-nn",
-         "--no-default-features", "--features", "cuda-dkr-embedded", "--lib",
-         "--test", "dkr_catalog_mode", "--test", "cuda_legacy_bf16_tests",
-         "--test", "fp8_sm61_f8_tests", "--test", "fp4_e7c_contract",
-         "--test", "quantized_tests", "--test", "moe_simt_sm61",
-         "--archive-file", str(archive)], buildenv, work / "archive-build.log")
-    # Only remove the private copy; no Cargo command that compiles after this.
-    shutil.rmtree(stage)
+    if not args.resume:
+        run(["cargo", "check", "-p", "candle-core", "--no-default-features",
+             "--features", "cuda-dkr-embedded"], env, work / "missing-build-input.log",
+            expect_failure="cuda-dkr-embedded requires DKR_EMBED_NATIVE_DIR at build time")
+        print("DKR_R124_S44_MISSING_BUILD_INPUT=PASS", flush=True)
+        if not args.skip_filesystem_sample:
+            fsenv = dict(env, CANDLE_DKR_S31_DIR=str(stage),
+                         MISTRALRS_DKR_ARTIFACT_SOURCE="filesystem")
+            run(["cargo", "nextest", "run", "-p", "candle-core", "--no-default-features",
+                 "--features", "cuda-dkr-catalog", "--test", "dkr_catalog_mode",
+                 "--run-ignored", "all", "-E", "test(dkr_catalog_device_sample)",
+                 "--no-capture"], fsenv, work / "filesystem-sample.log")
+        buildenv = dict(env, DKR_EMBED_NATIVE_DIR=str(stage))
+        run(["cargo", "nextest", "archive", "-p", "candle-core", "-p", "candle-nn",
+             "--no-default-features", "--features", "cuda-dkr-embedded", "--lib",
+             "--test", "dkr_catalog_mode", "--test", "cuda_legacy_bf16_tests",
+             "--test", "fp8_sm61_f8_tests", "--test", "fp4_e7c_contract",
+             "--test", "quantized_tests", "--test", "moe_simt_sm61",
+             "--archive-file", str(archive)], buildenv, work / "archive-build.log")
+        # Only remove the private copy; no Cargo command that compiles after this.
+        shutil.rmtree(stage)
+    else:
+        print("DKR_R124_S44_MISSING_BUILD_INPUT=PASS (previous run)", flush=True)
     require(not stage.exists(), "embedded build inputs still present")
     print("DKR_R124_S44_PRIVATE_INPUT_REMOVED=1", flush=True)
     require(archive.is_file(), "archive missing")
     def archived(label, expr, runtime_env):
         return run(["cargo", "nextest", "run", "--archive-file", str(archive),
                     "--workspace-remap", str(ROOT), "--run-ignored", "all",
-                    "--no-fail-fast", "--no-capture", "--test-threads", "1", "-E", expr],
+                    "--no-fail-fast", "--no-capture", "-E", expr],
                    runtime_env, work / (label + ".log"))
     result = archived("embedded-digests",
             "test(dkr_embedded_catalog_digest_inventory)", env)
@@ -119,11 +146,9 @@ def main():
         "sm61_simt_decode_weighted_fp16", "sm61_simt_prefill_topk2_fp16",
     ]
     gpu = archived("embedded-tests", " | ".join(f"test({t})" for t in tests), env)
-    # Unit test names contain Rust module paths; filter by unique suffix and
-    # require evidence of every selected test actually completing.
+    passed = successful_tests(gpu)
     for name in tests:
-        require(re.search(r"test (?:[^\\s]+::)?" + re.escape(name) + r" \\.\\.\\. ok", gpu)
-                is not None, f"missing successful test: {name}")
+        require(name in passed, f"missing successful test: {name}")
     require("CANDLE_DKR_NATIVE_CATALOG source=embedded manifests=25" in gpu,
             "missing embedded runtime provenance")
     require("CANDLE_DKR_NATIVE_CATALOG source=filesystem" not in gpu,
@@ -139,7 +164,7 @@ def main():
         ("dkr_embedded_rejects_directory_override", {"CANDLE_DKR_S31_DIR": str(source)}),
     ]:
         result = archived(name, f"test(={name})", dict(env, **override))
-        require(f"test {name} ... ok" in result, f"missing runtime rejection test: {name}")
+        require(name in successful_tests(result), f"missing runtime rejection test: {name}")
     print("DKR_R124_S44_RUNTIME_OVERRIDES=REJECTED", flush=True)
     require(inventory(source) == expected, "original catalogue changed")
     print("DKR_R124_S44_ORIGINAL_CATALOG_UNCHANGED=1", flush=True)
