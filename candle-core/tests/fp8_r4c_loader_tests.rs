@@ -107,7 +107,7 @@ fn request_defaults_without_profiles_to_simt() {
 }
 
 #[test]
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 fn synthetic_generic_cuda_dispatch_roundtrip() -> candle_core::Result<()> {
     use candle_core::quantized::fp8_linear_sm61::Fp8Sm61Mode;
     use candle_core::quantized::fp8_sm61_loader::load_cuda;

@@ -14,7 +14,7 @@ fn mxfp4_gguf_quantization_is_unmodified() -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 #[test]
 fn e7c_rejects_mxfp4_as_nvfp4() -> Result<()> {
     use candle_core::quantized::fp4_e7c_runtime::{Fp4E7CLinear, Fp4Execution, Fp4Format};
@@ -31,7 +31,7 @@ fn e7c_rejects_mxfp4_as_nvfp4() -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 #[test]
 fn modelopt_native_modes_match_reference_with_partial_tiles() -> Result<()> {
     use candle_core::quantized::fp4_e7c_runtime::{Fp4E7CLinear, Fp4Execution};
@@ -97,7 +97,7 @@ fn modelopt_native_modes_match_reference_with_partial_tiles() -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 #[test]
 #[ignore = "requires ARCH_E7C_FIXTURE and a physical CUDA sm_61 GPU"]
 fn modelopt_packed_loader_and_dp4a_gpu_sm61() -> Result<()> {
@@ -147,7 +147,7 @@ fn modelopt_packed_loader_and_dp4a_gpu_sm61() -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 #[test]
 fn dkr_fp4_auto_matches_selected_route_cuda() -> Result<()> {
     use candle_core::quantized::nvfp4_native::{Nvfp4Native, W4A8Variant};

@@ -1794,7 +1794,7 @@ fn bench_qmatmul_prefill_cpu() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 #[test]
 fn dkr_routed_mmvq_cuda_batch_and_dtype() -> Result<()> {
     let gpu=Device::new_cuda(0)?;

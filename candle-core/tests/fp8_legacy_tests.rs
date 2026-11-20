@@ -1,4 +1,4 @@
-#![cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#![cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 
 use candle_core::{DType, Device, Result, Tensor};
 

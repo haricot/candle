@@ -1,4 +1,4 @@
-#![cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#![cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 use candle_core::quantized::fp8_linear_sm61::{
     dp4a_launch_for_tokens, e4m3fn_decode, fp8_sm61_select_mode, Fp8Sm61Linear, Fp8Sm61Mode,
 };

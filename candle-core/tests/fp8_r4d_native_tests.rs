@@ -1,4 +1,4 @@
-#![cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#![cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 //! Generic model-independent native CUDA residency evidence and forward test.
 //! These two synthetic Safetensors shards contain arbitrary projection labels.
 use candle_core::quantized::fp8_sm61_dispatch::{Fp8Backend, Fp8WorkloadProfile};

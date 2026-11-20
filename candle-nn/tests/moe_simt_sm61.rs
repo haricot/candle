@@ -79,7 +79,7 @@ fn sm61_simt_decode_weighted_fp16() -> Result<()> {
     )
 }
 
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 #[test]
 #[ignore = "requires a selected verified native DKR catalogue"]
 fn dkr_routed_gguf_moe_cuda() -> Result<()> {

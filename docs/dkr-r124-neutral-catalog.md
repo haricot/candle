@@ -126,6 +126,31 @@ compile-time feature/build topology, remain until S4. The GPU regression tests
 cover all eight MMVQ batch sizes over three activation types (Q8_0), plus
 native grouped GGUF MoE with a partial output tile and a rejected BF16 route. Only SM61 is qualified.
 
+## S4.1: catalogue consumer feature decoupling (candidate)
+
+- `cuda-dkr-catalog` enables the CUDA consumer, registry, validation and
+  runtime BF16, FP8, FP4, MMQ, MMVQ and MoE APIs without propagating
+  `cuda-legacy-bf16`, `cuda-legacy-fp8` or `cuda-legacy-fp4` to
+  candle-kernels. Candle NN forwards the new feature.
+- `cuda-dkr-s31` remains the historical hybrid compatibility feature and
+  enables the three legacy producer flags as before. Cargo features are
+  additive: enabling both opts back into that compatibility mode.
+- Decoupled CUDA device creation rejects the absence of a verified provider;
+  filesystem and build-embedded sources are both accepted at this stage.
+  Invalid packages still fail closed. The historical compatibility mode
+  still permits absence of a provider.
+- `DKR_EMBED_NATIVE_DIR` now requires the catalogue consumer feature.
+- `python3 tools/dkr-r124-feature-audit.py` checks actual Cargo feature
+  resolution for both Candle Core and NN, for both modes.
+- Tests of the migrated runtime APIs are enabled by either the consumer or
+  the old static legacy features. Static experimental kernel probes remain
+  legacy-gated. Dedicated process-level tests check selected and missing
+  providers in decoupled builds.
+- S4.1 changes Rust feature topology, not CUDA source generation; compilation
+  of ordinary built-in PTX/FFI still occurs and will be removed in S4.2/S4.3.
+  This is not yet a no-NVCC build or an embedded-only engine. No change to
+  Mistral.rs pins or the existing 25 native packages.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

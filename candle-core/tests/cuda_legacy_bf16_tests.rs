@@ -1,4 +1,4 @@
-#![cfg(all(feature = "cuda", feature = "cuda-legacy-bf16"))]
+#![cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16")))]
 
 use candle_core::cuda_backend::{
     cudarc::driver::{LaunchConfig, PushKernelArg},
