@@ -20,14 +20,14 @@ pub mod cutile;
 #[allow(dead_code)]
 #[path = "../../../candle-kernels/dkr_bf16_recipe.rs"]
 pub(crate) mod bf16_recipe;
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 #[path = "../../../candle-kernels/dkr_routed_recipe.rs"]
 mod routed_recipe;
 mod device;
 mod error;
 mod utils;
 pub use device::{CudaDevice, DeviceId, CudaFunc};
-#[cfg(feature="cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 pub use dkr_kernel_registry::telemetry as dkr_telemetry;
 pub use error::{CudaError, WrapErr};
 pub use utils::{Map1, Map1Any, Map2, Map2Any, Map2InPlace, Map3, S};
@@ -2501,7 +2501,7 @@ impl BackendStorage for CudaStorage {
     ) -> Result<Self> {
         let elem_count = b * m * n;
         let dev = &self.device;
-        #[cfg(feature = "cuda-legacy-bf16")]
+        #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
         if matches!(
             (&self.slice, &rhs.slice),
             (CudaStorageSlice::BF16(_), CudaStorageSlice::BF16(_))

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 #[path = "dkr_s31.rs"]
 mod dkr_s31;
 
@@ -55,7 +55,7 @@ impl Drop for CudaGraphHtodCacheGuard {
     }
 }
 
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 struct DkrLoadedModule {
     module: Arc<cudarc::driver::CudaModule>,
     functions: HashMap<String, CudaFunction>,
@@ -71,12 +71,12 @@ pub struct CudaDevice {
     id: DeviceId,
     context: Arc<cudarc::driver::CudaContext>,
     modules: Arc<std::sync::RwLock<ModuleStore>>,
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
-    #[cfg(feature = "cuda-legacy-bf16")]
+    #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
     bf16_matmul_route: super::bf16_recipe::Bf16MatmulRoute,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, DkrLoadedModule>>>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
@@ -269,7 +269,7 @@ pub(crate) fn cuda_graph_htod_cache_enabled() -> bool {
 pub struct CudaFunc {
     func: CudaFunction,
     stream: Arc<cudarc::driver::CudaStream>,
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     evidence: dkr_kernel_registry::telemetry::Handle,
 }
 
@@ -283,13 +283,13 @@ impl std::ops::Deref for CudaFunc {
 
 impl CudaFunc {
     fn new(func:CudaFunction,stream:Arc<cudarc::driver::CudaStream>)->Self {
-        Self{func,stream,#[cfg(feature="cuda-dkr-s31")] evidence:Default::default()}
+        Self{func,stream,#[cfg(feature = "cuda-dkr-catalog")] evidence:Default::default()}
     }
     #[inline] pub fn record_submission(&self){
-        #[cfg(feature="cuda-dkr-s31")]
+        #[cfg(feature = "cuda-dkr-catalog")]
         self.evidence.record(dkr_kernel_registry::telemetry::Event::Submitted);
     }
-    #[cfg(feature="cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     fn native_evidence(mut self,operation:&str,name:&str,artifact:Option<&dkr_kernel_registry::VerifiedArtifact>)->Self{
         use dkr_kernel_registry::{telemetry::{self,Event},NATIVE_ABI};
         let (sha,cc)=artifact.map_or(("",0),|a|(a.key().sha256(),a.key().target_cc()));
@@ -369,7 +369,7 @@ impl CudaDevice {
 
     /// Shared content-addressed module/function cache. Both ABI adapters validate
     /// semantic arguments before using this transport. Context ownership remains here.
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub fn get_or_load_dkr_func(
         &self, artifact: &dkr_kernel_registry::VerifiedArtifact, name: &str,
     ) -> Result<(CudaFunc,bool)> {
@@ -414,7 +414,7 @@ impl CudaDevice {
     }
 
     pub fn get_or_load_func(&self, fn_name: &str, mdl: &kernels::Module) -> Result<CudaFunc> {
-        #[cfg(feature = "cuda-dkr-s31")]
+        #[cfg(feature = "cuda-dkr-catalog")]
         if let Some(packages)=&self.dkr_s31 {
             if let Some(family) = dkr_s31::family(mdl.index()) {
                 let artifact = packages.ptx(mdl.index()).ok_or_else(||
@@ -424,40 +424,40 @@ impl CudaDevice {
                 return Ok(func.native_evidence(family,fn_name,Some(artifact)));
             }
         }
-        #[cfg(feature="cuda-dkr-s31")] let module_index=mdl.index();
+        #[cfg(feature = "cuda-dkr-catalog")] let module_index=mdl.index();
         let ms = self.modules.read().unwrap();
         if let Some(mdl) = ms.mdls[mdl.index()].as_ref() {
             let f=CudaFunc::new(mdl.load_function(fn_name).w()?,self.stream.clone());
-            #[cfg(feature="cuda-dkr-s31")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
+            #[cfg(feature = "cuda-dkr-catalog")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
             return Ok(f);
         }
         drop(ms);
         let mut ms = self.modules.write().unwrap();
         if let Some(module)=ms.mdls[mdl.index()].as_ref(){
             let f=CudaFunc::new(module.load_function(fn_name).w()?,self.stream.clone());
-            #[cfg(feature="cuda-dkr-s31")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
+            #[cfg(feature = "cuda-dkr-catalog")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
             return Ok(f);
         }
         let module=self.context.load_module(mdl.ptx().into()).w()?;
         let func=module.load_function(fn_name).w()?;
         ms.mdls[mdl.index()]=Some(module);
         let f=CudaFunc::new(func,self.stream.clone());
-        #[cfg(feature="cuda-dkr-s31")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
+        #[cfg(feature = "cuda-dkr-catalog")] let f=f.native_evidence(dkr_s31::family(module_index).unwrap_or("unknown"),fn_name,None);
         Ok(f)
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmvq_max_batch(&self) -> Option<usize> {
         self.dkr_s31.as_ref().map(|c|c.routed_recipe().max_batch)
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmvq_workspace(&self,k:usize,n:usize,batch:usize)->Result<Option<(usize,usize,usize)>> {
         self.dkr_s31.as_ref().map(|c|c.routed_recipe().mmvq_workspace(k,n,batch)
             .map_err(|e|crate::Error::Msg(e.into()))).transpose()
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmvq_plan(&self, codec:&str, tag:&str,k:usize,padded:usize,n:usize,batch:usize)
         -> Result<Option<(CudaFunc,CudaFunc,cudarc::driver::LaunchConfig,cudarc::driver::LaunchConfig)>>
     {
@@ -469,13 +469,13 @@ impl CudaDevice {
         Ok(Some((quant,matrix, Self::routed_config(p.qcfg),Self::routed_config(p.mcfg))))
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     fn routed_config(p:super::routed_recipe::Geometry)->cudarc::driver::LaunchConfig {
         cudarc::driver::LaunchConfig { grid_dim:p.grid,block_dim:p.block,shared_mem_bytes:p.shared }
     }
 
     /// A selected catalogue never silently falls back for unsupported MoE dtypes.
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub fn dkr_moe_admit(&self,gguf:bool,dtype:DType)->Result<bool> {
         let Some(catalog)=&self.dkr_s31 else {return Ok(false)};
         let tag=match dtype {DType::F16=>"f16",DType::F32=>"f32",DType::BF16=>"bf16",_=>"unsupported"};
@@ -485,7 +485,7 @@ impl CudaDevice {
         Ok(true)
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub fn dkr_moe_simt_plan(&self,e:usize,n:usize,k:usize,m:usize)
         ->Result<[cudarc::driver::LaunchConfig;3]>
     {
@@ -493,7 +493,7 @@ impl CudaDevice {
         Ok(c.routed_recipe().simt(e,n,k,m).map_err(|e|crate::Error::Msg(e.into()))?.map(Self::routed_config))
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub fn dkr_moe_gguf_plan(&self,codec:&str,n:usize,k:usize,r:usize,m:usize)
         ->Result<(usize,usize,cudarc::driver::LaunchConfig,cudarc::driver::LaunchConfig)>
     {
@@ -502,7 +502,7 @@ impl CudaDevice {
         Ok((p.padded,p.scratch,Self::routed_config(p.qcfg),Self::routed_config(p.mcfg)))
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmvq_func(&self,name:&str)->Result<Option<CudaFunc>>{
         let Some(packages)=&self.dkr_s31 else{return Ok(None)};
         let artifact=packages.mmvq_ptx().ok_or_else(||crate::Error::Msg("DKR MMVQ package missing".into()))?;
@@ -511,23 +511,23 @@ impl CudaDevice {
         Ok(Some(func.native_evidence("mmvq_gguf",name,Some(artifact))))
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmq_enabled(&self)->bool{self.dkr_s31.is_some()}
 
-    #[cfg(feature = "cuda-legacy-bf16")]
+    #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
     pub(crate) fn bf16_matmul_route(&self) -> super::bf16_recipe::Bf16MatmulRoute {
         self.bf16_matmul_route
     }
 
     pub(crate) fn fp4_launch_recipe(&self) -> crate::quantized::fp4_recipe::Fp4Recipe {
-        #[cfg(feature = "cuda-dkr-s31")]
+        #[cfg(feature = "cuda-dkr-catalog")]
         if let Some(catalog) = &self.dkr_s31 { return catalog.fp4_recipe(); }
         crate::quantized::fp4_recipe::S31_FP4
     }
 
-    #[cfg(feature = "cuda-legacy-fp8")]
+    #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8"))]
     pub(crate) fn fp8_launch_recipe(&self) -> crate::quantized::fp8_recipe::Fp8Recipe {
-        #[cfg(feature = "cuda-dkr-s31")]
+        #[cfg(feature = "cuda-dkr-catalog")]
         if let Some(catalog) = &self.dkr_s31 {
             return catalog.fp8_recipe();
         }
@@ -535,7 +535,7 @@ impl CudaDevice {
         crate::quantized::fp8_recipe::S31_FP8
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmq_configs(&self, codec: &str, rows: u32, batch: u32,
         padded: u32, warp: i32, limit: i32)
         -> Result<(String, cudarc::driver::LaunchConfig, cudarc::driver::LaunchConfig)>
@@ -544,7 +544,7 @@ impl CudaDevice {
         packages.mmq_configs(codec, rows, batch, padded, warp, limit)
     }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub(crate) fn dkr_mmq_func(&self,family:&str,key:&str)->Result<CudaFunc>{
         let packages=self.dkr_s31.as_ref().ok_or_else(||crate::Error::Msg("external MMQ not selected".into()))?;
         let (artifact,name)=packages.mmq_entry(family,key).ok_or_else(||crate::Error::Msg(format!("unknown native entry {family}/{key}")))?;
@@ -554,10 +554,10 @@ impl CudaDevice {
     }
 
     /// Experimental native MoE provider; caller must uphold tensor/stream ABI.
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub fn dkr_moe_enabled(&self) -> bool { self.dkr_s31.is_some() }
 
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     pub fn dkr_moe_function(&self, family: &str, key: &str) -> Result<CudaFunc> {
         if !matches!(family, "moe_simt_f16" | "moe_gguf") {
             crate::bail!("invalid DKR MoE family");
@@ -581,13 +581,20 @@ impl CudaDevice {
         context: Arc<cudarc::driver::CudaContext>,
         stream: Arc<cudarc::driver::CudaStream>,
     ) -> Result<Self> {
-        #[cfg(feature = "cuda-dkr-s31")]
+        #[cfg(feature = "cuda-dkr-catalog")]
         let dkr_s31 = dkr_s31::ExternalModules::from_env(&context)?.map(Arc::new);
-        #[cfg(feature = "cuda-legacy-bf16")]
+        // The decoupled consumer must never execute an incomplete static
+        // legacy implementation when no catalogue was selected. The old
+        // hybrid feature deliberately retains its historical opt-in behavior.
+        #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+        if dkr_s31.is_none() {
+            crate::bail!("cuda-dkr-catalog requires a verified native catalogue (CANDLE_DKR_S31_DIR or DKR_EMBED_NATIVE_DIR)");
+        }
+        #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
         let bf16_matmul_route = {
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             let catalogue_route = dkr_s31.as_ref().map(|c| c.bf16_recipe().matmul);
-            #[cfg(not(feature = "cuda-dkr-s31"))]
+            #[cfg(not(feature = "cuda-dkr-catalog"))]
             let catalogue_route: Option<super::bf16_recipe::Bf16MatmulRoute> = None;
             match catalogue_route {
                 Some(route) => route,
@@ -610,12 +617,12 @@ impl CudaDevice {
             blas: Arc::new(blas),
             curand: Arc::new(Mutex::new(CudaRng(curand))),
             modules: Arc::new(std::sync::RwLock::new(module_store)),
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             dkr_s31,
-            #[cfg(feature = "cuda-legacy-bf16")]
+            #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
             bf16_matmul_route,
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             dkr_functions: Arc::new(RwLock::new(HashMap::new())),
             seed_value: Arc::new(RwLock::new(299792458)),
         })

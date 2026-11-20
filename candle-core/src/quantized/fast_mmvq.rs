@@ -157,7 +157,7 @@ fn plain_launcher_f32(dtype: GgmlDType) -> Option<PlainLauncher> {
 // S3.3: reuse the existing specialized device entries with the identical
 // launch geometry and Q8_1 workspace. Resolve both before launching either.
 // No host-side CUDA runtime launcher is needed on the selected path.
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 #[allow(clippy::too_many_arguments)]
 fn try_dkr_launch(
     dev: &CudaDevice, dtype: GgmlDType, input_dtype: DType,
@@ -230,9 +230,9 @@ pub fn try_fwd(
         return Ok(None);
     }
     let dev = qstorage.device();
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     let max_batch=dev.dkr_mmvq_max_batch().unwrap_or(MMVQ_MAX_BATCH);
-    #[cfg(not(feature = "cuda-dkr-s31"))]
+    #[cfg(not(feature = "cuda-dkr-catalog"))]
     let max_batch=MMVQ_MAX_BATCH;
     if b_size == 0 || b_size > max_batch {
         return Ok(None);
@@ -249,10 +249,10 @@ pub fn try_fwd(
         let blocks=padded/Q8_1_BLOCK_SIZE;
         (padded,blocks,b_size*blocks*Q8_1_TYPE_SIZE)
     };
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     let (k_padded,num_blocks_per_row,scratch_bytes)=dev.dkr_mmvq_workspace(k,nrows,b_size)?
         .unwrap_or_else(static_workspace);
-    #[cfg(not(feature = "cuda-dkr-s31"))]
+    #[cfg(not(feature = "cuda-dkr-catalog"))]
     let (k_padded,num_blocks_per_row,scratch_bytes)=static_workspace();
 
     let (scratch_ptr, _workspace_guard) = workspace_ensure(dev, scratch_bytes)?;
@@ -278,14 +278,14 @@ pub fn try_fwd(
             let rhs_ptr = rhs_addr as *const std::ffi::c_void;
             let out_ptr = out_addr as *mut std::ffi::c_void;
 
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             let launched = try_dkr_launch(dev, w_dtype, input_dtype,
                 rhs_ptr as u64, scratch_ptr as u64, weight_ptr as u64, out_ptr as u64,
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
-            #[cfg(not(feature = "cuda-dkr-s31"))]
+            #[cfg(not(feature = "cuda-dkr-catalog"))]
             let launched = false;
             if !launched {
-                #[cfg(feature="cuda-dkr-s31")]
+                #[cfg(feature = "cuda-dkr-catalog")]
                 dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
                 unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_bf16(
@@ -325,14 +325,14 @@ pub fn try_fwd(
             let rhs_ptr = rhs_addr as *const std::ffi::c_void;
             let out_ptr = out_addr as *mut std::ffi::c_void;
 
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             let launched = try_dkr_launch(dev, w_dtype, input_dtype,
                 rhs_ptr as u64, scratch_ptr as u64, weight_ptr as u64, out_ptr as u64,
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
-            #[cfg(not(feature = "cuda-dkr-s31"))]
+            #[cfg(not(feature = "cuda-dkr-catalog"))]
             let launched = false;
             if !launched {
-                #[cfg(feature="cuda-dkr-s31")]
+                #[cfg(feature = "cuda-dkr-catalog")]
                 dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
                 unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_f16(
@@ -372,14 +372,14 @@ pub fn try_fwd(
             let rhs_ptr = rhs_addr as *const std::ffi::c_void;
             let out_ptr = out_addr as *mut std::ffi::c_void;
 
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             let launched = try_dkr_launch(dev, w_dtype, input_dtype,
                 rhs_ptr as u64, scratch_ptr as u64, weight_ptr as u64, out_ptr as u64,
                 k, k_padded, nrows, b_size, stride_col_y, stride_col_dst)?;
-            #[cfg(not(feature = "cuda-dkr-s31"))]
+            #[cfg(not(feature = "cuda-dkr-catalog"))]
             let launched = false;
             if !launched {
-                #[cfg(feature="cuda-dkr-s31")]
+                #[cfg(feature = "cuda-dkr-catalog")]
                 dkr_kernel_registry::telemetry::handle(dkr_kernel_registry::NATIVE_ABI,"fast_mmvq","static_ffi","",0).record(dkr_kernel_registry::telemetry::Event::FallbackSelected);
                 unsafe {
                 ffi::launch_mmvq_gguf_quantize_q8_1_f32(

@@ -239,7 +239,7 @@ fn get_device_info(dev: &CudaDevice) -> DeviceInfo {
 // The catalogue selects the qualified native launch recipe. Retain a bounded
 // thread-local plan cache, including resolved functions and launch configs.
 // No static fixup buffer is needed for conventional tiling.
-#[cfg(feature = "cuda-dkr-s31")]
+#[cfg(feature = "cuda-dkr-catalog")]
 mod external {
     use super::*;
     use cudarc::driver::{LaunchConfig, PushKernelArg};
@@ -382,7 +382,7 @@ pub fn try_fwd(
     };
 
     let dev = qstorage.device();
-    #[cfg(feature = "cuda-dkr-s31")]
+    #[cfg(feature = "cuda-dkr-catalog")]
     let use_external = dev.dkr_mmq_enabled();
     if rhs.device().id() != dev.id() {
         crate::bail!("GGUF MMQ requires same-device inputs");
@@ -455,7 +455,7 @@ pub fn try_fwd(
         &stream,
         workspace_bytes,
         |scratch_addr| {
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             if use_external {
                 return external::launch(
                     dev,
@@ -535,7 +535,7 @@ pub fn try_fwd(
                 launch(0)?;
             }
 
-            #[cfg(feature = "cuda-dkr-s31")]
+            #[cfg(feature = "cuda-dkr-catalog")]
             dkr_kernel_registry::telemetry::handle(
                 dkr_kernel_registry::NATIVE_ABI,
                 "fast_mmq",

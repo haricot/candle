@@ -31,30 +31,30 @@ pub mod fast_mmq;
 pub mod fast_mmvq;
 #[path = "../../../candle-kernels/dkr_fp8_recipe.rs"]
 pub(crate) mod fp8_recipe;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub mod fp8_linear;
 pub mod fp8_dispatch;
 pub mod fp8_format;
 pub mod fp8_loader;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub mod fp8_linear_sm61;
 pub mod fp8_sm61_dispatch;
 pub mod fp8_sm61_format;
 pub mod fp8_sm61_loader;
 #[path = "../../../candle-kernels/dkr_fp4_recipe.rs"]
 pub(crate) mod fp4_recipe;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 pub mod fp4_linear;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 pub mod nvfp4_native;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 pub mod nvfp4_linear;
 pub mod nvfp4_format;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 pub mod fp4_e7c_runtime;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 pub mod nvfp4_arch_e6;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp4"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp4")))]
 pub mod nvfp4_arch_e7;
 pub mod nvfp4_e7c_safetensors;
 #[cfg(not(feature = "cuda"))]

@@ -8,17 +8,17 @@
 //! Memory figures are weight-residency estimates, not process-level CUDA peaks.
 //! The caller must supply a device-wide memory snapshot and KV/workspace/headroom
 //! reservations; this module cannot guarantee CUDA allocation success.
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 use super::fp8_linear::Fp8Linear;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 use super::fp8_dispatch::{dispatch_residence, dispatch_uniform_residence};
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 use super::fp8_dispatch::{Fp8Backend, Fp8DispatchPlan};
 use super::fp8_dispatch::{
     Fp8DispatchBudget, Fp8LinearSpec, Fp8MeasuredProfile, Fp8WorkloadProfile,
 };
 use super::fp8_format::decode_f8e_inverse_scales;
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 use crate::CudaDevice;
 use crate::Result;
 use safetensors::SafeTensors;
@@ -54,7 +54,7 @@ pub struct Fp8TensorDescriptor {
 }
 
 impl Fp8TensorDescriptor {
-    #[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+    #[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
     fn spec(&self, request: &Fp8LoadRequest) -> Fp8LinearSpec {
         let profile = request
             .geometry_profiles
@@ -76,13 +76,13 @@ impl Fp8TensorDescriptor {
     }
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub struct Fp8ResidentProjection {
     pub identifier: String,
     pub linear: Fp8Linear,
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub struct Fp8ResidentCollection {
     pub projections: Vec<Fp8ResidentProjection>,
     pub dispatch: Fp8DispatchPlan,
@@ -90,7 +90,7 @@ pub struct Fp8ResidentCollection {
     pub realized_weight_bytes: usize,
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 impl Fp8ResidentCollection {
     pub fn get(&self, identifier: &str) -> Option<&Fp8Linear> {
         self.projections
@@ -130,7 +130,7 @@ fn parse_shards<'a>(buffers: &'a [Vec<u8>]) -> Result<Vec<SafeTensors<'a>>> {
 
 #[derive(Clone)]
 #[cfg_attr(
-    not(all(feature = "cuda", feature = "cuda-legacy-fp8")),
+    not(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8"))),
     allow(dead_code)
 )]
 struct LocatedDescriptor {
@@ -208,7 +208,7 @@ fn index_tensors(shards: &[SafeTensors<'_>]) -> Result<Vec<LocatedDescriptor>> {
     Ok(descriptors)
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 fn choose_dispatch(index: &[LocatedDescriptor], req: &Fp8LoadRequest) -> Result<Fp8DispatchPlan> {
     let specs: Vec<_> = index.iter().map(|x| x.meta.spec(req)).collect();
     let result = match req.strategy {
@@ -235,7 +235,7 @@ pub fn inspect_safetensors(paths: &[PathBuf]) -> Result<Vec<Fp8TensorDescriptor>
 /// failure, and no duplicate device representation per projection.
 /// `request.budget.free_device_bytes` must be a conservative caller-measured
 /// snapshot from BEFORE this call, not an invented value.
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub fn load_cuda(
     paths: &[PathBuf],
     device: &CudaDevice,
@@ -311,7 +311,7 @@ pub struct Fp8CudaMemorySample {
 }
 
 /// Uses the same CUDA context and stream as our Candle allocations.
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub fn sample_cuda_memory(device: &CudaDevice) -> Result<Fp8CudaMemorySample> {
     use crate::cuda_backend::WrapErr;
     let stream = device.cuda_stream();
@@ -377,13 +377,13 @@ pub struct Fp8NativeResidenceEvidence {
     pub single_representation_per_projection: bool,
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub struct Fp8NativeResidentModel {
     pub weights: Fp8ResidentCollection,
     pub evidence: Fp8NativeResidenceEvidence,
 }
 
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 impl Fp8NativeResidentModel {
     /// Native Candle entry point: no model-architecture-dependent adapter.
     pub fn linear(&self, identifier: &str) -> Option<&Fp8Linear> {
@@ -401,7 +401,7 @@ impl Fp8NativeResidentModel {
 /// sample, computes dispatch globally before weight allocation, and refuses to
 /// return a loaded model if the user reserves are not available after loading.
 /// No OOM-triggered backend switching, no silent CPU/DP4A fallback.
-#[cfg(all(feature = "cuda", feature = "cuda-legacy-fp8"))]
+#[cfg(all(feature = "cuda", any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-fp8")))]
 pub fn load_cuda_native(
     paths: &[PathBuf],
     device: &CudaDevice,

@@ -56,8 +56,10 @@ dkr-kernel-registry = { path = "../dkr-kernel-registry", version = "0.1.0" }
 [features]
 default = []
 cuda = ["cudarc", "dep:candle-kernels"]
-# Experimental exact native-ABI external PTX provider for the six S3.1 modules.
-cuda-dkr-s31 = ["cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4", "dep:sha2", "dep:serde_json", "dep:dkr-kernel-registry"]
+# Native catalogue consumer. This does not enable any legacy CUDA producer flags.
+cuda-dkr-catalog = ["cuda", "dep:sha2", "dep:serde_json", "dep:dkr-kernel-registry"]
+# Historical hybrid/static compatibility. Retain the previous public feature.
+cuda-dkr-s31 = ["cuda-dkr-catalog", "cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]
 cuda-legacy-fp8 = ["cuda", "candle-kernels/cuda-legacy-fp8"]
 # Opt-in software NVFP4 E2M1/E4M3FN kernels on Pascal and other pre-native devices.

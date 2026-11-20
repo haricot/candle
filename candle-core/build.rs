@@ -42,8 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(root) = env::var_os(EMBED_ENV) {
         let root = PathBuf::from(root).canonicalize()?;
         assert!(
-            env::var_os("CARGO_FEATURE_CUDA_DKR_S31").is_some(),
-            "{EMBED_ENV} requires cuda-dkr-s31"
+            env::var_os("CARGO_FEATURE_CUDA_DKR_CATALOG").is_some(),
+            "{EMBED_ENV} requires cuda-dkr-catalog (or compatibility cuda-dkr-s31)"
         );
         root_literal = format!("Some({:?})", root.to_str().ok_or("non-UTF8 embedded path")?);
         // Watch the directory as well, so adding an index invalidates a legacy build.
