@@ -28,7 +28,7 @@ def require(ok, message):
         raise SystemExit("DKR_R124_FEATURE_AUDIT_FAIL: " + message)
 
 for package in ("candle-core", "candle-nn"):
-    for mode in ("cuda-dkr-catalog", "cuda-dkr-s31", "cuda"):
+    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-s31", "cuda"):
         graph = resolved(package, mode)
         for name in ("candle-core", "candle-kernels", package):
             require(name in graph, f"{package}/{mode}: {name} missing")
@@ -42,7 +42,10 @@ for package in ("candle-core", "candle-nn"):
         else:
             require("cuda-dkr-catalog" in core and "cuda-dkr-catalog" in kernels,
                     f"{package}/{mode}: catalogue runtime/build selection missing")
-        if mode == "cuda-dkr-catalog":
+        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded"):
+            require(("cuda-dkr-embedded" in core) == (mode == "cuda-dkr-embedded")
+                    and ("cuda-dkr-embedded" in kernels) == (mode == "cuda-dkr-embedded"),
+                    f"{package}/{mode}: embedded feature propagation mismatch")
             require(not (LEGACY & core or LEGACY & kernels),
                     f"{package}/{mode}: legacy flags leaked")
             require("cuda-dkr-s31" not in core,
@@ -54,3 +57,4 @@ for package in ("candle-core", "candle-nn"):
               f"core={','.join(sorted(core))} kernels={','.join(sorted(kernels))}")
 print("DKR_R124_S41_FEATURE_GRAPH=PASS")
 print("DKR_R124_S42_FEATURE_GRAPH=PASS")
+print("DKR_R124_S44_FEATURE_GRAPH=PASS")

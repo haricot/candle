@@ -15,7 +15,9 @@ use candle_kernels::dkr_s31_contract as contract;
 mod validation;
 #[path = "dkr_native_catalog.rs"]
 mod native_catalog;
-use native_catalog::{NativeCatalog, NativeRecipe};
+use native_catalog::NativeRecipe;
+#[cfg(not(feature = "cuda-dkr-embedded"))]
+use native_catalog::NativeCatalog;
 use crate::quantized::fp8_recipe::{self, Fp8Recipe};
 use crate::quantized::fp4_recipe::{self, Fp4Recipe};
 use crate::cuda_backend::bf16_recipe::{self, Bf16Recipe};
@@ -59,6 +61,23 @@ pub(super) fn family(index: usize) -> Option<&'static str> {
 
 impl ExternalModules {
     pub(super) fn from_env(context: &CudaContext) -> Result<Option<Self>> {
+        let started = std::time::Instant::now();
+        #[cfg(feature = "cuda-dkr-embedded")]
+        {
+            // Do not inspect or canonicalize the original directory at runtime.
+            // The deployment binary cannot be redirected to filesystem packages.
+            if let Some(source) = std::env::var_os("MISTRALRS_DKR_ARTIFACT_SOURCE") {
+                if source != "embedded" {
+                    crate::bail!("cuda-dkr-embedded requires embedded artifact source");
+                }
+            }
+            if std::env::var_os("CANDLE_DKR_S31_DIR").is_some() {
+                crate::bail!("cuda-dkr-embedded forbids CANDLE_DKR_S31_DIR runtime override");
+            }
+            if embedded::ROOT.is_none() {
+                crate::bail!("cuda-dkr-embedded missing build-verified catalogue");
+            }
+        }
         let source = std::env::var("MISTRALRS_DKR_ARTIFACT_SOURCE")
             .unwrap_or_else(|_| if embedded::ROOT.is_some() { "embedded".into() } else { "filesystem".into() });
         let Some(root) = std::env::var_os("CANDLE_DKR_S31_DIR").or_else(|| {
@@ -91,6 +110,7 @@ impl ExternalModules {
                 if routed!=recipe.routed(){crate::bail!("embedded MMVQ/MoE recipe differs from native ABI");}
                 (recipe, fp8, fp4, bf16,routed, rows)
             }
+            #[cfg(not(feature = "cuda-dkr-embedded"))]
             "filesystem" => {
                 if !root.is_absolute() || !root.is_dir() {
                     crate::bail!("CANDLE_DKR_S31_DIR must be an existing absolute directory");
@@ -118,6 +138,7 @@ impl ExternalModules {
         }
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
+            eprintln!("CANDLE_DKR_CATALOG_ADMISSION source={source} elapsed_us={}", started.elapsed().as_micros());
         }
         Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16,routed }))
     }
@@ -183,6 +204,21 @@ impl ExternalModules {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "cuda-dkr-embedded")]
+    #[test]
+    fn dkr_embedded_catalog_digest_inventory() {
+        let rows = embedded::modules();
+        assert!(embedded::ROOT.is_some());
+        assert_eq!(rows.len(), contract::FAMILIES.len());
+        let families: std::collections::BTreeSet<_> = rows.iter().map(|(name, _, _)| *name).collect();
+        assert_eq!(families, contract::FAMILIES.iter().copied().collect());
+        for (name, artifact, _) in rows {
+            let actual = format!("{:x}", Sha256::digest(artifact.ptx().as_bytes()));
+            assert_eq!(actual, artifact.key().sha256());
+            println!("DKR_R124_S44_DIGEST family={name} sha256={actual}");
+        }
+    }
+
     #[test]
     fn dkr_routed_recipe_embedded_table(){
         match embedded::ROOT {

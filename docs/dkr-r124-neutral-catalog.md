@@ -192,6 +192,30 @@ native grouped GGUF MoE with a partial output tile and a rejected BF16 route. On
 - No changes to the 25 catalogue artifacts, kernel sources or Mistral pins.
   Embedded-only admission and final cold/warm measurements remain S4.4/S5.
 
+## S4.4: mandatory build-embedded deployment (candidate)
+
+- `cuda-dkr-embedded` is the strict deployment feature, forwarded by NN to
+  Core and candle-kernels. The existing `cuda-dkr-catalog` remains the
+  diagnostic filesystem/optional-embedded mode, and S31 remains hybrid.
+- The strict build requires an absolute `DKR_EMBED_NATIVE_DIR`, verifies
+  complete package inventory and digests before emitting borrowed PTX and
+  typed recipes, and rejects S31/legacy/cutile feature unification. The
+  kernel build separately rejects incompatible producer flags.
+- At runtime strict mode cannot select filesystem and rejects any
+  `CANDLE_DKR_S31_DIR` override. The historical embedded root string is
+  only an identity marker; no access to that directory is required.
+- The digest inventory test hashes the embedded payloads independently.
+  Runtime trace separates catalogue admission from total device creation;
+  a first-operation sample includes CUDA work and transfer, not just JIT.
+- Qualification uses a private copy of the original catalogue, builds one
+  Nextest archive, hides the private copy, then runs archived tests
+  without Cargo rebuilding. Original artifacts remain untouched.
+  The script compares all 25 independently hashed payloads and exercises
+  runtime rejection of filesystem/directory overrides in separate processes.
+- No change to kernel bytes, launch geometry, static compatibility feature
+  or Mistral pins. S5 must still compare comprehensive physical parity
+  and steady-state performance; this is not a general no-CUDA-SDK claim.
+
 ## Migration gates (not yet completed)
 
 - Extend stable typed operation/argument ABI and recipes for additional

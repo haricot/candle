@@ -24,6 +24,18 @@ const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed={EMBED_ENV}");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_EMBEDDED");
+    let strict = env::var_os("CARGO_FEATURE_CUDA_DKR_EMBEDDED").is_some();
+    if strict {
+        if env::var_os(EMBED_ENV).is_none() {
+            return Err("cuda-dkr-embedded requires DKR_EMBED_NATIVE_DIR at build time".into());
+        }
+        for feature in ["CUDA_DKR_S31", "CUDA_LEGACY_BF16", "CUDA_LEGACY_FP8", "CUDA_LEGACY_FP4", "CUTILE"] {
+            if env::var_os(format!("CARGO_FEATURE_{feature}")).is_some() {
+                return Err(format!("cuda-dkr-embedded forbids feature {feature}").into());
+            }
+        }
+    }
     println!("cargo:rerun-if-changed=src/cuda_backend/dkr_s31_validation.rs");
     println!("cargo:rerun-if-changed=src/cuda_backend/dkr_native_catalog.rs");
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_s31_contract.rs");
@@ -40,7 +52,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_fp4_recipe.rs");
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_fp8_recipe.rs");
     if let Some(root) = env::var_os(EMBED_ENV) {
-        let root = PathBuf::from(root).canonicalize()?;
+        let root = PathBuf::from(root);
+        if strict && !root.is_absolute() {
+            return Err("DKR_EMBED_NATIVE_DIR must be absolute in cuda-dkr-embedded mode".into());
+        }
+        let root = root.canonicalize()?;
         assert!(
             env::var_os("CARGO_FEATURE_CUDA_DKR_CATALOG").is_some(),
             "{EMBED_ENV} requires cuda-dkr-catalog (or compatibility cuda-dkr-s31)"
@@ -85,6 +101,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  vec![{entries}]), {symbols})", verified.key().target_cc(), verified.key().sha256()
             ));
         }
+    }
+    if strict {
+        assert_eq!(rows.len(), contract::FAMILIES.len(), "incomplete embedded catalogue");
+        println!("cargo:warning=CANDLE_DKR_EMBEDDED_REQUIRED=1 packages={}", rows.len());
     }
     fs::write(
         out.join("dkr_native_embedded.rs"),

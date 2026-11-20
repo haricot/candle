@@ -31,6 +31,12 @@ fn main() -> Result<()> {
         env::var_os(LEGACY_FP4_FEATURE).is_some(),
     );
 
+    println!("cargo::rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_EMBEDDED");
+    if env::var_os("CARGO_FEATURE_CUDA_DKR_EMBEDDED").is_some()
+        && (compile_ptx || env::var_os(CUTILE_FEATURE).is_some())
+    {
+        panic!("cuda-dkr-embedded forbids static CUDA producer features and cuTile FFI");
+    }
     println!("cargo:rustc-check-cfg=cfg(candle_static_ffi)");
     println!("cargo:rustc-check-cfg=cfg(candle_moe_wmma)");
     // The native consumer needs module identities only, not a CUDA
