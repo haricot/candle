@@ -19,7 +19,7 @@ MOE_CODECS=("Q8_0","Q4K","Q2K","Q3K","Q5K","Q6K")
 CORE=("affine","binary","cast","conv","fill","indexing","reduce",
       "sort","ternary","unary","quantized")
 FAMILIES=set(CORE)|{"mmvq_gguf","mmq_quantize","moe_gguf","moe_simt_f16"}
-FAMILIES.update("mmq_instance_"+codec.lower() for codec in CODECS)
+FAMILIES.update("mmq_instance_"+codec.replace("K","_K").lower() for codec in CODECS)
 
 def require(ok,message):
     if not ok: raise SystemExit("DKR_R124_S52_FAIL: "+message)
