@@ -197,6 +197,9 @@ def numeric_compare(a,b):
             and x["mode"]=="ptx" and y["mode"]=="cubin"
             and x["fixture"]==y["fixture"]=="S55D_FIXED_INPUTS_V1",
             "numeric reports are not a common source fixture")
+    require(x["quantized_weight_sha256"]==y["quantized_weight_sha256"]
+            and len(x["quantized_weight_sha256"])==16,
+            "bit-identical GGUF quantized source weights not established")
     ac=x["cases"];bc=y["cases"]
     require(set(ac)==set(bc) and len(ac)==157,
             "PTX/CUBIN numeric test matrices differ")
