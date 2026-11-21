@@ -31,6 +31,7 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 criterion = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [features]
 default = []

@@ -2,11 +2,12 @@
 //! Cudaforge CUBIN binaries. Each run serializes *every* output element.
 #![cfg(feature = "cuda-dkr-embedded")]
 
-use candle::quantized::{fp4_e7c_runtime::{Fp4E7CLinear, Fp4Execution}, fp8_linear_sm61::{Fp8Sm61Linear, Fp8Sm61Mode}, GgmlDType, QMatMul, QTensor};
+use candle::quantized::{fp4_e7c_runtime::{Fp4E7CLinear, Fp4Execution}, fp8_linear_sm61::{Fp8Sm61Linear, Fp8Sm61Mode}, GgmlDType, QMatMul, QStorage, QTensor};
 use candle::{DType, Device, Module, Tensor};
 use candle_nn::moe::{moe_gemm, moe_gemm_gguf};
 use serde_json::{json, Map, Value};
-use std::path::PathBuf;
+use std::{borrow::Cow, path::PathBuf};
+use sha2::{Digest, Sha256};
 
 const CODECS: [GgmlDType; 10] = [
     GgmlDType::Q4_0, GgmlDType::Q4_1, GgmlDType::Q5_0,
@@ -40,13 +41,21 @@ fn dkr_s55d_capture_outputs() -> anyhow::Result<()> {
     let gpu=Device::new_cuda(0)?;
     anyhow::ensure!(gpu.as_cuda_device()?.dkr_moe_enabled(),"embedded DKR required");
     let mut records=Map::new();
+    let mut inputs=Map::new();
+    let cpu=Device::Cpu;
     let mut codec_count=0usize;
     let (n,k)=(65usize,256usize);
     let weights=(0..n*k).map(|i|0.2f32+((i*13%19) as f32)*0.025)
         .collect::<Vec<_>>();
-    let w=Tensor::from_vec(weights,(n,k),&gpu)?;
+    let w_cpu=Tensor::from_vec(weights,(n,k),&cpu)?;
     for codec in CODECS {
-        let q=QTensor::quantize(&w,codec)?;
+        // Bit-identical quantized weights in both builds: quantize only on
+        // CPU and upload the exact same bytes to the selected CUDA backend.
+        let q_cpu=QTensor::quantize(&w_cpu,codec)?;
+        let bytes=q_cpu.data()?.to_vec();
+        inputs.insert(format!("gguf/{codec:?}"),
+            json!(format!("{:x}",Sha256::digest(&bytes))));
+        let q=QTensor::new(QStorage::from_data(Cow::Owned(bytes),&gpu,codec)?,(n,k))?;
         let op=QMatMul::from_qtensor(q)?;
         for dtype in [DType::F16,DType::BF16,DType::F32] {
             for batch in [1usize,8,9,17] {
@@ -133,12 +142,17 @@ fn dkr_s55d_capture_outputs() -> anyhow::Result<()> {
     let (tokens,experts,neurons,hidden)=(2usize,2usize,5usize,256usize);
     let weights=(0..experts*neurons*hidden).map(|i|
         if i<neurons*hidden {0.5f32}else{1.0}).collect::<Vec<_>>();
-    let w=Tensor::from_vec(weights,(experts,neurons,hidden),&gpu)?;
+    let w_cpu=Tensor::from_vec(weights,(experts,neurons,hidden),&cpu)?;
     let x=Tensor::from_vec(vec![0.25f32;tokens*hidden],(tokens,hidden),&gpu)?;
     let sorted=Tensor::from_vec(vec![0u32,2,1,3],4,&gpu)?;
     let experts_id=Tensor::from_vec(vec![0u32,0,1,1],4,&gpu)?;
     for codec in MOE_CODECS {
-        let q=QTensor::quantize(&w,codec)?;
+        let q_cpu=QTensor::quantize(&w_cpu,codec)?;
+        let bytes=q_cpu.data()?.to_vec();
+        inputs.insert(format!("moe/gguf/{codec:?}"),
+            json!(format!("{:x}",Sha256::digest(&bytes))));
+        let q=QTensor::new(QStorage::from_data(Cow::Owned(bytes),&gpu,codec)?,
+                           (experts,neurons,hidden))?;
         let y=moe_gemm_gguf(&x,&q,&None,&sorted,&experts_id,2,true,DType::F32)?;
         gpu.synchronize()?;
         capture(&mut records,format!("moe/gguf/{codec:?}"),&y)?;
@@ -178,6 +192,7 @@ fn dkr_s55d_capture_outputs() -> anyhow::Result<()> {
         "target_cc":61,
         "fixture":"S55D_FIXED_INPUTS_V1",
         "gguf_cases":codec_count,
+        "quantized_weight_sha256":inputs,
         "cases":records,
     });
     let count=report["cases"].as_object().map_or(0,|v|v.len());
