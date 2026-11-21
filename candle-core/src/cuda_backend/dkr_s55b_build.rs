@@ -208,12 +208,12 @@ pub(super) fn generate(
                  "simt_threads","simt_tile_n","simt_shared","gguf_tile_n",
                  "gguf_shared_base","gguf_shared_limit",
                  "mmvq_family","simt_family","gguf_family","simt_input","gguf_input","gguf_abi"],"Routed")?;
-    if string(routed,"mmvq_family"? != "mmvq_gguf" ||
-       string(routed,"simt_family"? != "moe_simt_f16" ||
-       string(routed,"gguf_family"? != "moe_gguf" ||
-       string(routed,"simt_input"? != "f16" ||
-       string(routed,"gguf_input"? != "f32" ||
-       string(routed,"gguf_abi"? != super::contract::MOE_GGUF_ABI {
+    if string(routed,"mmvq_family")? != "mmvq_gguf" ||
+       string(routed,"simt_family")? != "moe_simt_f16" ||
+       string(routed,"gguf_family")? != "moe_gguf" ||
+       string(routed,"simt_input")? != "f16" ||
+       string(routed,"gguf_input")? != "f32" ||
+       string(routed,"gguf_abi")? != super::contract::MOE_GGUF_ABI {
         return Err("routed family/type/ABI differs from qualified native contract".into());
     }
     let mut routed_fields=Vec::new();
@@ -223,15 +223,15 @@ pub(super) fn generate(
         let n=positive(routed,name,bound)?;
         routed_fields.push(format!("{name}:{n}"));
     }
-    if positive(routed,"max_batch",65535? > 8 ||
-       positive(routed,"small_batch",65535? > positive(routed,"max_batch",65535)? ||
-       positive(routed,"q8_block",65535? != 32 ||
-       positive(routed,"q8_bytes",65535? != 36 ||
-       positive(routed,"row_padding",65535)?%32!=0 ||
-       positive(routed,"simt_threads",1024? > 1024 ||
-       positive(routed,"quant_threads",1024? > 1024 ||
-       positive(routed,"warp",65535)?*positive(routed,"small_warps",65535? > 1024 ||
-       positive(routed,"gguf_shared_base",65535? > positive(routed,"gguf_shared_limit",65536)? {
+    if positive(routed,"max_batch",65535)? > 8 ||
+       positive(routed,"small_batch",65535)? > positive(routed,"max_batch",65535)? ||
+       positive(routed,"q8_block",65535)? != 32 ||
+       positive(routed,"q8_bytes",65535)? != 36 ||
+       positive(routed,"row_padding",65535)? % 32 != 0 ||
+       positive(routed,"simt_threads",1024)? > 1024 ||
+       positive(routed,"quant_threads",1024)? > 1024 ||
+       positive(routed,"warp",65535)? * positive(routed,"small_warps",65535)? > 1024 ||
+       positive(routed,"gguf_shared_base",65535)? > positive(routed,"gguf_shared_limit",65536)? {
         return Err("Routed parameters incompatible with qualified GGUF/SM61 kernel ABI".into());
     }
     let mmvq=artifacts.get("mmvq_gguf").ok_or("missing MMVQ artifact")?;
