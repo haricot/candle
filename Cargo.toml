@@ -2,6 +2,7 @@
 members = [
     "candle-core",
     "dkr-kernel-registry",
+    "tools/dkr-s55d-model-probe",
     "candle-datasets",
     "candle-examples",
     "candle-nn",

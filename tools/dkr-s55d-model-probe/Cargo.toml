@@ -1,0 +1,17 @@
+[package]
+name = "dkr-s55d-model-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Deterministic offline Qwen3 GGUF PTX/CUBIN cold-start qualification probe"
+
+[dependencies]
+anyhow = { workspace = true }
+candle = { workspace = true }
+candle-transformers = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
+ptx = ["candle/cuda-dkr-embedded", "candle-transformers/cuda"]
+cubin = ["candle/cuda-dkr-cudaforge-catalog", "candle-transformers/cuda"]
