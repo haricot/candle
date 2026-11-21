@@ -33,6 +33,11 @@ mod embedded {
 mod neutral_mmq {
     include!(concat!(env!("OUT_DIR"), "/dkr_neutral_mmq.rs"));
 }
+#[cfg(feature = "cuda-dkr-neutral-recipes")]
+mod neutral_recipes {
+    use super::{Fp8Recipe,Fp4Recipe,Bf16Recipe,RoutedRecipe,bf16_recipe};
+    include!(concat!(env!("OUT_DIR"), "/dkr_neutral_recipes.rs"));
+}
 use dkr_kernel_registry::{Registry, RegistryKey, VerifiedArtifact, NATIVE_ABI};
 
 pub(super) struct ExternalModules {
@@ -116,14 +121,29 @@ impl ExternalModules {
                 let rows = embedded::modules().into_iter()
                     .map(|(name, artifact, symbols)| (name.to_owned(), artifact, symbols))
                     .collect::<Vec<_>>();
-                let fp8 = embedded::FP8_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded FP8 recipe".into()))?;
-                if fp8 != recipe.fp8() { crate::bail!("embedded FP8 recipe differs from native ABI"); }
-                let fp4 = embedded::FP4_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded FP4 recipe".into()))?;
-                if fp4 != recipe.fp4() { crate::bail!("embedded FP4 recipe differs from native ABI"); }
-                let bf16 = embedded::BF16_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded BF16 recipe".into()))?;
-                if bf16 != recipe.bf16() { crate::bail!("embedded BF16 recipe differs from native ABI"); }
-                let routed=embedded::ROUTED_RECIPE.ok_or_else(||crate::Error::Msg("missing embedded MMVQ/MoE recipe".into()))?;
-                if routed!=recipe.routed(){crate::bail!("embedded MMVQ/MoE recipe differs from native ABI");}
+                #[cfg(feature = "cuda-dkr-neutral-recipes")]
+                let (fp8, fp4, bf16, routed) = {
+                    // These are build-verified, producer-owned descriptors.
+                    // Do not require equality with the frozen S31 policy in
+                    // the experimental catalogue-driven runtime.
+                    if trace {
+                        eprintln!("DKR_R124_S55B_RECIPES_CATALOG source=embedded families=fp8,fp4,bf16,routed target=sm{device_cc}");
+                    }
+                    (neutral_recipes::FP8,neutral_recipes::FP4,
+                     neutral_recipes::BF16,neutral_recipes::ROUTED)
+                };
+                #[cfg(not(feature = "cuda-dkr-neutral-recipes"))]
+                let (fp8, fp4, bf16, routed) = {
+                    let fp8=embedded::FP8_RECIPE.ok_or_else(|| crate::Error::Msg("missing embedded FP8 recipe".into()))?;
+                    if fp8!=recipe.fp8(){crate::bail!("embedded FP8 recipe differs from native ABI");}
+                    let fp4=embedded::FP4_RECIPE.ok_or_else(||crate::Error::Msg("missing embedded FP4 recipe".into()))?;
+                    if fp4!=recipe.fp4(){crate::bail!("embedded FP4 recipe differs from native ABI");}
+                    let bf16=embedded::BF16_RECIPE.ok_or_else(||crate::Error::Msg("missing embedded BF16 recipe".into()))?;
+                    if bf16!=recipe.bf16(){crate::bail!("embedded BF16 recipe differs from native ABI");}
+                    let routed=embedded::ROUTED_RECIPE.ok_or_else(||crate::Error::Msg("missing embedded MMVQ/MoE recipe".into()))?;
+                    if routed!=recipe.routed(){crate::bail!("embedded MMVQ/MoE recipe differs from native ABI");}
+                    (fp8,fp4,bf16,routed)
+                };
                 (recipe, fp8, fp4, bf16,routed, rows)
             }
             #[cfg(not(feature = "cuda-dkr-embedded"))]
@@ -282,6 +302,59 @@ impl ExternalModules {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "cuda-dkr-neutral-recipes")]
+    #[test]
+    fn dkr_s55b_typed_recipes_match_qualified_s31() {
+        // Frozen S31 values are an independent test oracle only.
+        // The S5.5b runtime never uses these equalities to admit a recipe.
+        let fp8=neutral_recipes::FP8;
+        let fp4=neutral_recipes::FP4;
+        let bf16=neutral_recipes::BF16;
+        let routed=neutral_recipes::ROUTED;
+        assert_eq!(fp8,fp8_recipe::S31_FP8);
+        assert_eq!(fp4,fp4_recipe::S31_FP4);
+        assert_eq!(bf16,bf16_recipe::S31_BF16);
+        assert_eq!(routed,routed_recipe::S31_ROUTED);
+        for tokens in [1,3,4,8,32] {
+            for rows in [1,65,512] {
+                for dp4a in [true,false] {
+                    assert_eq!(fp8.matrix(dp4a,tokens,rows),
+                        fp8_recipe::S31_FP8.matrix(dp4a,tokens,rows));
+                }
+            }
+        }
+        for n in [1,511,512,1024] {
+            for batch in [1,8,9,17] {
+                assert_eq!(fp4.native_matrix(61,false,n,batch),
+                    fp4_recipe::S31_FP4.native_matrix(61,false,n,batch));
+                assert_eq!(fp4.native_matrix(61,true,n,batch),
+                    fp4_recipe::S31_FP4.native_matrix(61,true,n,batch));
+            }
+        }
+        for batch in 1..=8 {
+            let plan=routed.mmvq("q4_k","f16",1024,1024,129,batch).unwrap();
+            let prior=routed_recipe::S31_ROUTED.mmvq("q4_k","f16",1024,1024,129,batch).unwrap();
+            assert_eq!(plan.quant,prior.quant);
+            assert_eq!(plan.matrix,prior.matrix);
+            assert_eq!(plan.qcfg,prior.qcfg);
+            assert_eq!(plan.mcfg,prior.mcfg);
+        }
+        for e in [1,32,33,128] {
+            assert_eq!(routed.simt(e,129,1024,17).unwrap(),
+                routed_recipe::S31_ROUTED.simt(e,129,1024,17).unwrap());
+        }
+        for codec in ["q8_0","q4_k","q2_k","q3_k","q5_k","q6_k"] {
+            let x=routed.gguf(codec,129,1024,2,4).unwrap();
+            let y=routed_recipe::S31_ROUTED.gguf(codec,129,1024,2,4).unwrap();
+            assert_eq!(x.padded,y.padded);
+            assert_eq!(x.scratch,y.scratch);
+            assert_eq!(x.qcfg,y.qcfg);
+            assert_eq!(x.mcfg,y.mcfg);
+        }
+        println!("DKR_R124_S55B_TYPED_PARITY=PASS fp8=1 fp4=1 bf16=1 routed=1");
+    }
+
+
     #[cfg(feature = "cuda-dkr-embedded")]
     #[test]
     fn dkr_embedded_catalog_digest_inventory() {
