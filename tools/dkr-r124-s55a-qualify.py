@@ -51,6 +51,29 @@ def source_head():
          "candle-kernels"],cwd=ROOT,text=True).strip(),"dirty production tree")
     return subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip()
 
+def check_archived_source(recorded_head):
+    # The built archive is immutable. Permit script/docs-only fixes after
+    # it was created, but fail closed if any compiled Rust input changed.
+    current=source_head()
+    require(re.fullmatch(r"[0-9a-f]{40}", recorded_head) is not None,
+            "receipt source HEAD is not a commit SHA")
+    if current==recorded_head:
+        return
+    paths=("candle-core/src","candle-core/build.rs","candle-core/Cargo.toml",
+           "candle-nn/src","candle-nn/Cargo.toml",
+           "dkr-kernel-registry","candle-kernels",
+           "candle-core/tests","candle-nn/tests",
+           "Cargo.toml","Cargo.lock")
+    require(subprocess.run(
+        ["git","merge-base","--is-ancestor",recorded_head,current],
+        cwd=ROOT).returncode==0,
+        "receipt HEAD is not an ancestor; build a new archive")
+    require(subprocess.run(
+        ["git","diff","--quiet",recorded_head,current,"--",*paths],
+        cwd=ROOT).returncode==0,
+        "compiled Rust sources changed since archived HEAD; rebuild required")
+    print("DKR_R124_S55A_ARCHIVE_REUSE=PASS source_unchanged=1",flush=True)
+
 def seal_gate(path):
     sf=path.resolve(strict=True)
     data=json.loads(sf.read_text())
@@ -256,8 +279,9 @@ def headless(args):
             "requires headless-relogin")
     rp=args.receipt.resolve(strict=True)
     rec=json.loads(rp.read_text())
-    require(rec["schema"]=="CANDLE-DKR-R124-S55A-ARCHIVE-V1"
-            and rec["source_head"]==source_head(),"source/receipt mismatch")
+    require(rec["schema"]=="CANDLE-DKR-R124-S55A-ARCHIVE-V1",
+            "invalid S5.5a archive receipt")
+    check_archived_source(rec["source_head"])
     for p,key in (("s51_seal","s51_seal_sha256"),
                   ("s52_result","s52_result_sha256"),
                   ("s53_result","s53_result_sha256")):
@@ -281,7 +305,7 @@ def headless(args):
     cmd=["cargo","nextest","run","--archive-file",str(archive),
          "--workspace-remap",str(ROOT),"--run-ignored","all",
          "--no-capture","--no-fail-fast","-E"]
-    table_test=execute(cmd+["test(=dkr_s55a_neutral_mmq_matches_frozen_s31_qualified_shapes)"],
+    table_test=execute(cmd+["test(dkr_s55a_neutral_mmq_matches_frozen_s31_qualified_shapes)"],
                        env,out/"s55a-table-parity.log")
     require("DKR_R124_S55A_TABLE_PARITY=PASS codecs=10" in table_test,
             "new MMQ geometry differs from frozen S3.1 reference")
