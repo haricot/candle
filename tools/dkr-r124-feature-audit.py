@@ -78,3 +78,23 @@ print("DKR_R124_S54B_FEATURE_GRAPH=PASS")
 print("DKR_R124_S55A_FEATURE_GRAPH=PASS")
 print("DKR_R124_S55B_FEATURE_GRAPH=PASS")
 print("DKR_R124_S55C_FEATURE_GRAPH=PASS")
+
+# S5.5d: the model probe links candle-transformers -> candle-nn.
+# Propagate DKR features explicitly; otherwise "cuda" alone reactivates
+# candle-nn's static-FFI imports while candle-kernels deliberately skips FFI.
+for probe_mode,nn_feature in (
+    ("ptx","cuda-dkr-embedded"),
+    ("cubin","cuda-dkr-cudaforge-catalog"),
+):
+    graph=resolved("dkr-s55d-model-probe",probe_mode)
+    core=graph.get("candle-core",set())
+    nn=graph.get("candle-nn",set())
+    kernels=graph.get("candle-kernels",set())
+    require(nn_feature in core and nn_feature in nn,
+            f"S5.5d model probe {probe_mode}: candle-core/candle-nn feature mismatch")
+    require("cuda-dkr-s31" not in core and "cuda-dkr-s31" not in nn,
+            f"S5.5d model probe {probe_mode}: static-FFI hybrid feature leaked")
+    require(not (LEGACY & core or LEGACY & kernels),
+            f"S5.5d model probe {probe_mode}: static CUDA flags leaked")
+    print(f"DKR_R124_S55D_MODEL_FEATURE_AUDIT_PASS mode={probe_mode} nn={nn_feature}")
+print("DKR_R124_S55D_FEATURE_GRAPH=PASS")

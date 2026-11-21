@@ -142,6 +142,26 @@ A receipt containing the model's SHA-256, the two archives,
 the two executables, Cudaforge provenance and fixed input token
 IDs is written to \`target/dkr-r124-s55d-qualification/receipt.json\`.
 
+### Recovery when the Rust model build fails after the PTX archive
+
+If the S5.5d build stops on an unresolved `candle-nn::moe` import of
+`ffi` or `moe_selection`, pull the model-probe Cargo feature
+propagation fix. This is **not** a CUDA kernel failure: a plain
+`candle-transformers/cuda` dependency did not activate
+`candle-nn/cuda-dkr-embedded` and tried to select static CUDA FFI.
+S5.5d's feature audit now checks this closure for both PTX and CUBIN.
+
+The failed output directory contains useful partial logs and the
+already compiled PTX test archive. Keep that directory unchanged.
+Use a **fresh** output directory (for example,
+`target/dkr-r124-s55d-qualification-r2`) for the next
+`dkr-r124-s55d-qualify.py build`. Rust's shared `target` caches
+are reused; the Nextest test archive operation is cheap on a cache hit.
+The build still intentionally regenerates **new SHA-bound receipts**
+for both modes; it never silently trusts an archive without a
+complete successful receipt. All later Nextest/headless commands
+must use the same chosen output directory.
+
 ## Step 3 — verify both archived tests are present without running GPU work
 
 ~~~sh
