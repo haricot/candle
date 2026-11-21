@@ -20,6 +20,7 @@ import struct
 import subprocess
 import sys
 import time
+import tempfile
 
 ROOT=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location(
@@ -441,9 +442,44 @@ def headless(args):
     print("DKR_R124_S55D_REPORT="+str(report_path))
     print("DKR_R124_S55D_PASS")
 
+def self_test():
+    # CPU-only validation of the full tensor comparator, categorical
+    # coverage, f32 binary decoder and exact-bit accounting. Never loads CUDA.
+    with tempfile.TemporaryDirectory(prefix="dkr-s55d-selftest-") as temp:
+        root=Path(temp)
+        cases={}
+        for family,count in EXPECTED_NUMERIC.items():
+            for index in range(count):
+                data=[float((i % 37)-18)/32. for i in range(512)]
+                cases[f"{family}/sample{index}"]={
+                    "shape":[512],"dtype":"F32","values":data}
+        base={
+            "schema":"CANDLE-DKR-R124-S55D-NUMERIC-V1",
+            "fixture":"S55D_FIXED_INPUTS_V1",
+            "quantized_weight_sha256":{f"q{i}":f"{i:064x}" for i in range(16)},
+            "cases":cases,
+        }
+        p=root/"ptx.json";c=root/"cubin.json"
+        p.write_text(json.dumps(dict(base,mode="ptx")))
+        c.write_text(json.dumps(dict(base,mode="cubin")))
+        result=numeric_compare(p,c)
+        require(result["cases"]==157
+                and result["elements"]==157*512
+                and result["bitwise_float_equal_cases"]==157,
+                "numeric self-test invariant failed")
+        data=[float((i%11)-5)/8 for i in range(27)]
+        raw=b"".join(struct.pack("<f",x) for x in data)
+        a=root/"model-ptx.f32le";b=root/"model-cubin.f32le"
+        a.write_bytes(raw);b.write_bytes(raw)
+        diff=compare_binary_logits(a,b,(3,9))
+        require(diff["elements"]==len(data) and diff["mismatches"]==0,
+                "binary float32 model comparator failed")
+        print("DKR_R124_S55D_SELF_TEST=PASS tensor_cases=157 elements=80384 logits=27")
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     sub=p.add_subparsers(dest="mode",required=True)
+    sub.add_parser("self-test")
     b=sub.add_parser("build")
     b.add_argument("--seal",type=Path,required=True)
     b.add_argument("--cubin-dir",type=Path,required=True)
@@ -458,7 +494,9 @@ def main():
     h=sub.add_parser("headless")
     h.add_argument("--receipt",type=Path,required=True)
     args=p.parse_args()
-    (build if args.mode=="build" else headless)(args)
+    if args.mode=="build":build(args)
+    elif args.mode=="headless":headless(args)
+    else:self_test()
 
 if __name__=="__main__":
     main()
