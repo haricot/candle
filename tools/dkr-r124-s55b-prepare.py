@@ -49,7 +49,7 @@ ROUTED={
     "gguf_tile_n":4,"gguf_shared_base":1024,"gguf_shared_limit":49152,
     "mmvq_family":"mmvq_gguf","simt_family":"moe_simt_f16",
     "gguf_family":"moe_gguf","simt_input":"f16","gguf_input":"f32",
-    "gguf_abi":"RUNTIME_REPLACE_MOE_GGUF_ABI",
+    "gguf_abi":"moe-gguf-warp-tail-v1",
 }
 RECIPES={"fp8":FP8,"fp4":FP4,"bf16":BF16,"routed":ROUTED}
 
@@ -108,11 +108,6 @@ def produce(args):
     for family in ("mmvq_gguf","moe_simt_f16","moe_gguf"):
         require(bool(entries[family]),"routed kernel family has no entries: "+family)
     recipes={name:dict(recipe) for name,recipe in RECIPES.items()}
-    # The ABI is a qualified contract constant but its string value is read
-    # from the catalogue index if present; otherwise, use the published
-    # contract given by S31 producer. See --gguf-abi.
-    require(args.gguf_abi,"--gguf-abi is required (exact S31 native ABI)")
-    recipes["routed"]["gguf_abi"]=args.gguf_abi
     out=args.out.resolve()
     require(not out.exists(),"output directory already exists")
     out.mkdir(parents=True)
@@ -131,7 +126,6 @@ def main():
     p.add_argument("--self-test",action="store_true")
     p.add_argument("--seal",type=Path)
     p.add_argument("--out",type=Path)
-    p.add_argument("--gguf-abi",default="") 
     a=p.parse_args()
     if a.self_test:self_test()
     else:
