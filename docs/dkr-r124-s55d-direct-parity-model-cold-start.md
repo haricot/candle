@@ -101,6 +101,7 @@ a Qwen3-4B Q4_K can also be tried if GPU memory permits.
 cd /home/np/tmp/candle_dkr/candle
 git pull --ff-only origin feature/dkr-r124-neutral-catalog
 python3 -m py_compile tools/dkr-r124-s55d-qualify.py
+python3 tools/dkr-r124-s55d-qualify.py self-test
 python3 tools/dkr-r124-feature-audit.py
 test -f "$MODEL_GGUF" || { echo 'set MODEL_GGUF to a real local Qwen3 GGUF'; exit 1; }
 ~~~
