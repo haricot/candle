@@ -130,6 +130,9 @@ def build(args):
         dst=out/"bin"/f"model-{mode}"
         shutil.copy2(src,dst)
         dst.chmod(dst.stat().st_mode|0o111)
+        probe_log=execute([str(dst),"--self-test"],env,out/f"model-self-test-{mode}.log")
+        require(f"DKR_R124_S55D_MODEL_PROBE=PASS mode={mode} no_cuda_build=1" in probe_log,
+                f"{mode}: model probe did not pass CPU-only startup preflight")
         receipts[mode]={
             "archive":str(archive),"archive_sha256":s55b.digest(archive),
             "model_bin":str(dst),"model_bin_sha256":s55b.digest(dst)}

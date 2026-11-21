@@ -73,6 +73,10 @@ fn main() -> Result<()> {
     #[cfg(not(any(feature="ptx",feature="cubin")))]
     compile_error!("S5.5d model probe requires exactly one of ptx or cubin");
     let mode=if cfg!(feature="cubin"){"cubin"}else{"ptx"};
+    if std::env::args().len()==2 && std::env::args().nth(1).as_deref()==Some("--self-test") {
+        println!("DKR_R124_S55D_MODEL_PROBE=PASS mode={mode} no_cuda_build=1");
+        return Ok(());
+    }
     let (model_path,json_path,logits_path,tokens,decode)=options()?;
     let start=Instant::now();
     let t=Instant::now();
