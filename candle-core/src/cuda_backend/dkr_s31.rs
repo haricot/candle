@@ -41,6 +41,15 @@ pub(super) struct ExternalModules {
     bf16: Bf16Recipe,
     routed:RoutedRecipe,
     mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
+    #[cfg(feature = "cuda-dkr-cubin-embedded")]
+    cubin_images: std::collections::HashMap<dkr_kernel_registry::ArtifactKey, EmbeddedCubin>,
+}
+
+#[cfg(feature = "cuda-dkr-cubin-embedded")]
+pub(super) struct EmbeddedCubin {
+    pub(super) family: &'static str,
+    pub(super) image: &'static [u8],
+    pub(super) sha256: &'static str,
 }
 
 pub(super) fn family(index: usize) -> Option<&'static str> {
@@ -136,11 +145,50 @@ impl ExternalModules {
             native_keys.insert(name.clone(), key);
             if let Some(symbols) = symbols { mmq_symbols.insert(name, symbols); }
         }
+        #[cfg(feature = "cuda-dkr-cubin-embedded")]
+        let cubin_images = {
+            if source != "embedded" {
+                crate::bail!("CUBIN feature requires a sealed embedded provider");
+            }
+            let mut images = std::collections::HashMap::new();
+            for (family, image, sha, target_cc, ptx_sha) in embedded::cubins() {
+                let native_key = native_keys.get(family).ok_or_else(||
+                    crate::Error::Msg(format!("CUBIN family not in native catalogue: {family}")))?;
+                let original = modules.get(native_key).ok_or_else(||
+                    crate::Error::Msg(format!("CUBIN missing PTX identity: {family}")))?;
+                if original.key().target_cc() != target_cc
+                    || original.key().sha256() != ptx_sha
+                    || target_cc != device_cc
+                {
+                    crate::bail!("CUBIN target/PTX provenance mismatch: {family}");
+                }
+                if images.insert(original.key().clone(), EmbeddedCubin {
+                    family, image, sha256: sha,
+                }).is_some() {
+                    crate::bail!("duplicate physical CUBIN module: {family}");
+                }
+            }
+            if images.len() != modules.len() {
+                crate::bail!("missing CUBIN images; refusing PTX fallback in strict CUBIN mode");
+            }
+            if trace {
+                eprintln!("CANDLE_DKR_CUBIN_CATALOG source=embedded images={} target=sm{}", images.len(),device_cc);
+            }
+            images
+        };
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
             eprintln!("CANDLE_DKR_CATALOG_ADMISSION source={source} elapsed_us={}", started.elapsed().as_micros());
         }
-        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16,routed }))
+        Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16,routed,
+            #[cfg(feature = "cuda-dkr-cubin-embedded")]
+            cubin_images,
+        }))
+    }
+
+    #[cfg(feature = "cuda-dkr-cubin-embedded")]
+    pub(super) fn cubin_for(&self, artifact: &VerifiedArtifact) -> Option<&EmbeddedCubin> {
+        self.cubin_images.get(artifact.key())
     }
 
     pub(super) fn routed_recipe(&self)->RoutedRecipe {self.routed}

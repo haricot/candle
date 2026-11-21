@@ -402,6 +402,26 @@ impl CudaDevice {
             loaded.functions.insert(name.to_owned(),func.clone());
             func
         } else {
+            #[cfg(feature = "cuda-dkr-cubin-embedded")]
+            let module = {
+                let image = self.dkr_s31.as_ref()
+                    .and_then(|provider| provider.cubin_for(artifact))
+                    .ok_or_else(|| crate::Error::Msg(
+                        "verified CUBIN image unavailable; refusing PTX fallback".into()
+                    ))?;
+                let module = self.context.load_module(
+                    cudarc::nvrtc::Ptx::from_binary(image.image.to_vec())
+                ).w()?;
+                if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                    eprintln!(
+                        "CANDLE_DKR_IMAGE_LOADED family={} target=sm{} format=cubin cubin_sha256={} ptx_sha256={}",
+                        image.family, artifact.key().target_cc(), image.sha256,
+                        artifact.key().sha256()
+                    );
+                }
+                module
+            };
+            #[cfg(not(feature = "cuda-dkr-cubin-embedded"))]
             let module=self.context.load_module(artifact.ptx().into()).w()?;
             let func=module.load_function(name).w()?;
             let mut functions=HashMap::new();

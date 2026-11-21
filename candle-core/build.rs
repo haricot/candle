@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if bytes.len() > 256 * 1024 { return Err("CUBIN manifest too large".into()); }
         let v: serde_json::Value = serde_json::from_slice(&bytes)?;
         if v["schema"].as_str() != Some(CUBIN_SCHEMA)
-            || v["target_cc"].as_u64() != Some(61)
+            || v["target_cc"].as_u64() != Some(u64::from(contract::CC))
             || v["families"].as_object().map(|x| x.len()) != Some(contract::FAMILIES.len())
             || v["ptxas_version"].as_str().is_none_or(|s| !s.contains("release 12."))
         {
@@ -132,7 +132,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  vec![{entries}]), {symbols})", verified.key().target_cc(), verified.key().sha256()
             ));
             if let Some((cubin_root, cubin_index)) = &cubin_input {
-                let rec = &cubin_index["families"][name];
+                let rec = &cubin_index["families"][name.as_str()];
                 if rec["target_cc"].as_u64() != Some(u64::from(verified.key().target_cc()))
                     || rec["ptx_sha256"].as_str() != Some(verified.key().sha256())
                 {
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 println!("cargo:rerun-if-changed={}", resolved.display());
                 let data = fs::read(&resolved)?;
-                if data.len() < 64 || data.len() > MAX_CUBIN_BYTES || !data.starts_with(b"\\x7fELF") {
+                if data.len() < 64 || data.len() > MAX_CUBIN_BYTES || !data.starts_with(b"\x7fELF") {
                     return Err(format!("CUBIN {name} is not an acceptable ELF image").into());
                 }
                 let image_sha = format!("{:x}", Sha256::digest(&data));
