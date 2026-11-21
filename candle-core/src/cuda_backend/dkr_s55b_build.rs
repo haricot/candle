@@ -173,9 +173,9 @@ pub(super) fn generate(
         let n=positive(fp4,name,if name.contains("threads") || name=="warp" || name=="matrix_warps"{1024}else{65535})?;
         fp4_fields.push(format!("{name}:{n}"));
     }
-    if positive(fp4,"auto_cc",65535? != u64::from(target_cc)
-       || positive(fp4,"min_dp4a_cc",65535? > u64::from(target_cc)
-       || positive(fp4,"warp",1024)?*positive(fp4,"matrix_warps",1024? > 1024 {
+    if positive(fp4,"auto_cc",65535)? != u64::from(target_cc)
+       || positive(fp4,"min_dp4a_cc",65535)? > u64::from(target_cc)
+       || positive(fp4,"warp",1024)? * positive(fp4,"matrix_warps",1024)? > 1024 {
         return Err("FP4 launch block or target exceeds device capability".into());
     }
     let fp4_generated=format!("pub(super) const FP4:Fp4Recipe=Fp4Recipe{{{}}};\n",fp4_fields.join(","));
