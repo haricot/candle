@@ -178,8 +178,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let original = PathBuf::from(env::var_os(EMBED_ENV)
             .ok_or("missing embedded native catalogue")?).canonicalize()?;
         let source_index = original.join(native_catalog::INDEX);
-        let index_bytes = fs::read(&source_index)?;
-        let index_sha = format!("{:x}", Sha256::digest(&index_bytes));
+        // S5.1 accepts an absent index as a sealed legacy catalogue.
+        // Preserve this distinction instead of generating an index inside
+        // the immutable native packages.
+        let index_sha = if source_index.is_file() {
+            Some(format!("{:x}", Sha256::digest(fs::read(&source_index)?)))
+        } else {
+            None
+        };
+        let index_mode = if index_sha.is_some() { "present" } else { "legacy-absent" };
         let meta_root = PathBuf::from(env::var_os(MMQ_ENV)
             .ok_or("S5.5a requires DKR_EMBED_S55_MMQ_DIR at build time")?);
         if !meta_root.is_absolute() {
@@ -193,11 +200,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("S5.5a recipe manifest too large".into());
         }
         let v: serde_json::Value = serde_json::from_slice(&data)?;
+        let index_matches = match (index_sha.as_deref(), v.get("source_index_sha256")) {
+            (Some(expected), Some(serde_json::Value::String(actual))) => actual == expected,
+            (None, Some(serde_json::Value::Null)) => true,
+            _ => false,
+        };
         if v["schema"].as_str() != Some(MMQ_SCHEMA)
-            || v["source_index_sha256"].as_str() != Some(index_sha.as_str())
+            || !index_matches
+            || v["source_index_mode"].as_str() != Some(index_mode)
             || v["target_cc"].as_u64() != Some(u64::from(contract::CC))
         {
-            return Err("S5.5a schema/source-index/target mismatch".into());
+            return Err("S5.5a schema/source-index-state/target mismatch".into());
         }
         let meta_codecs = v["codecs"].as_object().ok_or("missing MMQ codecs")?;
         if meta_codecs.len() != contract::MMVQ_CODECS.len() {

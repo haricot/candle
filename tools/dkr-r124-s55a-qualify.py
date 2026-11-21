@@ -95,10 +95,15 @@ def neutral_gate(recipe_dir,seal,seal_path):
             "S5.5a MMQ manifest schema")
     require(obj["source_seal_sha256"]==digest(seal_path.resolve(strict=True)),
             "S5.5a sealed PTX baseline mismatch")
-    require(obj["target_cc"]==61 and
-            obj["source_index_sha256"]==digest(
-                Path(seal["catalogue"])/"native-catalog.json"),
-            "S5.5a source index mismatch")
+    index_path=Path(seal["catalogue"])/"native-catalog.json"
+    index_sha=digest(index_path) if index_path.is_file() else None
+    index_mode="present" if index_sha is not None else "legacy-absent"
+    require(obj["target_cc"]==61
+            and "source_index_sha256" in obj
+            and obj["source_index_sha256"]==index_sha
+            and obj.get("source_index_mode")==index_mode
+            and seal["catalogue_inventory"].get("index_sha256")==index_sha,
+            "S5.5a source index state/digest differs from S5.1")
     expected={c.replace("K","_k").lower() for c in CODECS}
     require(set(obj["codecs"])==expected and len(expected)==10,
             "S5.5a 10 codecs missing")

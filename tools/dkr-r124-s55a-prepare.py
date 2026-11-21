@@ -61,10 +61,12 @@ def produce(args):
     inventory=seal["catalogue_inventory"]
     require(len(inventory["packages"])==25,"S5.1 family inventory changed")
     index=root/"native-catalog.json"
-    require(index.is_file(),"sealed catalogue index not found")
-    index_sha=sha(index)
-    require(inventory["index_sha256"]==index_sha,
-            "native catalogue index differs from S5.1")
+    # S5.1 seals an optional native-catalog.json.  Its absence is a
+    # qualified legacy adapter, recorded as index_sha256=None in S5.1.
+    index_sha=sha(index) if index.is_file() else None
+    require(inventory.get("index_sha256")==index_sha,
+            "native catalogue index state/digest differs from S5.1")
+    index_mode="present" if index_sha is not None else "legacy-absent"
     rows={}
     for codec in CODECS:
         family="mmq_instance_"+codec
@@ -87,6 +89,7 @@ def produce(args):
     require(not out.exists(),"output directory already exists: "+str(out))
     out.mkdir(parents=True)
     result={"schema":SCHEMA,"target_cc":61,"source_index_sha256":index_sha,
+            "source_index_mode":index_mode,
             "source_seal_sha256":sha(sf),
             "row_tile":64,"quant_padding":512,"warp":32,
             "max_shared_bytes":49152,
