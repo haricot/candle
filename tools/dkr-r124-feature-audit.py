@@ -28,7 +28,7 @@ def require(ok, message):
         raise SystemExit("DKR_R124_FEATURE_AUDIT_FAIL: " + message)
 
 for package in ("candle-core", "candle-nn"):
-    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-s31", "cuda"):
+    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-s31", "cuda"):
         graph = resolved(package, mode)
         for name in ("candle-core", "candle-kernels", package):
             require(name in graph, f"{package}/{mode}: {name} missing")
@@ -42,14 +42,18 @@ for package in ("candle-core", "candle-nn"):
         else:
             require("cuda-dkr-catalog" in core and "cuda-dkr-catalog" in kernels,
                     f"{package}/{mode}: catalogue runtime/build selection missing")
-        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded"):
-            require(("cuda-dkr-embedded" in core) == (mode == "cuda-dkr-embedded")
+        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded"):
+            require(("cuda-dkr-embedded" in core) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded"))
                     and ("cuda-dkr-embedded" in kernels) == (mode == "cuda-dkr-embedded"),
                     f"{package}/{mode}: embedded feature propagation mismatch")
             require(not (LEGACY & core or LEGACY & kernels),
                     f"{package}/{mode}: legacy flags leaked")
             require("cuda-dkr-s31" not in core,
                     f"{package}/{mode}: hybrid feature leaked")
+            require(("cuda-dkr-cubin-embedded" in core) == (mode == "cuda-dkr-cubin-embedded"),
+                    f"{package}/{mode}: experimental CUBIN feature propagation mismatch")
+            require("cuda-dkr-cubin-embedded" not in kernels,
+                    f"{package}/{mode}: legacy/static CUDA producer must not gain CUBIN feature")
         elif mode == "cuda-dkr-s31":
             require(LEGACY <= core and LEGACY <= kernels and mode in core,
                     f"{package}/{mode}: hybrid compatibility changed")
@@ -58,3 +62,4 @@ for package in ("candle-core", "candle-nn"):
 print("DKR_R124_S41_FEATURE_GRAPH=PASS")
 print("DKR_R124_S42_FEATURE_GRAPH=PASS")
 print("DKR_R124_S44_FEATURE_GRAPH=PASS")
+print("DKR_R124_S54B_FEATURE_GRAPH=PASS")
