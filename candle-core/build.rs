@@ -20,10 +20,13 @@ mod bf16_recipe;
 #[allow(dead_code)]
 #[path = "../candle-kernels/dkr_routed_recipe.rs"]
 mod routed_recipe;
+#[path = "src/cuda_backend/dkr_s55b_build.rs"]
+mod neutral_recipe_build;
 
 const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 const CUBIN_ENV: &str = "DKR_EMBED_CUBIN_DIR";
 const MMQ_ENV: &str = "DKR_EMBED_S55_MMQ_DIR";
+const RECIPES_ENV: &str = "DKR_EMBED_S55B_RECIPES_DIR";
 const MMQ_SCHEMA: &str = "CANDLE-DKR-R124-S55A-MMQ-LAUNCH-V1";
 const CUBIN_SCHEMA: &str = "CANDLE-DKR-R124-S54B-CUBIN-V1";
 const MAX_CUBIN_BYTES: usize = 32 * 1024 * 1024;
@@ -34,6 +37,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let strict = env::var_os("CARGO_FEATURE_CUDA_DKR_EMBEDDED").is_some();
     let cubin_enabled = env::var_os("CARGO_FEATURE_CUDA_DKR_CUBIN_EMBEDDED").is_some();
     let neutral_mmq = env::var_os("CARGO_FEATURE_CUDA_DKR_NEUTRAL_MMQ").is_some();
+    let neutral_recipes = env::var_os("CARGO_FEATURE_CUDA_DKR_NEUTRAL_RECIPES").is_some();
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_NEUTRAL_RECIPES");
+    println!("cargo:rerun-if-env-changed={RECIPES_ENV}");
+    println!("cargo:rerun-if-changed=src/cuda_backend/dkr_s55b_build.rs");
+    if neutral_recipes && !neutral_mmq {
+        return Err("cuda-dkr-neutral-recipes requires cuda-dkr-neutral-mmq".into());
+    }
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_NEUTRAL_MMQ");
     println!("cargo:rerun-if-env-changed={MMQ_ENV}");
     if neutral_mmq && !strict {
@@ -305,6 +315,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         fs::write(out.join("dkr_neutral_mmq.rs"),generated)?;
         println!("cargo:warning=DKR_R124_S55A_EMBEDDED_MMQ=10");
+    }
+    if neutral_recipes {
+        let root = PathBuf::from(env::var_os(EMBED_ENV)
+            .ok_or("S5.5b requires sealed DKR_EMBED_NATIVE_DIR")?).canonicalize()?;
+        let descriptor = PathBuf::from(env::var_os(RECIPES_ENV)
+            .ok_or("S5.5b requires DKR_EMBED_S55B_RECIPES_DIR")?);
+        let mmq_dir = PathBuf::from(env::var_os(MMQ_ENV)
+            .ok_or("S5.5b requires DKR_EMBED_S55_MMQ_DIR")?);
+        neutral_recipe_build::generate(&out,&root,&descriptor,&mmq_dir,contract::CC)?;
     }
     if cubin_enabled {
         assert_eq!(cubin_rows.len(), rows.len(), "incomplete CUBIN inventory");
