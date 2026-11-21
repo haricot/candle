@@ -62,6 +62,8 @@ cuda-dkr-catalog = ["cuda", "candle-kernels/cuda-dkr-catalog", "dep:sha2", "dep:
 cuda-dkr-embedded = ["cuda-dkr-catalog", "candle-kernels/cuda-dkr-embedded"]
 # Experimental exact-target, build-verified CUBIN images. All 25 entries required.
 cuda-dkr-cubin-embedded = ["cuda-dkr-embedded"]
+# S5.5 experimental producer-owned MMQ geometry: opt-in for PTX or CUBIN.
+cuda-dkr-neutral-mmq = ["cuda-dkr-embedded"]
 # Historical hybrid/static compatibility. Retain the previous public feature.
 cuda-dkr-s31 = ["cuda-dkr-catalog", "cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]

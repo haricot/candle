@@ -23,6 +23,8 @@ mod routed_recipe;
 
 const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 const CUBIN_ENV: &str = "DKR_EMBED_CUBIN_DIR";
+const MMQ_ENV: &str = "DKR_EMBED_S55_MMQ_DIR";
+const MMQ_SCHEMA: &str = "CANDLE-DKR-R124-S55A-MMQ-LAUNCH-V1";
 const CUBIN_SCHEMA: &str = "CANDLE-DKR-R124-S54B-CUBIN-V1";
 const MAX_CUBIN_BYTES: usize = 32 * 1024 * 1024;
 
@@ -31,6 +33,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_EMBEDDED");
     let strict = env::var_os("CARGO_FEATURE_CUDA_DKR_EMBEDDED").is_some();
     let cubin_enabled = env::var_os("CARGO_FEATURE_CUDA_DKR_CUBIN_EMBEDDED").is_some();
+    let neutral_mmq = env::var_os("CARGO_FEATURE_CUDA_DKR_NEUTRAL_MMQ").is_some();
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_NEUTRAL_MMQ");
+    println!("cargo:rerun-if-env-changed={MMQ_ENV}");
+    if neutral_mmq && !strict {
+        return Err("cuda-dkr-neutral-mmq requires cuda-dkr-embedded".into());
+    }
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_CUBIN_EMBEDDED");
     println!("cargo:rerun-if-env-changed={CUBIN_ENV}");
     if cubin_enabled && !strict {
@@ -163,6 +171,127 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
         }
+    }
+    // S5.5a: table-only producer contract. The runtime contains no SM61
+    // shared-memory equation or tile candidate list under this feature.
+    if neutral_mmq {
+        let original = PathBuf::from(env::var_os(EMBED_ENV)
+            .ok_or("missing embedded native catalogue")?).canonicalize()?;
+        let source_index = original.join(native_catalog::INDEX);
+        let index_bytes = fs::read(&source_index)?;
+        let index_sha = format!("{:x}", Sha256::digest(&index_bytes));
+        let meta_root = PathBuf::from(env::var_os(MMQ_ENV)
+            .ok_or("S5.5a requires DKR_EMBED_S55_MMQ_DIR at build time")?);
+        if !meta_root.is_absolute() {
+            return Err("S5.5a MMQ recipe directory must be absolute".into());
+        }
+        let meta_root = meta_root.canonicalize()?;
+        let metadata = meta_root.join("manifest.json");
+        println!("cargo:rerun-if-changed={}", metadata.display());
+        let data = fs::read(&metadata)?;
+        if data.len() > 256 * 1024 {
+            return Err("S5.5a recipe manifest too large".into());
+        }
+        let v: serde_json::Value = serde_json::from_slice(&data)?;
+        if v["schema"].as_str() != Some(MMQ_SCHEMA)
+            || v["source_index_sha256"].as_str() != Some(&index_sha)
+            || v["target_cc"].as_u64() != Some(u64::from(contract::CC))
+        {
+            return Err("S5.5a schema/source-index/target mismatch".into());
+        }
+        let meta_codecs = v["codecs"].as_object().ok_or("missing MMQ codecs")?;
+        if meta_codecs.len() != contract::MMVQ_CODECS.len() {
+            return Err("S5.5a incomplete/extra MMQ codec family".into());
+        }
+        let number = |name: &str| -> Result<u32, Box<dyn std::error::Error>> {
+            let n = v[name].as_u64().ok_or("MMQ global field is not an unsigned integer")?;
+            Ok(u32::try_from(n)?)
+        };
+        let row_tile = number("row_tile")?;
+        let padding = number("quant_padding")?;
+        let warp = number("warp")?;
+        let max_shared = number("max_shared_bytes")?;
+        if row_tile == 0 || row_tile > 1024
+            || padding == 0 || padding > 65536
+            || warp == 0 || warp > 64 || max_shared == 0 || max_shared > 65536
+        {
+            return Err("S5.5a out-of-range general MMQ geometry".into());
+        }
+        let parse_block = |name: &str| -> Result<(u32,u32,u32), Box<dyn std::error::Error>> {
+            let arr = v[name].as_array().ok_or("MMQ block must be a 3-vector")?;
+            if arr.len() != 3 { return Err("MMQ block must have 3 dimensions".into()); }
+            let get = |i: usize| -> Result<u32, Box<dyn std::error::Error>> {
+                Ok(u32::try_from(arr[i].as_u64().ok_or("invalid MMQ block entry")?)?)
+            };
+            let block = (get(0)?,get(1)?,get(2)?);
+            let product = u64::from(block.0)*u64::from(block.1)*u64::from(block.2);
+            if product == 0 || product > 1024 {
+                return Err("MMQ block has illegal CUDA thread count".into());
+            }
+            Ok(block)
+        };
+        let qb = parse_block("quant_block")?;
+        let mb = parse_block("matrix_block")?;
+        let mut generated = Vec::new();
+        for &codec in contract::MMVQ_CODECS {
+            let record = meta_codecs.get(codec).ok_or("S5.5a missing declared codec")?;
+            let family = format!("mmq_instance_{codec}");
+            if record["family"].as_str() != Some(family.as_str()) {
+                return Err(format!("S5.5a wrong family for {codec}").into());
+            }
+            let ptx = original.join(&family).join(format!("{family}.ptx"));
+            let real_sha = format!("{:x}",Sha256::digest(fs::read(&ptx)?));
+            if record["ptx_sha256"].as_str() != Some(real_sha.as_str()) {
+                return Err(format!("S5.5a PTX provenance mismatch for {family}").into());
+            }
+            let source_manifest: serde_json::Value = serde_json::from_slice(
+                &fs::read(original.join(&family).join("manifest.json"))?)?;
+            let exported = source_manifest["mmq_entries"].as_object()
+                .ok_or("qualified native MMQ template map missing")?;
+            if exported.len() != 16 {
+                return Err(format!("S5.5a native MMQ symbol map incomplete: {family}").into());
+            }
+            let tiles = record["tiles"].as_array().ok_or("MMQ tile list missing")?;
+            if tiles.len() != 8 {
+                return Err(format!("S5.5a invalid tile count for {family}").into());
+            }
+            let mut generated_tiles = Vec::new();
+            let mut prev_width = 0;
+            for tile in tiles {
+                let width = u32::try_from(tile["width"].as_u64()
+                    .ok_or("invalid MMQ tile width")?)?;
+                let shared = u32::try_from(tile["shared_bytes"].as_u64()
+                    .ok_or("invalid MMQ shared memory")?)?;
+                if width <= prev_width || width > 1024 || shared == 0 || shared > max_shared {
+                    return Err(format!("S5.5a illegal MMQ tile for {family}").into());
+                }
+                for checked in [0,1] {
+                    let key = format!("{width}:{checked}");
+                    if exported.get(&key).and_then(|s| s.as_str()).is_none() {
+                        return Err(format!("S5.5a missing actual symbol key {family}/{key}").into());
+                    }
+                }
+                generated_tiles.push(format!(
+                    "dkr_kernel_registry::mmq_recipe::MmqTile {{ width:{width}, shared_bytes:{shared} }}"
+                ));
+                prev_width = width;
+            }
+            generated.push(format!(
+                "dkr_kernel_registry::mmq_recipe::MmqCodec {{ name:{codec:?}, tiles:&[{}] }}",
+                generated_tiles.join(",")
+            ));
+        }
+        let generated = format!(
+            "pub(super) const RECIPE: dkr_kernel_registry::mmq_recipe::MmqRecipe = \
+             dkr_kernel_registry::mmq_recipe::MmqRecipe {{ \
+             row_tile:{row_tile}, quant_padding:{padding}, warp:{warp}, \
+             max_shared_bytes:{max_shared}, \
+             quant_block:({},{},{}), matrix_block:({},{},{}), \
+             codecs:&[{}] }};\n",
+            qb.0,qb.1,qb.2,mb.0,mb.1,mb.2,generated.join(",")
+        );
+        fs::write(out.join("dkr_neutral_mmq.rs"),generated)?;
+        println!("cargo:warning=DKR_R124_S55A_EMBEDDED_MM Q=10".replace(' ',""));
     }
     if cubin_enabled {
         assert_eq!(cubin_rows.len(), rows.len(), "incomplete CUBIN inventory");
