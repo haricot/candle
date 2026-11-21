@@ -6,6 +6,7 @@ use std::collections::{HashMap,VecDeque};
 use std::hash::Hash;
 
 pub mod telemetry;
+pub mod mmq_recipe;
 
 pub const NATIVE_ABI: &str = "candle.native.ptx.v1";
 pub const TYPED_ABI: &str = "dkr.typed.v1";
