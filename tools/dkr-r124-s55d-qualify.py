@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import shutil
 import statistics
+import struct
 import subprocess
 import sys
 import time
@@ -181,7 +182,7 @@ def compare_values(left,right,atol,rtol,label):
         max_abs=max(max_abs,d)
         max_rel=max(max_rel,rel)
         max_scaled=max(max_scaled,d/max(scale,1e-12))
-        if a!=b:
+        if struct.pack('<f',a)!=struct.pack('<f',b):
             exact=False
         if d>scale:
             count+=1
