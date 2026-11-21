@@ -38,6 +38,10 @@ mod neutral_recipes {
     use super::{Fp8Recipe,Fp4Recipe,Bf16Recipe,RoutedRecipe,bf16_recipe};
     include!(concat!(env!("OUT_DIR"), "/dkr_neutral_recipes.rs"));
 }
+#[cfg(feature = "cuda-dkr-cudaforge-catalog")]
+mod cudaforge_catalogue {
+    include!(concat!(env!("OUT_DIR"), "/dkr_cudaforge_catalogue.rs"));
+}
 use dkr_kernel_registry::{Registry, RegistryKey, VerifiedArtifact, NATIVE_ABI};
 
 pub(super) struct ExternalModules {
@@ -128,6 +132,11 @@ impl ExternalModules {
                     // the experimental catalogue-driven runtime.
                     if trace {
                         eprintln!("DKR_R124_S55B_RECIPES_CATALOG source=embedded families=fp8,fp4,bf16,routed target=sm{device_cc}");
+                        #[cfg(feature = "cuda-dkr-cudaforge-catalog")]
+                        eprintln!("DKR_R124_S55C_CATALOGUE_ADMITTED producer={} target=sm{} families=25 recipes=4 sha256={}",
+                            cudaforge_catalogue::PRODUCER,
+                            cudaforge_catalogue::TARGET_CC,
+                            cudaforge_catalogue::ATTESTATION_SHA256);
                     }
                     (neutral_recipes::FP8,neutral_recipes::FP4,
                      neutral_recipes::BF16,neutral_recipes::ROUTED)
@@ -302,6 +311,23 @@ impl ExternalModules {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "cuda-dkr-cudaforge-catalog")]
+    #[test]
+    fn dkr_s55c_cudaforge_catalogue_build_attestation() {
+        assert_eq!(cudaforge_catalogue::PRODUCER, "cudaforge");
+        assert_eq!(cudaforge_catalogue::TARGET_CC, contract::CC);
+        assert_eq!(cudaforge_catalogue::ATTESTATION_SHA256.len(), 64);
+        assert!(cudaforge_catalogue::ATTESTATION_SHA256.bytes()
+            .all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(neutral_mmq::RECIPE.codecs.len(), 10);
+        assert_eq!(neutral_recipes::FP8, fp8_recipe::S31_FP8);
+        assert_eq!(neutral_recipes::FP4, fp4_recipe::S31_FP4);
+        assert_eq!(neutral_recipes::BF16, bf16_recipe::S31_BF16);
+        assert_eq!(neutral_recipes::ROUTED, routed_recipe::S31_ROUTED);
+        println!("DKR_R124_S55C_ATTESTATION_TEST=PASS families=25 recipes=4 codecs=10");
+    }
+
     #[cfg(feature = "cuda-dkr-neutral-recipes")]
     #[test]
     fn dkr_s55b_typed_recipes_match_qualified_s31() {
