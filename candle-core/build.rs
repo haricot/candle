@@ -1,4 +1,5 @@
 use std::{env, fs, path::PathBuf};
+use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 #[path = "../candle-kernels/dkr_s31_contract.rs"]
@@ -21,11 +22,20 @@ mod bf16_recipe;
 mod routed_recipe;
 
 const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
+const CUBIN_ENV: &str = "DKR_EMBED_CUBIN_DIR";
+const CUBIN_SCHEMA: &str = "CANDLE-DKR-R124-S54B-CUBIN-V1";
+const MAX_CUBIN_BYTES: usize = 32 * 1024 * 1024;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed={EMBED_ENV}");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_EMBEDDED");
     let strict = env::var_os("CARGO_FEATURE_CUDA_DKR_EMBEDDED").is_some();
+    let cubin_enabled = env::var_os("CARGO_FEATURE_CUDA_DKR_CUBIN_EMBEDDED").is_some();
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_CUBIN_EMBEDDED");
+    println!("cargo:rerun-if-env-changed={CUBIN_ENV}");
+    if cubin_enabled && !strict {
+        return Err("cuda-dkr-cubin-embedded requires cuda-dkr-embedded".into());
+    }
     if strict {
         if env::var_os(EMBED_ENV).is_none() {
             return Err("cuda-dkr-embedded requires DKR_EMBED_NATIVE_DIR at build time".into());
@@ -41,6 +51,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=../candle-kernels/dkr_s31_contract.rs");
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut rows = Vec::new();
+    let mut cubin_rows = Vec::new();
+    let cubin_input: Option<(PathBuf, serde_json::Value)> = if cubin_enabled {
+        let p = PathBuf::from(env::var_os(CUBIN_ENV)
+            .ok_or("cuda-dkr-cubin-embedded requires DKR_EMBED_CUBIN_DIR")?);
+        if !p.is_absolute() { return Err("DKR_EMBED_CUBIN_DIR must be absolute".into()); }
+        let dir = p.canonicalize()?;
+        if !dir.is_dir() { return Err("CUBIN input must be a directory".into()); }
+        let mf = dir.join("manifest.json");
+        println!("cargo:rerun-if-changed={}", mf.display());
+        let bytes = fs::read(&mf)?;
+        if bytes.len() > 256 * 1024 { return Err("CUBIN manifest too large".into()); }
+        let v: serde_json::Value = serde_json::from_slice(&bytes)?;
+        if v["schema"].as_str() != Some(CUBIN_SCHEMA)
+            || v["target_cc"].as_u64() != Some(61)
+            || v["families"].as_object().map(|x| x.len()) != Some(contract::FAMILIES.len())
+            || v["ptxas_version"].as_str().is_none_or(|s| !s.contains("release 12."))
+        {
+            return Err("CUBIN manifest schema, SM61 target, family count, or CUDA 12 toolchain invalid".into());
+        }
+        Some((dir, v))
+    } else { None };
     let mut root_literal = "None".to_owned();
     let mut recipe_literal = "None".to_owned();
     let mut fp8_literal = "None".to_owned();
@@ -100,7 +131,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "({name:?}, VerifiedArtifact::from_build_verified(include_str!({copy:?}), {}, {:?}, \
                  vec![{entries}]), {symbols})", verified.key().target_cc(), verified.key().sha256()
             ));
+            if let Some((cubin_root, cubin_index)) = &cubin_input {
+                let rec = &cubin_index["families"][name];
+                if rec["target_cc"].as_u64() != Some(u64::from(verified.key().target_cc()))
+                    || rec["ptx_sha256"].as_str() != Some(verified.key().sha256())
+                {
+                    return Err(format!("CUBIN {name} target/PTX provenance mismatch").into());
+                }
+                let image_path = cubin_root.join("cubins").join(format!("{name}.cubin"));
+                let resolved = image_path.canonicalize()?;
+                if !resolved.starts_with(cubin_root) || !resolved.is_file() {
+                    return Err(format!("CUBIN outside qualified input directory: {name}").into());
+                }
+                println!("cargo:rerun-if-changed={}", resolved.display());
+                let data = fs::read(&resolved)?;
+                if data.len() < 64 || data.len() > MAX_CUBIN_BYTES || !data.starts_with(b"\\x7fELF") {
+                    return Err(format!("CUBIN {name} is not an acceptable ELF image").into());
+                }
+                let image_sha = format!("{:x}", Sha256::digest(&data));
+                if rec["cubin_sha256"].as_str() != Some(image_sha.as_str())
+                    || rec["cubin_bytes"].as_u64() != Some(data.len() as u64)
+                {
+                    return Err(format!("CUBIN {name} digest/size mismatch").into());
+                }
+                let dest = out.join(format!("dkr-native-{name}.cubin"));
+                fs::write(&dest, data)?;
+                cubin_rows.push(format!(
+                    "({name:?}, include_bytes!({dest:?}) as &'static [u8], {image_sha:?}, {}, {:?})",
+                    verified.key().target_cc(), verified.key().sha256()
+                ));
+            }
         }
+    }
+    if cubin_enabled {
+        assert_eq!(cubin_rows.len(), rows.len(), "incomplete CUBIN inventory");
+        println!("cargo:warning=CANDLE_DKR_CUBIN_EMBEDDED=1 packages={}", cubin_rows.len());
     }
     if strict {
         assert_eq!(rows.len(), contract::FAMILIES.len(), "incomplete embedded catalogue");
@@ -116,8 +181,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          pub const BF16_RECIPE: Option<Bf16Recipe> = {bf16_literal};\n\
          pub const ROUTED_RECIPE: Option<RoutedRecipe> = {routed_literal};\n\
          pub fn modules() -> Vec<(&'static str, VerifiedArtifact, \
-         Option<std::collections::BTreeMap<String,String>>)> {{ vec![{}] }}\n",
-            rows.join(",\n")
+         Option<std::collections::BTreeMap<String,String>>)> {{ vec![{}] }}\n\
+         pub fn cubins() -> Vec<(&'static str, &'static [u8], &'static str, u32, &'static str)> {{ vec![{}] }}\n",
+            rows.join(",\n"), cubin_rows.join(",\n")
         ),
     )?;
     Ok(())

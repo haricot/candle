@@ -60,6 +60,8 @@ cuda = ["cudarc", "dep:candle-kernels"]
 cuda-dkr-catalog = ["cuda", "candle-kernels/cuda-dkr-catalog", "dep:sha2", "dep:serde_json", "dep:dkr-kernel-registry"]
 # Strict deployment build: requires an embedded catalogue and disallows runtime overrides.
 cuda-dkr-embedded = ["cuda-dkr-catalog", "candle-kernels/cuda-dkr-embedded"]
+# Experimental exact-target, build-verified CUBIN images. All 25 entries required.
+cuda-dkr-cubin-embedded = ["cuda-dkr-embedded"]
 # Historical hybrid/static compatibility. Retain the previous public feature.
 cuda-dkr-s31 = ["cuda-dkr-catalog", "cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]
