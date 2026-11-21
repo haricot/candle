@@ -27,6 +27,8 @@ const EMBED_ENV: &str = "DKR_EMBED_NATIVE_DIR";
 const CUBIN_ENV: &str = "DKR_EMBED_CUBIN_DIR";
 const MMQ_ENV: &str = "DKR_EMBED_S55_MMQ_DIR";
 const RECIPES_ENV: &str = "DKR_EMBED_S55B_RECIPES_DIR";
+const CUDAFORGE_ENV: &str = "DKR_EMBED_S55C_CUDAFORGE_DIR";
+const CUDAFORGE_SCHEMA: &str = "CANDLE-DKR-R124-S55C-CUDAFORGE-CATALOG-V1";
 const MMQ_SCHEMA: &str = "CANDLE-DKR-R124-S55A-MMQ-LAUNCH-V1";
 const CUBIN_SCHEMA: &str = "CANDLE-DKR-R124-S54B-CUBIN-V1";
 const MAX_CUBIN_BYTES: usize = 32 * 1024 * 1024;
@@ -38,6 +40,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cubin_enabled = env::var_os("CARGO_FEATURE_CUDA_DKR_CUBIN_EMBEDDED").is_some();
     let neutral_mmq = env::var_os("CARGO_FEATURE_CUDA_DKR_NEUTRAL_MMQ").is_some();
     let neutral_recipes = env::var_os("CARGO_FEATURE_CUDA_DKR_NEUTRAL_RECIPES").is_some();
+    let cudaforge_catalogue = env::var_os("CARGO_FEATURE_CUDA_DKR_CUDAFORGE_CATALOG").is_some();
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_CUDAFORGE_CATALOG");
+    println!("cargo:rerun-if-env-changed={CUDAFORGE_ENV}");
+    if cudaforge_catalogue && (!neutral_recipes || !cubin_enabled) {
+        return Err("Cudaforge catalogue requires verified neutral recipes and embedded CUBIN".into());
+    }
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA_DKR_NEUTRAL_RECIPES");
     println!("cargo:rerun-if-env-changed={RECIPES_ENV}");
     println!("cargo:rerun-if-changed=src/cuda_backend/dkr_s55b_build.rs");
@@ -324,6 +332,83 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mmq_dir = PathBuf::from(env::var_os(MMQ_ENV)
             .ok_or("S5.5b requires DKR_EMBED_S55_MMQ_DIR")?);
         neutral_recipe_build::generate(&out,&root,&descriptor,&mmq_dir,contract::CC)?;
+    }
+    if cudaforge_catalogue {
+        // Strict, cross-attested derived manifests: no runtime producer paths,
+        // no text policy inferred from GPU type, no mutation of sealed inputs.
+        let dir = PathBuf::from(env::var_os(CUDAFORGE_ENV)
+            .ok_or("S5.5c requires DKR_EMBED_S55C_CUDAFORGE_DIR")?);
+        if !dir.is_absolute() {
+            return Err("S5.5c catalogue path must be absolute".into());
+        }
+        let dir = dir.canonicalize()?;
+        let bundle_path = dir.join("catalogue.json");
+        println!("cargo:rerun-if-changed={}",bundle_path.display());
+        let bytes = fs::read(&bundle_path)?;
+        if bytes.len()>256*1024 {return Err("S5.5c bundle manifest too large".into());}
+        let bundle:serde_json::Value=serde_json::from_slice(&bytes)?;
+        let cc=contract::CC;
+        if bundle["schema"].as_str()!=Some(CUDAFORGE_SCHEMA)
+            || bundle["producer"].as_str()!=Some("cudaforge")
+            || bundle["producer_command"].as_str()!=Some("dkr-cudaforge-catalog")
+            || bundle["target_cc"].as_u64()!=Some(u64::from(cc))
+            || bundle["family_count"].as_u64()!=Some(25)
+            || bundle["recipe_count"].as_u64()!=Some(4)
+            || bundle["mmq_codec_count"].as_u64()!=Some(10)
+        {
+            return Err("S5.5c catalogue schema/producer/target cardinality mismatch".into());
+        }
+        let source_recipe = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tools/dkr-s31-builder/recipes/sm61.json");
+        println!("cargo:rerun-if-changed={}",source_recipe.display());
+        let spec_sha=format!("{:x}",Sha256::digest(fs::read(&source_recipe)?));
+        if bundle["recipe_spec_sha256"].as_str()!=Some(spec_sha.as_str()) {
+            return Err("S5.5c source recipe spec digest does not match producer".into());
+        }
+        let mmq = dir.join("mmq").canonicalize()?;
+        let recipes = dir.join("recipes").canonicalize()?;
+        let runtime_mmq = PathBuf::from(env::var_os(MMQ_ENV)
+            .ok_or("S5.5c missing S5.5a recipe input")?).canonicalize()?;
+        let runtime_recipes = PathBuf::from(env::var_os(RECIPES_ENV)
+            .ok_or("S5.5c missing S5.5b recipe input")?).canonicalize()?;
+        if mmq!=runtime_mmq || recipes!=runtime_recipes {
+            return Err("S5.5c runtime recipe paths do not match attested Cudaforge outputs".into());
+        }
+        let mmq_bytes=fs::read(mmq.join("manifest.json"))?;
+        let recipes_bytes=fs::read(recipes.join("manifest.json"))?;
+        let cubins = PathBuf::from(env::var_os(CUBIN_ENV)
+            .ok_or("S5.5c CUBIN inventory input missing")?).canonicalize()?;
+        let cubin_bytes=fs::read(cubins.join("manifest.json"))?;
+        let mmq_sha=format!("{:x}",Sha256::digest(&mmq_bytes));
+        let recipes_sha=format!("{:x}",Sha256::digest(&recipes_bytes));
+        let cubin_sha=format!("{:x}",Sha256::digest(&cubin_bytes));
+        if bundle["mmq_manifest_sha256"].as_str()!=Some(mmq_sha.as_str())
+            || bundle["recipes_manifest_sha256"].as_str()!=Some(recipes_sha.as_str())
+            || bundle["cubin_manifest_sha256"].as_str()!=Some(cubin_sha.as_str()) {
+            return Err("S5.5c derived recipe/CUBIN manifest digests inconsistent".into());
+        }
+        let mmq_v:serde_json::Value=serde_json::from_slice(&mmq_bytes)?;
+        let recipes_v:serde_json::Value=serde_json::from_slice(&recipes_bytes)?;
+        if bundle["source_seal_sha256"]!=mmq_v["source_seal_sha256"]
+            || bundle["source_seal_sha256"]!=recipes_v["source_seal_sha256"]
+            || bundle["source_index_sha256"]!=mmq_v["source_index_sha256"]
+            || bundle["source_index_sha256"]!=recipes_v["source_index_sha256"]
+            || bundle["source_index_mode"]!=mmq_v["source_index_mode"]
+            || bundle["source_index_mode"]!=recipes_v["source_index_mode"]
+            || mmq_v["target_cc"]!=bundle["target_cc"]
+            || recipes_v["target_cc"]!=bundle["target_cc"]
+        {
+            return Err("S5.5c receipt/PTX/index/target provenance mismatch".into());
+        }
+        // The two sub-manifests also pass all existing S5.5a/S5.5b
+        // build verifiers: 10×8 MMQ tiles, PTX digests and entrypoint ABI.
+        fs::write(out.join("dkr_cudaforge_catalogue.rs"), format!(
+            "pub(super) const PRODUCER:&str=\"cudaforge\";\n\
+             pub(super) const TARGET_CC:u32={cc};\n\
+             pub(super) const ATTESTATION_SHA256:&str={:?};\n",
+            format!("{:x}",Sha256::digest(&bytes))
+        ))?;
+        println!("cargo:warning=DKR_R124_S55C_CUDAFORGE_ADMITTED=1 families=25 recipes=4");
     }
     if cubin_enabled {
         assert_eq!(cubin_rows.len(), rows.len(), "incomplete CUBIN inventory");
