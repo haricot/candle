@@ -299,6 +299,14 @@ def headless(args):
     # Reuse S5.5b's ancestral-diff guard for compiled native Rust inputs,
     # then explicitly add our model probe and numerical capture sources.
     s55b.check_archived_source(receipt["source_head"])
+    # S5.5b's compiler-source guard predates this standalone model crate.
+    # Guard the exact additional Rust inputs against script-only updates.
+    require(subprocess.run([
+        "git","diff","--quiet",receipt["source_head"],"HEAD","--",
+        "tools/dkr-s55d-model-probe", "candle-nn/tests/dkr_s55d_parity.rs",
+        "candle-nn/Cargo.toml"
+    ],cwd=ROOT).returncode==0,
+        "S5.5d model or numeric Rust sources changed since the archive build")
     require(s55b.digest(Path(receipt["model"]))==receipt["model_sha256"]
             and Path(receipt["model"]).stat().st_size==receipt["model_bytes"],
             "model GGUF changed after binary compilation")
