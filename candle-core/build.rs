@@ -135,6 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let rec = &cubin_index["families"][name.as_str()];
                 if rec["target_cc"].as_u64() != Some(u64::from(verified.key().target_cc()))
                     || rec["ptx_sha256"].as_str() != Some(verified.key().sha256())
+                    || rec["ptxas_version"].as_str() != cubin_index["ptxas_version"].as_str()
                 {
                     return Err(format!("CUBIN {name} target/PTX provenance mismatch").into());
                 }

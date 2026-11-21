@@ -97,8 +97,6 @@ def historical_gate(s52_path,s53_path,seal):
     require(s53["schema"]=="CANDLE-DKR-R124-S53-RESULT-V1"
             and s53["status"]=="PASS" and set(s53["summary"])==set(CASES),
             "S5.3 original performance baseline invalid")
-    require(s53["s51_seal_sha256"]==digest(Path(s53["rounds"][0]["cache_path"]).parents[2]/"dkr-r124-s51"/"seal.json")
-            if False else True,"unreachable")
     receipt=ROOT/"target/dkr-r124-s53/receipt.json"
     old=json.loads(receipt.read_text())
     require(s53["s51_seal_sha256"]==old["s51_seal_sha256"] and
@@ -250,6 +248,17 @@ def headless(args):
                     env,out/"s52-cubin-numeric.log")
     coverage=verify_provenance(numeric,manifest,sealed)
     cases=check_numeric(numeric)
+    # Strict CUBIN mode must preserve S4.4 anti-override behavior.
+    denied_source=dict(env,MISTRALRS_DKR_ARTIFACT_SOURCE="filesystem")
+    reject_source=execute(cmd+["test(=dkr_embedded_rejects_filesystem)"],
+                          denied_source,out/"reject-runtime-filesystem.log")
+    require("test dkr_embedded_rejects_filesystem ... ok" in reject_source,
+            "filesystem override not rejected")
+    denied_dir=dict(env,CANDLE_DKR_S31_DIR="/tmp/never-valid-native-package")
+    reject_dir=execute(cmd+["test(=dkr_embedded_rejects_directory_override)"],
+                       denied_dir,out/"reject-runtime-dir.log")
+    require("test dkr_embedded_rejects_directory_override ... ok" in reject_dir,
+            "native directory override not rejected")
     results=[]
     for round_id in (1,2,3):
         cache=out/f"cubin-cache-r{round_id}"
