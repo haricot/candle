@@ -28,6 +28,11 @@ mod embedded {
     use super::*;
     include!(concat!(env!("OUT_DIR"), "/dkr_native_embedded.rs"));
 }
+
+#[cfg(feature = "cuda-dkr-neutral-mmq")]
+mod neutral_mmq {
+    include!(concat!(env!("OUT_DIR"), "/dkr_neutral_mmq.rs"));
+}
 use dkr_kernel_registry::{Registry, RegistryKey, VerifiedArtifact, NATIVE_ABI};
 
 pub(super) struct ExternalModules {
@@ -41,6 +46,8 @@ pub(super) struct ExternalModules {
     bf16: Bf16Recipe,
     routed:RoutedRecipe,
     mmq_symbols: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
+    #[cfg(feature = "cuda-dkr-neutral-mmq")]
+    neutral_mmq: dkr_kernel_registry::mmq_recipe::MmqRecipe,
     #[cfg(feature = "cuda-dkr-cubin-embedded")]
     cubin_images: std::collections::HashMap<dkr_kernel_registry::ArtifactKey, EmbeddedCubin>,
 }
@@ -176,11 +183,25 @@ impl ExternalModules {
             }
             images
         };
+        #[cfg(feature = "cuda-dkr-neutral-mmq")]
+        let neutral_mmq = {
+            if source != "embedded" {
+                crate::bail!("neutral MMQ requires a verified embedded catalogue");
+            }
+            let table = neutral_mmq::RECIPE;
+            if trace {
+                eprintln!("DKR_R124_S55A_MMQ_CATALOG source=embedded codecs={} target=sm{}",
+                    table.codecs.len(),device_cc);
+            }
+            table
+        };
         if trace {
             eprintln!("CANDLE_DKR_NATIVE_CATALOG source={source} manifests={}", modules.len());
             eprintln!("CANDLE_DKR_CATALOG_ADMISSION source={source} elapsed_us={}", started.elapsed().as_micros());
         }
         Ok(Some(Self { modules, native_keys, mmq_symbols, trace, device_cc, recipe, fp8, fp4, bf16,routed,
+            #[cfg(feature = "cuda-dkr-neutral-mmq")]
+            neutral_mmq,
             #[cfg(feature = "cuda-dkr-cubin-embedded")]
             cubin_images,
         }))
@@ -204,8 +225,17 @@ impl ExternalModules {
         -> Result<(String, cudarc::driver::LaunchConfig, cudarc::driver::LaunchConfig)>
     {
         use cudarc::driver::LaunchConfig;
+        #[cfg(feature = "cuda-dkr-neutral-mmq")]
+        let geometry = self.neutral_mmq.select(codec,rows,batch,padded,warp,limit)
+            .map_err(|e|crate::Error::Msg(e.into()))?;
+        #[cfg(not(feature = "cuda-dkr-neutral-mmq"))]
         let geometry = self.recipe.mmq_geometry(codec, rows, batch, padded, warp, limit)
             .map_err(crate::Error::Msg)?;
+        #[cfg(feature = "cuda-dkr-neutral-mmq")]
+        if self.trace {
+            eprintln!("DKR_R124_S55A_MMQ_PLAN source=embedded codec={codec} tile={} shared_bytes={}",
+                geometry.matrix_key,geometry.matrix_shared);
+        }
         Ok((geometry.matrix_key,
             LaunchConfig { grid_dim: geometry.quant_grid, block_dim: geometry.quant_block, shared_mem_bytes: 0 },
             LaunchConfig { grid_dim: geometry.matrix_grid, block_dim: geometry.matrix_block,
@@ -337,6 +367,32 @@ mod tests {
                 assert!(embedded::modules().is_empty());
             }
         }
+    }
+
+    #[cfg(feature = "cuda-dkr-neutral-mmq")]
+    #[test]
+    fn dkr_s55a_neutral_mmq_matches_frozen_s31_qualified_shapes() {
+        let neutral = neutral_mmq::RECIPE;
+        assert_eq!(neutral.codecs.len(), contract::MMVQ_CODECS.len());
+        for codec in contract::MMVQ_CODECS {
+            for rows in [1, 64, 65, 129, 1024] {
+                for batch in [1, 8, 9, 16, 17, 64, 65, 1024] {
+                    let frozen = NativeRecipe::S31NativeV1
+                        .mmq_geometry(codec,rows,batch,1024,32,49152).unwrap();
+                    let plan = neutral.select(codec,rows,batch,1024,32,49152).unwrap();
+                    assert_eq!(plan.matrix_key,frozen.matrix_key, "{codec}: {rows}/{batch}");
+                    assert_eq!(plan.matrix_grid,frozen.matrix_grid);
+                    assert_eq!(plan.quant_grid,frozen.quant_grid);
+                    assert_eq!(plan.quant_block,frozen.quant_block);
+                    assert_eq!(plan.matrix_block,frozen.matrix_block);
+                    assert_eq!(plan.matrix_shared,frozen.matrix_shared);
+                }
+            }
+        }
+        assert!(neutral.select("q4_k",64,9,0,32,49152).is_err());
+        assert!(neutral.select("unknown",64,9,1024,32,49152).is_err());
+        assert!(neutral.select("q4_k",64,9,1024,16,49152).is_err());
+        println!("DKR_R124_S55A_TABLE_PARITY=PASS codecs=10");
     }
 
     #[test]

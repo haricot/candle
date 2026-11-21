@@ -194,7 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let v: serde_json::Value = serde_json::from_slice(&data)?;
         if v["schema"].as_str() != Some(MMQ_SCHEMA)
-            || v["source_index_sha256"].as_str() != Some(&index_sha)
+            || v["source_index_sha256"].as_str() != Some(index_sha.as_str())
             || v["target_cc"].as_u64() != Some(u64::from(contract::CC))
         {
             return Err("S5.5a schema/source-index/target mismatch".into());
@@ -291,7 +291,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             qb.0,qb.1,qb.2,mb.0,mb.1,mb.2,generated.join(",")
         );
         fs::write(out.join("dkr_neutral_mmq.rs"),generated)?;
-        println!("cargo:warning=DKR_R124_S55A_EMBEDDED_MM Q=10".replace(' ',""));
+        println!("cargo:warning=DKR_R124_S55A_EMBEDDED_MMQ=10");
     }
     if cubin_enabled {
         assert_eq!(cubin_rows.len(), rows.len(), "incomplete CUBIN inventory");
