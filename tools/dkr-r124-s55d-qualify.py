@@ -225,8 +225,8 @@ def numeric_compare(a,b):
         n+=row["elements"]
         mismatch+=row["mismatches"]
     require(n>70000,"too few full tensor elements compared")
-    require(mismatch==0,f"{mismatch} PTX/CUBIN tensor elements exceed tolerances")
-    return {"status":"PASS","cases":len(rows),"elements":n,
+    return {"status":"PASS" if mismatch==0 else "FAIL",
+            "mismatches":mismatch,"cases":len(rows),"elements":n,
             "family_cases":counts,
             "bitwise_float_equal_cases":sum(v["bit_equal_float_values"] for v in rows.values()),
             "max_abs":max(v["max_abs"] for v in rows.values()),
@@ -352,8 +352,10 @@ def headless(args):
         outputs[mode]=sample
         gpu_info(env,out/f"gpu-after-numeric-{mode}.log")
     numeric=numeric_compare(outputs["ptx"],outputs["cubin"])
-    print(f"DKR_R124_S55D_NUMERIC=PASS cases={numeric['cases']} elements={numeric['elements']}")
     (out/"numeric-delta.json").write_text(json.dumps(numeric,sort_keys=True,indent=2)+"\n")
+    require(numeric["status"]=="PASS",
+            f"{numeric['mismatches']} PTX/CUBIN tensor elements exceed tolerances; see numeric-delta.json")
+    print(f"DKR_R124_S55D_NUMERIC=PASS cases={numeric['cases']} elements={numeric['elements']}")
 
     model_reports={"ptx":[],"cubin":[]}
     comparisons=[]
