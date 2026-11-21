@@ -44,7 +44,7 @@ for package in ("candle-core", "candle-nn"):
                     f"{package}/{mode}: catalogue runtime/build selection missing")
         if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded"):
             require(("cuda-dkr-embedded" in core) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded"))
-                    and ("cuda-dkr-embedded" in kernels) == (mode == "cuda-dkr-embedded"),
+                    and ("cuda-dkr-embedded" in kernels) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded")),
                     f"{package}/{mode}: embedded feature propagation mismatch")
             require(not (LEGACY & core or LEGACY & kernels),
                     f"{package}/{mode}: legacy flags leaked")
