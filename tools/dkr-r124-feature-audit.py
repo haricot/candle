@@ -28,7 +28,7 @@ def require(ok, message):
         raise SystemExit("DKR_R124_FEATURE_AUDIT_FAIL: " + message)
 
 for package in ("candle-core", "candle-nn"):
-    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-s31", "cuda"):
+    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-s31", "cuda"):
         graph = resolved(package, mode)
         for name in ("candle-core", "candle-kernels", package):
             require(name in graph, f"{package}/{mode}: {name} missing")
@@ -42,20 +42,24 @@ for package in ("candle-core", "candle-nn"):
         else:
             require("cuda-dkr-catalog" in core and "cuda-dkr-catalog" in kernels,
                     f"{package}/{mode}: catalogue runtime/build selection missing")
-        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes"):
-            require(("cuda-dkr-embedded" in core) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes"))
-                    and ("cuda-dkr-embedded" in kernels) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes")),
+        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog"):
+            require(("cuda-dkr-embedded" in core) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog"))
+                    and ("cuda-dkr-embedded" in kernels) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog")),
                     f"{package}/{mode}: embedded feature propagation mismatch")
             require(not (LEGACY & core or LEGACY & kernels),
                     f"{package}/{mode}: legacy flags leaked")
             require("cuda-dkr-s31" not in core,
                     f"{package}/{mode}: hybrid feature leaked")
-            require(("cuda-dkr-cubin-embedded" in core) == (mode == "cuda-dkr-cubin-embedded"),
+            require(("cuda-dkr-cubin-embedded" in core) == (mode in ("cuda-dkr-cubin-embedded", "cuda-dkr-cudaforge-catalog")),
                     f"{package}/{mode}: experimental CUBIN feature propagation mismatch")
-            require(("cuda-dkr-neutral-mmq" in core) == (mode in ("cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes")),
+            require(("cuda-dkr-neutral-mmq" in core) == (mode in ("cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog")),
                     f"{package}/{mode}: neutral launch table feature propagation mismatch")
-            require(("cuda-dkr-neutral-recipes" in core) == (mode == "cuda-dkr-neutral-recipes"),
+            require(("cuda-dkr-neutral-recipes" in core) == (mode in ("cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog")),
                     f"{package}/{mode}: typed recipe feature propagation mismatch")
+            require(("cuda-dkr-cudaforge-catalog" in core) == (mode == "cuda-dkr-cudaforge-catalog"),
+                    f"{package}/{mode}: Cudaforge catalog feature closure mismatch")
+            require("cuda-dkr-cudaforge-catalog" not in kernels,
+                    f"{package}/{mode}: Cudaforge producer must not become a kernel dependency")
             require("cuda-dkr-neutral-recipes" not in kernels,
                     f"{package}/{mode}: producer recipe must not activate static kernels")
             require("cuda-dkr-neutral-mmq" not in kernels,
@@ -73,3 +77,4 @@ print("DKR_R124_S44_FEATURE_GRAPH=PASS")
 print("DKR_R124_S54B_FEATURE_GRAPH=PASS")
 print("DKR_R124_S55A_FEATURE_GRAPH=PASS")
 print("DKR_R124_S55B_FEATURE_GRAPH=PASS")
+print("DKR_R124_S55C_FEATURE_GRAPH=PASS")
