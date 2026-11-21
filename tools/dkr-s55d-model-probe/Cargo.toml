@@ -9,9 +9,11 @@ description = "Deterministic offline Qwen3 GGUF PTX/CUBIN cold-start qualificati
 anyhow = { workspace = true }
 candle = { workspace = true }
 candle-transformers = { workspace = true }
+# Keep candle-nn feature selection aligned with candle-core: no static CUDA FFI.
+candle-nn = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
 default = []
-ptx = ["candle/cuda-dkr-embedded", "candle-transformers/cuda"]
-cubin = ["candle/cuda-dkr-cudaforge-catalog", "candle-transformers/cuda"]
+ptx = ["candle/cuda-dkr-embedded", "candle-nn/cuda-dkr-embedded", "candle-transformers/cuda"]
+cubin = ["candle/cuda-dkr-cudaforge-catalog", "candle-nn/cuda-dkr-cudaforge-catalog", "candle-transformers/cuda"]
