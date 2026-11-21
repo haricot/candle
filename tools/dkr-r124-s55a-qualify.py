@@ -35,7 +35,7 @@ RE_CASE=re.compile(
     r"max_us=(\d+) tokens=(\d+) samples=80$",re.M)
 
 def require(ok,msg):
-    if not ok: raise SystemExit("DKR_R124_S54B_FAIL: "+msg)
+    if not ok: raise SystemExit("DKR_R124_S55A_FAIL: "+msg)
 
 def digest(path):
     h=hashlib.sha256()
@@ -87,12 +87,14 @@ def images_gate(root,seal):
                 "invalid derived image identity: "+name)
     return manifest
 
-def neutral_gate(recipe_dir,seal):
+def neutral_gate(recipe_dir,seal,seal_path):
     folder=recipe_dir.resolve(strict=True)
     path=folder/"manifest.json"
     obj=json.loads(path.read_text())
     require(obj["schema"]=="CANDLE-DKR-R124-S55A-MMQ-LAUNCH-V1",
             "S5.5a MMQ manifest schema")
+    require(obj["source_seal_sha256"]==digest(seal_path.resolve(strict=True)),
+            "S5.5a sealed PTX baseline mismatch")
     require(obj["target_cc"]==61 and
             obj["source_index_sha256"]==digest(
                 Path(seal["catalogue"])/"native-catalog.json"),
@@ -153,7 +155,7 @@ def build(args):
     head=source_head()
     seal=seal_gate(args.seal)
     images=images_gate(args.cubin_dir,seal)
-    neutral=neutral_gate(args.mmq_dir,seal)
+    neutral=neutral_gate(args.mmq_dir,seal,args.seal)
     _,s53=historical_gate(args.s52_result,args.s53_result,seal)
     out=args.out.resolve()
     require(not out.exists(),"output directory exists; do not overwrite")
@@ -257,7 +259,7 @@ def headless(args):
         require(digest(Path(rec[p]))==rec[key],p+" changed")
     sealed=seal_gate(Path(rec["s51_seal"]))
     manifest=images_gate(Path(rec["cubin_dir"]),sealed)
-    neutral=neutral_gate(Path(rec["mmq_dir"]),sealed)
+    neutral=neutral_gate(Path(rec["mmq_dir"]),sealed,Path(rec["s51_seal"]))
     require(digest(Path(rec["mmq_dir"])/"manifest.json")==rec["mmq_manifest_sha256"],
             "S5.5a MMQ launch table changed")
     require(digest(Path(rec["cubin_dir"])/"manifest.json")==rec["cubin_manifest_sha256"],
