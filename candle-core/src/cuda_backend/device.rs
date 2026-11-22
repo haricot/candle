@@ -441,10 +441,17 @@ impl CudaDevice {
                         eprintln!(
                             "DKR_R125_P2_DRIVER_FAULT family=cast operation=cuModuleLoadData image=invalid_qualification_blob"
                         );
-                        let _unexpected = self.context.load_module(
+                        match self.context.load_module(
                             cudarc::nvrtc::Ptx::from_binary(vec![0u8; 64])
-                        ).w()?;
-                        crate::bail!("P2 malformed test CUBIN unexpectedly admitted by CUDA driver");
+                        ).w() {
+                            Err(err) => {
+                                eprintln!("DKR_R125_P2_DRIVER_REJECTED family=cast error={err:?}");
+                                return Err(err);
+                            }
+                            Ok(_) => {
+                                crate::bail!("P2 malformed test CUBIN unexpectedly admitted by CUDA driver");
+                            }
+                        }
                     }
                     let module = self.context.load_module(
                         cudarc::nvrtc::Ptx::from_binary(image.image.to_vec())
@@ -690,7 +697,7 @@ impl CudaDevice {
         #[cfg(feature = "cuda-dkr-p2-test-fault")]
         let dkr_test_fault_cast = match std::env::var_os("CANDLE_DKR_P2_TEST_FAULT_CAST") {
             None => false,
-            Some(value) if value == "1" => true,
+            Some(value) if value == std::ffi::OsStr::new("1") => true,
             _ => crate::bail!("CANDLE_DKR_P2_TEST_FAULT_CAST must be unset or 1"),
         };
         #[cfg(feature = "cuda-dkr-qualified-default")]
