@@ -28,7 +28,7 @@ def require(ok, message):
         raise SystemExit("DKR_R124_FEATURE_AUDIT_FAIL: " + message)
 
 for package in ("candle-core", "candle-nn"):
-    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-s31", "cuda"):
+    for mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default", "cuda-dkr-s31", "cuda"):
         graph = resolved(package, mode)
         for name in ("candle-core", "candle-kernels", package):
             require(name in graph, f"{package}/{mode}: {name} missing")
