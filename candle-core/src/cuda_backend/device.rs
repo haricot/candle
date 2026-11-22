@@ -15,9 +15,12 @@ use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 #[cfg(feature = "cuda-dkr-catalog")]
 #[path = "dkr_s31.rs"]
 mod dkr_s31;
-#[cfg(feature = "cuda-dkr-qualified-default")]
+#[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
 #[path = "dkr_image_policy.rs"]
 mod dkr_image_policy;
+#[cfg(feature = "cuda-dkr-typed-image")]
+#[path = "dkr_typed_image.rs"]
+mod dkr_typed_image;
 
 /// Unique identifier for cuda devices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -76,7 +79,7 @@ pub struct CudaDevice {
     modules: Arc<std::sync::RwLock<ModuleStore>>,
     #[cfg(feature = "cuda-dkr-catalog")]
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
-    #[cfg(feature = "cuda-dkr-qualified-default")]
+    #[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
     dkr_image_mode: dkr_image_policy::DkrImageMode,
     #[cfg(feature = "cuda-dkr-p2-test-fault")]
     dkr_test_fault_cast: bool,
@@ -85,6 +88,8 @@ pub struct CudaDevice {
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
     #[cfg(feature = "cuda-dkr-catalog")]
     dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, DkrLoadedModule>>>,
+    #[cfg(feature = "cuda-dkr-typed-image")]
+    dkr_typed_functions: Arc<RwLock<HashMap<(dkr_kernel_registry::ArtifactKey, Option<String>), DkrLoadedModule>>>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
     curand: Arc<Mutex<CudaRng>>,
@@ -700,7 +705,7 @@ impl CudaDevice {
             Some(value) if value.to_str() == Some("1") => true,
             _ => crate::bail!("CANDLE_DKR_P2_TEST_FAULT_CAST must be unset or 1"),
         };
-        #[cfg(feature = "cuda-dkr-qualified-default")]
+        #[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
         let dkr_image_mode = {
             // Catalogue admission above already checked exact GPU target,
             // all native manifests, CUBIN digests, and producer attestation.
@@ -747,7 +752,7 @@ impl CudaDevice {
             modules: Arc::new(std::sync::RwLock::new(module_store)),
             #[cfg(feature = "cuda-dkr-catalog")]
             dkr_s31,
-            #[cfg(feature = "cuda-dkr-qualified-default")]
+            #[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
             dkr_image_mode,
             #[cfg(feature = "cuda-dkr-p2-test-fault")]
             dkr_test_fault_cast,
@@ -756,6 +761,8 @@ impl CudaDevice {
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
             #[cfg(feature = "cuda-dkr-catalog")]
             dkr_functions: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "cuda-dkr-typed-image")]
+            dkr_typed_functions: Arc::new(RwLock::new(HashMap::new())),
             seed_value: Arc::new(RwLock::new(299792458)),
         })
     }
