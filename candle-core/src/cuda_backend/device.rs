@@ -61,7 +61,7 @@ impl Drop for CudaGraphHtodCacheGuard {
     }
 }
 
-#[cfg(feature = "cuda-dkr-catalog")]
+#[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-dkr-typed-image"))]
 struct DkrLoadedModule {
     module: Arc<cudarc::driver::CudaModule>,
     functions: HashMap<String, CudaFunction>,
