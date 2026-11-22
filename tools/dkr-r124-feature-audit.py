@@ -105,3 +105,24 @@ for probe_mode,nn_feature in (
 print("DKR_R124_S55D_FEATURE_GRAPH=PASS")
 
 print("DKR_R125_P1_FEATURE_GRAPH=PASS")
+
+# R1.25/P2: no fault hooks in shipping SM61 app profile or ordinary CUDA.
+# "sm61-app" is an alias for promoted; "p2-fault-canary" is a separate
+# binary built only by the qualification runner.
+for probe_mode, should_fault in (("sm61-app",False), ("p2-fault-canary",True)):
+    graph=resolved("dkr-s55d-model-probe", probe_mode)
+    core=graph.get("candle-core", set())
+    nn=graph.get("candle-nn", set())
+    kernels=graph.get("candle-kernels", set())
+    require("cuda-dkr-qualified-default" in core and "cuda-dkr-qualified-default" in nn,
+            f"R125/P2 {probe_mode}: promoted CUDA is absent")
+    require(("cuda-dkr-p2-test-fault" in core)==should_fault
+            and ("cuda-dkr-p2-test-fault" in nn)==should_fault,
+            f"R125/P2 {probe_mode}: isolated fault hook feature leaked or missing")
+    require("cuda-dkr-p2-test-fault" not in kernels and not(LEGACY & core or LEGACY & kernels),
+            f"R125/P2 {probe_mode}: static CUDA/legacy hook leaked")
+    print(f"DKR_R125_P2_FEATURE_AUDIT_PASS mode={probe_mode} fault={int(should_fault)}")
+plain=resolved("candle-core", "cuda")
+require("cuda-dkr-p2-test-fault" not in plain.get("candle-core",set()),
+        "R125/P2: generic cuda unexpectedly contains test fault code")
+print("DKR_R125_P2_FEATURE_GRAPH=PASS")
