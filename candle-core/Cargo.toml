@@ -59,7 +59,9 @@ cuda = ["cudarc", "dep:candle-kernels"]
 # Native catalogue consumer. This does not enable any legacy CUDA producer flags.
 cuda-dkr-catalog = ["cuda", "candle-kernels/cuda-dkr-catalog", "dep:sha2", "dep:serde_json", "dep:dkr-kernel-registry"]
 # External typed DKR kernels use Candle's context-bound PTX/CUBIN transport and policy.
-cuda-dkr-typed-image = ["cuda-dkr-catalog"]
+# Independent of the native sealed catalogue: standard Candle tensor operations
+# retain their regular CUDA kernels. Enabling this alone must not disable builtins.
+cuda-dkr-typed-image = ["cuda", "dep:sha2", "dep:dkr-kernel-registry"]
 # Strict deployment build: requires an embedded catalogue and disallows runtime overrides.
 cuda-dkr-embedded = ["cuda-dkr-catalog", "candle-kernels/cuda-dkr-embedded"]
 # Experimental exact-target, build-verified CUBIN images. All 25 entries required.
