@@ -15,9 +15,12 @@ use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 #[cfg(feature = "cuda-dkr-catalog")]
 #[path = "dkr_s31.rs"]
 mod dkr_s31;
-#[cfg(feature = "cuda-dkr-qualified-default")]
+#[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
 #[path = "dkr_image_policy.rs"]
 mod dkr_image_policy;
+#[cfg(feature = "cuda-dkr-typed-image")]
+#[path = "dkr_typed_image.rs"]
+mod dkr_typed_image;
 
 /// Unique identifier for cuda devices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -58,7 +61,7 @@ impl Drop for CudaGraphHtodCacheGuard {
     }
 }
 
-#[cfg(feature = "cuda-dkr-catalog")]
+#[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-dkr-typed-image"))]
 struct DkrLoadedModule {
     module: Arc<cudarc::driver::CudaModule>,
     functions: HashMap<String, CudaFunction>,
@@ -76,7 +79,7 @@ pub struct CudaDevice {
     modules: Arc<std::sync::RwLock<ModuleStore>>,
     #[cfg(feature = "cuda-dkr-catalog")]
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
-    #[cfg(feature = "cuda-dkr-qualified-default")]
+    #[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
     dkr_image_mode: dkr_image_policy::DkrImageMode,
     #[cfg(feature = "cuda-dkr-p2-test-fault")]
     dkr_test_fault_cast: bool,
@@ -85,6 +88,8 @@ pub struct CudaDevice {
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
     #[cfg(feature = "cuda-dkr-catalog")]
     dkr_functions: Arc<RwLock<HashMap<dkr_kernel_registry::ArtifactKey, DkrLoadedModule>>>,
+    #[cfg(feature = "cuda-dkr-typed-image")]
+    dkr_typed_functions: Arc<RwLock<HashMap<(dkr_kernel_registry::ArtifactKey, Option<String>), DkrLoadedModule>>>,
     stream: Arc<cudarc::driver::CudaStream>,
     pub(crate) blas: Arc<cudarc::cublas::CudaBlas>,
     curand: Arc<Mutex<CudaRng>>,
@@ -700,13 +705,17 @@ impl CudaDevice {
             Some(value) if value.to_str() == Some("1") => true,
             _ => crate::bail!("CANDLE_DKR_P2_TEST_FAULT_CAST must be unset or 1"),
         };
-        #[cfg(feature = "cuda-dkr-qualified-default")]
+        #[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
         let dkr_image_mode = {
             // Catalogue admission above already checked exact GPU target,
             // all native manifests, CUBIN digests, and producer attestation.
             let mode = dkr_image_policy::DkrImageMode::from_environment()?;
             if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                #[cfg(feature = "cuda-dkr-qualified-default")]
                 eprintln!("DKR_R125_P1_POLICY default=cubin requested={} rollback=verified_ptx source=embedded",
+                    mode.as_str());
+                #[cfg(not(feature = "cuda-dkr-qualified-default"))]
+                eprintln!("DKR_R125_TYPED_POLICY requested={} source=verified_external_pair",
                     mode.as_str());
             }
             mode
@@ -714,9 +723,18 @@ impl CudaDevice {
         // The decoupled consumer must never execute an incomplete static
         // legacy implementation when no catalogue was selected. The old
         // hybrid feature deliberately retains its historical opt-in behavior.
-        #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+        // A native-only DKR consumer requires its native catalogue. An
+        // external typed-image consumer may legitimately have only a verified
+        // typed catalogue supplied by Mistral.rs; it must not need native
+        // producer artifacts, Pascal legacy kernels or static recompilation.
+        // Qualified native deployment remains strict even with typed enabled.
+        #[cfg(all(
+            feature = "cuda-dkr-catalog",
+            not(feature = "cuda-dkr-s31"),
+            any(feature = "cuda-dkr-qualified-default", not(feature = "cuda-dkr-typed-image"))
+        ))]
         if dkr_s31.is_none() {
-            crate::bail!("cuda-dkr-catalog requires a verified native catalogue (CANDLE_DKR_S31_DIR or DKR_EMBED_NATIVE_DIR)");
+            crate::bail!("native cuda-dkr-catalog requires a verified native catalogue (CANDLE_DKR_S31_DIR or DKR_EMBED_NATIVE_DIR)");
         }
         #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
         let bf16_matmul_route = {
@@ -747,7 +765,7 @@ impl CudaDevice {
             modules: Arc::new(std::sync::RwLock::new(module_store)),
             #[cfg(feature = "cuda-dkr-catalog")]
             dkr_s31,
-            #[cfg(feature = "cuda-dkr-qualified-default")]
+            #[cfg(any(feature = "cuda-dkr-qualified-default", feature = "cuda-dkr-typed-image"))]
             dkr_image_mode,
             #[cfg(feature = "cuda-dkr-p2-test-fault")]
             dkr_test_fault_cast,
@@ -756,6 +774,8 @@ impl CudaDevice {
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
             #[cfg(feature = "cuda-dkr-catalog")]
             dkr_functions: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "cuda-dkr-typed-image")]
+            dkr_typed_functions: Arc::new(RwLock::new(HashMap::new())),
             seed_value: Arc::new(RwLock::new(299792458)),
         })
     }
