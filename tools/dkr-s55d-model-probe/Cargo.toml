@@ -17,3 +17,5 @@ serde_json = { workspace = true }
 default = []
 ptx = ["candle/cuda-dkr-embedded", "candle-nn/cuda-dkr-embedded", "candle-transformers/cuda"]
 cubin = ["candle/cuda-dkr-cudaforge-catalog", "candle-nn/cuda-dkr-cudaforge-catalog", "candle-transformers/cuda"]
+# R1.25: runtime auto=CUBIN, explicit CANDLE_DKR_IMAGE_MODE=ptx rollback.
+promoted = ["candle/cuda-dkr-qualified-default", "candle-nn/cuda-dkr-qualified-default", "candle-transformers/cuda"]

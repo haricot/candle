@@ -68,11 +68,16 @@ fn capture(
 }
 
 fn main() -> Result<()> {
-    #[cfg(all(feature="ptx",feature="cubin"))]
-    compile_error!("PTX and CUBIN probe features must remain independent");
-    #[cfg(not(any(feature="ptx",feature="cubin")))]
-    compile_error!("S5.5d model probe requires exactly one of ptx or cubin");
-    let mode=if cfg!(feature="cubin"){"cubin"}else{"ptx"};
+    #[cfg(any(
+        all(feature="ptx",feature="cubin"),
+        all(feature="ptx",feature="promoted"),
+        all(feature="cubin",feature="promoted")
+    ))]
+    compile_error!("PTX, CUBIN and promoted probe features are mutually exclusive");
+    #[cfg(not(any(feature="ptx",feature="cubin",feature="promoted")))]
+    compile_error!("model probe requires ptx, cubin or promoted");
+    let mode=if cfg!(feature="promoted"){"promoted"}
+        else if cfg!(feature="cubin"){"cubin"} else {"ptx"};
     if std::env::args().len()==2 && std::env::args().nth(1).as_deref()==Some("--self-test") {
         println!("DKR_R124_S55D_MODEL_PROBE=PASS mode={mode} no_cuda_build=1");
         return Ok(());

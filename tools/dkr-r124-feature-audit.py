@@ -42,22 +42,26 @@ for package in ("candle-core", "candle-nn"):
         else:
             require("cuda-dkr-catalog" in core and "cuda-dkr-catalog" in kernels,
                     f"{package}/{mode}: catalogue runtime/build selection missing")
-        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog"):
-            require(("cuda-dkr-embedded" in core) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog"))
-                    and ("cuda-dkr-embedded" in kernels) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog")),
+        if mode in ("cuda-dkr-catalog", "cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default"):
+            require(("cuda-dkr-embedded" in core) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default"))
+                    and ("cuda-dkr-embedded" in kernels) == (mode in ("cuda-dkr-embedded", "cuda-dkr-cubin-embedded", "cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default")),
                     f"{package}/{mode}: embedded feature propagation mismatch")
             require(not (LEGACY & core or LEGACY & kernels),
                     f"{package}/{mode}: legacy flags leaked")
             require("cuda-dkr-s31" not in core,
                     f"{package}/{mode}: hybrid feature leaked")
-            require(("cuda-dkr-cubin-embedded" in core) == (mode in ("cuda-dkr-cubin-embedded", "cuda-dkr-cudaforge-catalog")),
+            require(("cuda-dkr-cubin-embedded" in core) == (mode in ("cuda-dkr-cubin-embedded", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default")),
                     f"{package}/{mode}: experimental CUBIN feature propagation mismatch")
-            require(("cuda-dkr-neutral-mmq" in core) == (mode in ("cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog")),
+            require(("cuda-dkr-neutral-mmq" in core) == (mode in ("cuda-dkr-neutral-mmq", "cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default")),
                     f"{package}/{mode}: neutral launch table feature propagation mismatch")
-            require(("cuda-dkr-neutral-recipes" in core) == (mode in ("cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog")),
+            require(("cuda-dkr-neutral-recipes" in core) == (mode in ("cuda-dkr-neutral-recipes", "cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default")),
                     f"{package}/{mode}: typed recipe feature propagation mismatch")
-            require(("cuda-dkr-cudaforge-catalog" in core) == (mode == "cuda-dkr-cudaforge-catalog"),
+            require(("cuda-dkr-cudaforge-catalog" in core) == (mode in ("cuda-dkr-cudaforge-catalog", "cuda-dkr-qualified-default")),
                     f"{package}/{mode}: Cudaforge catalog feature closure mismatch")
+            require(("cuda-dkr-qualified-default" in core) == (mode == "cuda-dkr-qualified-default"),
+                    f"{package}/{mode}: qualified-default feature closure mismatch")
+            require("cuda-dkr-qualified-default" not in kernels,
+                    f"{package}/{mode}: qualified-default must not compile kernels")
             require("cuda-dkr-cudaforge-catalog" not in kernels,
                     f"{package}/{mode}: Cudaforge producer must not become a kernel dependency")
             require("cuda-dkr-neutral-recipes" not in kernels,
@@ -85,6 +89,7 @@ print("DKR_R124_S55C_FEATURE_GRAPH=PASS")
 for probe_mode,nn_feature in (
     ("ptx","cuda-dkr-embedded"),
     ("cubin","cuda-dkr-cudaforge-catalog"),
+    ("promoted","cuda-dkr-qualified-default"),
 ):
     graph=resolved("dkr-s55d-model-probe",probe_mode)
     core=graph.get("candle-core",set())
@@ -98,3 +103,5 @@ for probe_mode,nn_feature in (
             f"S5.5d model probe {probe_mode}: static CUDA flags leaked")
     print(f"DKR_R124_S55D_MODEL_FEATURE_AUDIT_PASS mode={probe_mode} nn={nn_feature}")
 print("DKR_R124_S55D_FEATURE_GRAPH=PASS")
+
+print("DKR_R125_P1_FEATURE_GRAPH=PASS")
