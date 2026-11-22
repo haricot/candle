@@ -719,9 +719,18 @@ impl CudaDevice {
         // The decoupled consumer must never execute an incomplete static
         // legacy implementation when no catalogue was selected. The old
         // hybrid feature deliberately retains its historical opt-in behavior.
-        #[cfg(all(feature = "cuda-dkr-catalog", not(feature = "cuda-dkr-s31")))]
+        // A native-only DKR consumer requires its native catalogue. An
+        // external typed-image consumer may legitimately have only a verified
+        // typed catalogue supplied by Mistral.rs; it must not need native
+        // producer artifacts, Pascal legacy kernels or static recompilation.
+        // Qualified native deployment remains strict even with typed enabled.
+        #[cfg(all(
+            feature = "cuda-dkr-catalog",
+            not(feature = "cuda-dkr-s31"),
+            any(feature = "cuda-dkr-qualified-default", not(feature = "cuda-dkr-typed-image"))
+        ))]
         if dkr_s31.is_none() {
-            crate::bail!("cuda-dkr-catalog requires a verified native catalogue (CANDLE_DKR_S31_DIR or DKR_EMBED_NATIVE_DIR)");
+            crate::bail!("native cuda-dkr-catalog requires a verified native catalogue (CANDLE_DKR_S31_DIR or DKR_EMBED_NATIVE_DIR)");
         }
         #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
         let bf16_matmul_route = {
