@@ -19,3 +19,7 @@ ptx = ["candle/cuda-dkr-embedded", "candle-nn/cuda-dkr-embedded", "candle-transf
 cubin = ["candle/cuda-dkr-cudaforge-catalog", "candle-nn/cuda-dkr-cudaforge-catalog", "candle-transformers/cuda"]
 # R1.25: runtime auto=CUBIN, explicit CANDLE_DKR_IMAGE_MODE=ptx rollback.
 promoted = ["candle/cuda-dkr-qualified-default", "candle-nn/cuda-dkr-qualified-default", "candle-transformers/cuda"]
+# Isolated SM61 application build: CUBIN is the default; PTX remains available.
+sm61-app = ["promoted"]
+# Restricted canary only. Must never be shipped as an application binary.
+p2-fault-canary = ["promoted", "candle/cuda-dkr-p2-test-fault", "candle-nn/cuda-dkr-p2-test-fault"]

@@ -70,6 +70,8 @@ cuda-dkr-neutral-recipes = ["cuda-dkr-neutral-mmq"]
 cuda-dkr-cudaforge-catalog = ["cuda-dkr-neutral-recipes", "cuda-dkr-cubin-embedded"]
 # R1.25 P1: default to verified CUBIN on the catalogue target, with explicit PTX rollback.
 cuda-dkr-qualified-default = ["cuda-dkr-cudaforge-catalog"]
+# R1.25/P2 qualification-only fault; never include in an application build.
+cuda-dkr-p2-test-fault = ["cuda-dkr-qualified-default"]
 # Historical hybrid/static compatibility. Retain the previous public feature.
 cuda-dkr-s31 = ["cuda-dkr-catalog", "cuda-legacy-bf16", "cuda-legacy-fp8", "cuda-legacy-fp4"]
 cuda-legacy-bf16 = ["cuda", "candle-kernels/cuda-legacy-bf16"]
