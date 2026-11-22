@@ -13,13 +13,14 @@ use std::{collections::HashMap, sync::Arc};
 
 const MAX_TYPED_CUBIN_BYTES: usize = 32 * 1024 * 1024;
 
-/// ELF64 little endian; EM_CUDA=190; CUDA ELF e_flags bits 8..15 carry target SM.
+/// ELF64 little endian; EM_CUDA=190; pre-Blackwell EF_CUDA_SM is e_flags & 0xff.
+/// CUDA flag bits 8..15 carry unrelated control flags (LLVM ELF.h).
 /// The CUDA driver and function lookup remain the authority for image admission.
 fn validate_cubin(image: &[u8], expected_sha: &str, target_cc: u32) -> Result<()> {
     if image.len() < 64 || image.len() > MAX_TYPED_CUBIN_BYTES
         || !image.starts_with(b"\x7fELF") || image[4] != 2 || image[5] != 1
         || u16::from_le_bytes([image[18], image[19]]) != 190
-        || ((u32::from_le_bytes([image[48], image[49], image[50], image[51]]) >> 8) & 0xff) != target_cc
+        || (u32::from_le_bytes([image[48], image[49], image[50], image[51]]) & 0xff) != target_cc
     {
         crate::bail!("DKR typed CUBIN ELF architecture/header mismatch");
     }
@@ -143,7 +144,7 @@ mod tests {
         bytes[4] = 2;
         bytes[5] = 1;
         bytes[18..20].copy_from_slice(&190u16.to_le_bytes());
-        bytes[48..52].copy_from_slice(&(cc << 8).to_le_bytes());
+        bytes[48..52].copy_from_slice(&(cc | 0x400).to_le_bytes());
         let sha = format!("{:x}", Sha256::digest(&bytes));
         (bytes, sha)
     }
@@ -153,6 +154,11 @@ mod tests {
         let (mut binary, hash) = fixture(61);
         assert!(validate_cubin(&binary, &hash, 61).is_ok());
         assert!(validate_cubin(&binary, &hash, 80).is_err());
+        // Control flags may change the high byte without changing SM61.
+        let (control_flags, control_hash) = fixture(61 | 0x300);
+        assert!(validate_cubin(&control_flags, &control_hash, 61).is_ok());
+        let (sm75, sm75_hash) = fixture(75);
+        assert!(validate_cubin(&sm75, &sm75_hash, 61).is_err());
         binary[60] = 1;
         assert!(validate_cubin(&binary, &hash, 61).is_err());
     }
