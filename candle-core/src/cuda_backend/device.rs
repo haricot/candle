@@ -697,7 +697,7 @@ impl CudaDevice {
         #[cfg(feature = "cuda-dkr-p2-test-fault")]
         let dkr_test_fault_cast = match std::env::var_os("CANDLE_DKR_P2_TEST_FAULT_CAST") {
             None => false,
-            Some(value) if value == std::ffi::OsStr::new("1") => true,
+            Some(value) if value.to_str() == Some("1") => true,
             _ => crate::bail!("CANDLE_DKR_P2_TEST_FAULT_CAST must be unset or 1"),
         };
         #[cfg(feature = "cuda-dkr-qualified-default")]

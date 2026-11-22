@@ -266,7 +266,11 @@ def headless(args):
             if scenario["id"]=="short" and mode=="auto":
                 e[FAULT_ENV]="1"
             obj,logits,log=model_once(ship,receipt["model"],scenario,mode,out,e)
-            verify_loaded(log,mode)
+            families=set(verify_loaded(log,mode))
+            require(families=={
+                "quantized", "cast", "unary", "indexing", "reduce",
+                "mmvq_gguf", "fill", "affine", "binary"},
+                f"unexpected Qwen3 native family set: {scenario['id']}/{mode}: {families}")
             mode_results[mode]=(obj,logits)
         ref=mode_results["ptx"][0]
         differences={}
@@ -296,6 +300,10 @@ def headless(args):
     fault_obj,fault_logits,fault_log=model_once(
         test,receipt["model"],short,"auto",out,env,fault=True)
     loaded=verify_loaded(fault_log,"auto",allow_fallback=True)
+    require(set(loaded)=={
+        "quantized", "cast", "unary", "indexing", "reduce",
+        "mmvq_gguf", "fill", "affine", "binary"},
+        "fault-mode Qwen3 loaded unexpected families")
     reference=out/"short-auto.f32le"
     diff=s55d.compare_binary_logits(reference,fault_logits,
             (short["decode"]+1,fault_obj["vocabulary"]))
