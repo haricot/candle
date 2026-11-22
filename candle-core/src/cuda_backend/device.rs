@@ -78,6 +78,8 @@ pub struct CudaDevice {
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
     #[cfg(feature = "cuda-dkr-qualified-default")]
     dkr_image_mode: dkr_image_policy::DkrImageMode,
+    #[cfg(feature = "cuda-dkr-p2-test-fault")]
+    dkr_test_fault_cast: bool,
     #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
     bf16_matmul_route: super::bf16_recipe::Bf16MatmulRoute,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
@@ -430,6 +432,20 @@ impl CudaDevice {
                     Ok((module, func))
                 };
                 let load_cubin = || -> Result<(Arc<cudarc::driver::CudaModule>, CudaFunction)> {
+                    #[cfg(feature = "cuda-dkr-p2-test-fault")]
+                    if self.dkr_test_fault_cast && image.family == "cast" {
+                        // Qualification-only: exercise the *real driver* error
+                        // path with a deliberately malformed temporary image.
+                        // Never mutate the verified embedded CUBIN or provenance.
+                        // The production feature excludes this entire branch.
+                        eprintln!(
+                            "DKR_R125_P2_DRIVER_FAULT family=cast operation=cuModuleLoadData image=invalid_qualification_blob"
+                        );
+                        let _unexpected = self.context.load_module(
+                            cudarc::nvrtc::Ptx::from_binary(vec![0u8; 64])
+                        ).w()?;
+                        crate::bail!("P2 malformed test CUBIN unexpectedly admitted by CUDA driver");
+                    }
                     let module = self.context.load_module(
                         cudarc::nvrtc::Ptx::from_binary(image.image.to_vec())
                     ).w()?;
@@ -671,6 +687,12 @@ impl CudaDevice {
     ) -> Result<Self> {
         #[cfg(feature = "cuda-dkr-catalog")]
         let dkr_s31 = dkr_s31::ExternalModules::from_env(&context)?.map(Arc::new);
+        #[cfg(feature = "cuda-dkr-p2-test-fault")]
+        let dkr_test_fault_cast = match std::env::var_os("CANDLE_DKR_P2_TEST_FAULT_CAST") {
+            None => false,
+            Some(value) if value == "1" => true,
+            _ => crate::bail!("CANDLE_DKR_P2_TEST_FAULT_CAST must be unset or 1"),
+        };
         #[cfg(feature = "cuda-dkr-qualified-default")]
         let dkr_image_mode = {
             // Catalogue admission above already checked exact GPU target,
@@ -720,6 +742,8 @@ impl CudaDevice {
             dkr_s31,
             #[cfg(feature = "cuda-dkr-qualified-default")]
             dkr_image_mode,
+            #[cfg(feature = "cuda-dkr-p2-test-fault")]
+            dkr_test_fault_cast,
             #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
             bf16_matmul_route,
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
