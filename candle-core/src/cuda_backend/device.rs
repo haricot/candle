@@ -711,7 +711,11 @@ impl CudaDevice {
             // all native manifests, CUBIN digests, and producer attestation.
             let mode = dkr_image_policy::DkrImageMode::from_environment()?;
             if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                #[cfg(feature = "cuda-dkr-qualified-default")]
                 eprintln!("DKR_R125_P1_POLICY default=cubin requested={} rollback=verified_ptx source=embedded",
+                    mode.as_str());
+                #[cfg(not(feature = "cuda-dkr-qualified-default"))]
+                eprintln!("DKR_R125_TYPED_POLICY requested={} source=verified_external_pair",
                     mode.as_str());
             }
             mode
