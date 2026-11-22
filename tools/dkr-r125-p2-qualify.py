@@ -129,8 +129,10 @@ def model_once(binary,model,scenario,policy,directory,env,fault=False):
     cache.mkdir()
     require(not list(cache.iterdir()),"expected fresh GPU cache for "+tag)
     e=p1.env_for(env,policy,cache)
+    # Ordinary environments are scrubbed by environment(). A deliberate
+    # inherited test flag on the *shipping* profile is retained here to
+    # demonstrate its complete inability to activate compiled-out hooks.
     if fault: e[FAULT_ENV]="1"
-    else: e.pop(FAULT_ENV,None)
     result=directory/f"{tag}.json"
     logits=directory/f"{tag}.f32le"
     log=directory/f"{tag}.log"
