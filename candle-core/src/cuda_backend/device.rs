@@ -15,6 +15,9 @@ use super::{CudaError, CudaStorage, CudaStorageSlice, WrapErr};
 #[cfg(feature = "cuda-dkr-catalog")]
 #[path = "dkr_s31.rs"]
 mod dkr_s31;
+#[cfg(feature = "cuda-dkr-qualified-default")]
+#[path = "dkr_image_policy.rs"]
+mod dkr_image_policy;
 
 /// Unique identifier for cuda devices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -73,6 +76,8 @@ pub struct CudaDevice {
     modules: Arc<std::sync::RwLock<ModuleStore>>,
     #[cfg(feature = "cuda-dkr-catalog")]
     dkr_s31: Option<Arc<dkr_s31::ExternalModules>>,
+    #[cfg(feature = "cuda-dkr-qualified-default")]
+    dkr_image_mode: dkr_image_policy::DkrImageMode,
     #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
     bf16_matmul_route: super::bf16_recipe::Bf16MatmulRoute,
     custom_modules: Arc<std::sync::RwLock<HashMap<String, Arc<cudarc::driver::CudaModule>>>>,
@@ -402,28 +407,86 @@ impl CudaDevice {
             loaded.functions.insert(name.to_owned(),func.clone());
             func
         } else {
-            #[cfg(feature = "cuda-dkr-cubin-embedded")]
-            let module = {
+            #[cfg(feature = "cuda-dkr-qualified-default")]
+            let (module, func) = {
+                use dkr_image_policy::DkrImageMode;
                 let image = self.dkr_s31.as_ref()
                     .and_then(|provider| provider.cubin_for(artifact))
                     .ok_or_else(|| crate::Error::Msg(
-                        "verified CUBIN image unavailable; refusing PTX fallback".into()
+                        "qualified default missing attested CUBIN: refusing unverified fallback".into()
                     ))?;
-                let module = self.context.load_module(
-                    cudarc::nvrtc::Ptx::from_binary(image.image.to_vec())
-                ).w()?;
-                if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
-                    eprintln!(
-                        "CANDLE_DKR_IMAGE_LOADED family={} target=sm{} format=cubin cubin_sha256={} ptx_sha256={}",
-                        image.family, artifact.key().target_cc(), image.sha256,
-                        artifact.key().sha256()
-                    );
+                // The selected image mode is fixed at device initialization:
+                // the shared module cache remains keyed by the PTX identity
+                // because both representations have the same verified ABI.
+                let load_ptx = || -> Result<(Arc<cudarc::driver::CudaModule>, CudaFunction)> {
+                    let module = self.context.load_module(artifact.ptx().into()).w()?;
+                    let func = module.load_function(name).w()?;
+                    if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                        eprintln!(
+                            "CANDLE_DKR_IMAGE_LOADED family={} target=sm{} format=ptx ptx_sha256={}",
+                            image.family, artifact.key().target_cc(), artifact.key().sha256()
+                        );
+                    }
+                    Ok((module, func))
+                };
+                let load_cubin = || -> Result<(Arc<cudarc::driver::CudaModule>, CudaFunction)> {
+                    let module = self.context.load_module(
+                        cudarc::nvrtc::Ptx::from_binary(image.image.to_vec())
+                    ).w()?;
+                    let func = module.load_function(name).w()?;
+                    if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                        eprintln!(
+                            "CANDLE_DKR_IMAGE_LOADED family={} target=sm{} format=cubin cubin_sha256={} ptx_sha256={}",
+                            image.family, artifact.key().target_cc(), image.sha256,
+                            artifact.key().sha256()
+                        );
+                    }
+                    Ok((module, func))
+                };
+                match self.dkr_image_mode {
+                    DkrImageMode::Ptx => load_ptx()?,
+                    DkrImageMode::Cubin => load_cubin()?,
+                    DkrImageMode::Auto => match load_cubin() {
+                        Ok(loaded) => loaded,
+                        Err(err) => {
+                            // Only *driver module/function admission* errors
+                            // are recoverable here, before any kernel launch.
+                            // Never switch backend after a CUDA execution fault.
+                            eprintln!(
+                                "DKR_R125_P1_FALLBACK family={} cubin_error={} selected=ptx reason=module_admission_failure",
+                                image.family, err
+                            );
+                            load_ptx()?
+                        }
+                    }
                 }
-                module
             };
-            #[cfg(not(feature = "cuda-dkr-cubin-embedded"))]
-            let module=self.context.load_module(artifact.ptx().into()).w()?;
-            let func=module.load_function(name).w()?;
+            #[cfg(not(feature = "cuda-dkr-qualified-default"))]
+            let (module, func) = {
+                #[cfg(feature = "cuda-dkr-cubin-embedded")]
+                let module = {
+                    let image = self.dkr_s31.as_ref()
+                        .and_then(|provider| provider.cubin_for(artifact))
+                        .ok_or_else(|| crate::Error::Msg(
+                            "verified CUBIN image unavailable; refusing PTX fallback".into()
+                        ))?;
+                    let module = self.context.load_module(
+                        cudarc::nvrtc::Ptx::from_binary(image.image.to_vec())
+                    ).w()?;
+                    if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                        eprintln!(
+                            "CANDLE_DKR_IMAGE_LOADED family={} target=sm{} format=cubin cubin_sha256={} ptx_sha256={}",
+                            image.family, artifact.key().target_cc(), image.sha256,
+                            artifact.key().sha256()
+                        );
+                    }
+                    module
+                };
+                #[cfg(not(feature = "cuda-dkr-cubin-embedded"))]
+                let module=self.context.load_module(artifact.ptx().into()).w()?;
+                let func=module.load_function(name).w()?;
+                (module,func)
+            };
             let mut functions=HashMap::new();
             functions.insert(name.to_owned(),func.clone());
             cached.insert(artifact.key().clone(),DkrLoadedModule{module,functions});
@@ -608,6 +671,17 @@ impl CudaDevice {
     ) -> Result<Self> {
         #[cfg(feature = "cuda-dkr-catalog")]
         let dkr_s31 = dkr_s31::ExternalModules::from_env(&context)?.map(Arc::new);
+        #[cfg(feature = "cuda-dkr-qualified-default")]
+        let dkr_image_mode = {
+            // Catalogue admission above already checked exact GPU target,
+            // all native manifests, CUBIN digests, and producer attestation.
+            let mode = dkr_image_policy::DkrImageMode::from_environment()?;
+            if std::env::var_os("CANDLE_DKR_TRACE").is_some() {
+                eprintln!("DKR_R125_P1_POLICY default=cubin requested={} rollback=verified_ptx source=embedded",
+                    mode.as_str());
+            }
+            mode
+        };
         // The decoupled consumer must never execute an incomplete static
         // legacy implementation when no catalogue was selected. The old
         // hybrid feature deliberately retains its historical opt-in behavior.
@@ -644,6 +718,8 @@ impl CudaDevice {
             modules: Arc::new(std::sync::RwLock::new(module_store)),
             #[cfg(feature = "cuda-dkr-catalog")]
             dkr_s31,
+            #[cfg(feature = "cuda-dkr-qualified-default")]
+            dkr_image_mode,
             #[cfg(any(feature = "cuda-dkr-catalog", feature = "cuda-legacy-bf16"))]
             bf16_matmul_route,
             custom_modules: Arc::new(std::sync::RwLock::new(HashMap::new())),
