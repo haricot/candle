@@ -255,9 +255,12 @@ def headless(args):
             "fault-fallback numerical parity failed (see comparison)")
     print(f"DKR_R125_P2_FAULT_NUMERIC=PASS cases={delta['cases']} elements={delta['elements']}")
 
+    qualified_families=set(source["seal"]["catalogue_inventory"]["packages"])
+    require(len(qualified_families)==25,"qualified native inventory incomplete")
     results=[]
     for scenario in receipt["scenarios"]:
         mode_results={}
+        mode_families={}
         for mode in POLICIES:
             # The shipping binary does not compile in the test fault hook.
             # Intentionally set the test variable for one trial to prove it
@@ -267,11 +270,12 @@ def headless(args):
                 e[FAULT_ENV]="1"
             obj,logits,log=model_once(ship,receipt["model"],scenario,mode,out,e)
             families=set(verify_loaded(log,mode))
-            require(families=={
-                "quantized", "cast", "unary", "indexing", "reduce",
-                "mmvq_gguf", "fill", "affine", "binary"},
-                f"unexpected Qwen3 native family set: {scenario['id']}/{mode}: {families}")
+            require(families <= qualified_families,
+                    f"unqualified native family: {scenario['id']}/{mode}: {families-qualified_families}")
+            mode_families[mode]=families
             mode_results[mode]=(obj,logits)
+        require(mode_families["ptx"]==mode_families["auto"]==mode_families["cubin"],
+                f"PTX/CUBIN dispatch chose different native family inventory for {scenario['id']}")
         ref=mode_results["ptx"][0]
         differences={}
         for mode in ("auto","cubin"):
@@ -289,6 +293,7 @@ def headless(args):
                     f"model logits mismatch: {scenario['id']}/{mode}")
         timings={mode:mode_results[mode][0]["total_process_work_ms"] for mode in POLICIES}
         results.append({"scenario":scenario,"timings_ms":timings,
+                        "loaded_families":sorted(mode_families["ptx"]),
                         "logits_comparison":differences,
                         "generated_token_ids":ref["generated_token_ids"]})
         print(f"DKR_R125_P2_MODEL=PASS scenario={scenario['id']} modes=3 logits={differences['auto']['elements']}",flush=True)
@@ -300,10 +305,8 @@ def headless(args):
     fault_obj,fault_logits,fault_log=model_once(
         test,receipt["model"],short,"auto",out,env,fault=True)
     loaded=verify_loaded(fault_log,"auto",allow_fallback=True)
-    require(set(loaded)=={
-        "quantized", "cast", "unary", "indexing", "reduce",
-        "mmvq_gguf", "fill", "affine", "binary"},
-        "fault-mode Qwen3 loaded unexpected families")
+    require(set(loaded)==set(results[0]["loaded_families"]),
+            "fault-mode Qwen3 loaded different native families than shipping short case")
     reference=out/"short-auto.f32le"
     diff=s55d.compare_binary_logits(reference,fault_logits,
             (short["decode"]+1,fault_obj["vocabulary"]))

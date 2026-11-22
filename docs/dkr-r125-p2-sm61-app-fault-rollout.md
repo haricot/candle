@@ -62,8 +62,10 @@ for these three deterministic Qwen3 input/decode lengths:
 | long | 48 | 24 | 25 × 151,936 |
 
 Each mode and scenario runs in a separate fresh CUDA process and
-isolated JIT cache. The runner checks all nine qualified Qwen3 native
-families, requires the exact expected image format in the logs,
+isolated JIT cache. The runner checks that all loaded kernel families belong to the
+25-family sealed catalogue and that the same per-scenario family set
+is selected in PTX, auto and CUBIN. Longer prefill may legitimately
+select additional MMQ families. It requires the expected image format,
 and compares generated greedy tokens and **every F32 logit**
 against the PTX run (absolute tolerance 0.01, relative tolerance
 0.005). This is numerical equivalence, not a claim that all raw
