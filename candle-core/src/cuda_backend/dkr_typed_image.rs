@@ -149,6 +149,16 @@ mod tests {
         (bytes, sha)
     }
 
+    // External typed-only deployment intentionally keeps Candle's regular
+    // CUDA tensor/FFI producers enabled. Unlike the native sealed catalogue,
+    // its feature must not disable standard allocations/conversions/MoE.
+    #[cfg(not(feature = "cuda-dkr-catalog"))]
+    #[test]
+    fn typed_only_preserves_standard_candle_cuda_kernels() {
+        assert!(crate::cuda_backend::kernels::BUILTIN_PTX_ENABLED);
+        assert!(crate::cuda_backend::kernels::STATIC_FFI_ENABLED);
+    }
+
     #[test]
     fn typed_cubin_requires_exact_physical_target_and_bytes() {
         let (mut binary, hash) = fixture(61);
