@@ -148,7 +148,7 @@ fn pe(start:usize,n:usize,d:usize,device:&Device)->Result<Tensor>{
     let mut data=Vec::with_capacity(n*d);
     for p in start..start+n {
         for j in 0..d {
-            let a=p as f32 * 10000f32.powf(-((j/2)*2) as f32/d as f32);
+            let a=p as f32 * 10000f32.powf(-(((j/2)*2) as f32)/d as f32);
             data.push(if j%2==0 {a.sin()} else {a.cos()});
         }
     }
@@ -265,7 +265,7 @@ impl Kimodo {
                 let un=self.forward(x,&empty,&no_text,heading,observed,&zero_mask,timestep)?;
                 let tx=self.forward(x,text,lengths,heading,observed,&zero_mask,timestep)?;
                 let co=self.forward(x,&empty,&no_text,heading,observed,mask,timestep)?;
-                ((&un+(&tx-&un)?.affine(wt,0.)?)?+(&co-&un)?.affine(wc,0.)?)
+                (&un+(&tx-&un)?.affine(wt,0.)?)?+(&co-&un)?.affine(wc,0.)?
             }
         }
     }
